@@ -129,3 +129,15 @@ html:not(.dark) {
 .dark ::selection {
   background-color: rgba(255, 255, 255, 0.15);
 }
+
+/* ── xterm.js — undo Tailwind resets that break canvas rendering ── */
+
+.xterm .xterm-screen canvas {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+
+.xterm .xterm-viewport {
+  overflow-y: auto !important;
+}
