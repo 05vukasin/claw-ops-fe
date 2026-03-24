@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run lint:*)",
+      "Bash(move \"e:\\\\Reputeo\\\\openclaw-vm-manager\\\\src\\\\app\\\\page.tsx\" \"e:\\\\Reputeo\\\\openclaw-vm-manager\\\\src\\\\app\\\\\\(main\\)\\\\page.tsx\")",
+      "Bash(move:*)",
+      "Bash(npx next lint)",
+      "Bash(npx next lint .)",
+      "Bash(npx next build:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx tsc --noEmit --pretty)",
+      "Bash(ls \"e:/Reputeo/claw-ops-fe/src/app/\\(main\\)/\")",
+      "Bash(npm run:*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 28356 //F)",
+      "Bash(xargs grep:*)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
+    ]
+  }
+}

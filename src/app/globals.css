@@ -1,0 +1,131 @@
+@import "tailwindcss";
+@import "@xterm/xterm/css/xterm.css";
+
+/*
+ * Open Canvas — Global Styles
+ * Strict grayscale. No color accents. No gradients.
+ */
+
+/* ── Design Tokens ── */
+
+:root {
+  --canvas-bg: #ffffff;
+  --canvas-fg: #0a0a0a;
+  --canvas-dot: rgba(128, 116, 116, 0.5);
+  --canvas-border: rgba(0, 0, 0, 0.08);
+  --canvas-surface: rgba(255, 255, 255, 0.473);
+  --canvas-surface-hover: rgba(0, 0, 0, 0.03);
+  --canvas-muted: #737373;
+}
+
+.dark {
+  --canvas-bg: #0a0a0a;
+  --canvas-fg: #fafafa;
+  --canvas-dot: rgba(211, 211, 211, 0.659);
+  --canvas-border: rgba(255, 255, 255, 0.08);
+  --canvas-surface: rgba(10, 10, 10, 0.72);
+  --canvas-surface-hover: rgba(255, 255, 255, 0.04);
+  --canvas-muted: #a3a3a3;
+}
+
+/* ── Tailwind Theme Inline ── */
+
+@theme inline {
+  --color-canvas-bg: var(--canvas-bg);
+  --color-canvas-fg: var(--canvas-fg);
+  --color-canvas-dot: var(--canvas-dot);
+  --color-canvas-border: var(--canvas-border);
+  --color-canvas-surface: var(--canvas-surface);
+  --color-canvas-surface-hover: var(--canvas-surface-hover);
+  --color-canvas-muted: var(--canvas-muted);
+}
+
+/* ── Base Resets ── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background-color: var(--canvas-bg);
+  color: var(--canvas-fg);
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif,
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
+  overflow-x: hidden;
+}
+
+/* Prevent flash of unstyled content during theme load */
+html.dark {
+  color-scheme: dark;
+}
+
+html:not(.dark) {
+  color-scheme: light;
+}
+
+/* ── Dot Grid Background ── */
+
+.canvas-dot-grid {
+  background-image: radial-gradient(circle, var(--canvas-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 0 0;
+}
+
+/* ── Overlay Surface Utilities ── */
+
+.surface-overlay {
+  background-color: var(--canvas-surface);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--canvas-border);
+}
+
+/* ── Scrollbar (minimal) ── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--canvas-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--canvas-muted);
+}
+
+/* ── Selection ── */
+
+::selection {
+  background-color: rgba(0, 0, 0, 0.12);
+  color: inherit;
+}
+
+.dark ::selection {
+  background-color: rgba(255, 255, 255, 0.15);
+}
