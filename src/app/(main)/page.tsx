@@ -2,6 +2,7 @@
 
 import { Suspense } from "react";
 import { CanvasStage } from "@/components/canvas";
+import { FleetSummaryBar } from "@/components/servers";
 import { useServers } from "@/lib/use-servers";
 import { WorkspacePanel } from "./workspace-panel";
 import { NewServerButton } from "./new-server-button";
@@ -12,6 +13,7 @@ export default function ServersPage() {
   return (
     <>
       <CanvasStage servers={servers} onMoveServer={moveServer} />
+      <FleetSummaryBar />
 
       {servers.length === 0 && (
         <main className="pointer-events-none flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4">

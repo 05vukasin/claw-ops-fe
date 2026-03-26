@@ -722,3 +722,168 @@ export async function releaseAssignmentApi(id: string): Promise<void> {
     throw new ApiError(res.status, err.message || "Release failed");
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Monitoring                                                         */
+/* ------------------------------------------------------------------ */
+
+export type MonitoringState = "HEALTHY" | "WARNING" | "CRITICAL" | "UNREACHABLE" | "UNKNOWN" | "MAINTENANCE";
+
+export interface FleetHealthSummary {
+  totalServers: number;
+  healthy: number;
+  warning: number;
+  critical: number;
+  unreachable: number;
+  unknown: number;
+  maintenance: number;
+  servers: ServerHealth[];
+}
+
+export interface ServerHealth {
+  serverId: string;
+  serverName: string;
+  hostname: string;
+  environment: string | null;
+  overallState: MonitoringState;
+  cpuUsage: number | null;
+  memoryUsage: number | null;
+  diskUsage: number | null;
+  load1m: number | null;
+  uptimeSeconds: number | null;
+  lastCheckAt: string | null;
+}
+
+export interface MonitoringMetric {
+  metricType: string;
+  value: number;
+  label: string | null;
+  collectedAt: string;
+}
+
+export interface MetricDataPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface MetricTimeSeries {
+  metricType: string;
+  dataPoints: MetricDataPoint[];
+}
+
+export interface MonitoringProfile {
+  enabled: boolean;
+  checkIntervalSeconds: number;
+  cpuWarningThreshold: number;
+  cpuCriticalThreshold: number;
+  memoryWarningThreshold: number;
+  memoryCriticalThreshold: number;
+  diskWarningThreshold: number;
+  diskCriticalThreshold: number;
+}
+
+export interface MaintenanceWindow {
+  id: string;
+  serverId: string;
+  serverName: string;
+  reason: string;
+  startAt: string;
+  endAt: string;
+}
+
+export async function fetchFleetHealthApi(
+  environment?: string,
+  state?: string,
+): Promise<FleetHealthSummary> {
+  const params = new URLSearchParams();
+  if (environment) params.set("environment", environment);
+  if (state) params.set("state", state);
+  const qs = params.toString();
+  const res = await apiFetch(`/api/v1/monitoring/health${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load health data.");
+  return res.json() as Promise<FleetHealthSummary>;
+}
+
+export async function fetchServerHealthApi(serverId: string): Promise<ServerHealth> {
+  const res = await apiFetch(`/api/v1/monitoring/health/${encodeURIComponent(serverId)}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load server health.");
+  return res.json() as Promise<ServerHealth>;
+}
+
+export async function fetchLatestMetricsApi(serverId: string): Promise<MonitoringMetric[]> {
+  const res = await apiFetch(`/api/v1/monitoring/metrics/${encodeURIComponent(serverId)}/latest`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load metrics.");
+  return res.json() as Promise<MonitoringMetric[]>;
+}
+
+export async function fetchMetricTimeSeriesApi(
+  serverId: string,
+  metricType: string,
+  from: string,
+  to: string,
+): Promise<MetricTimeSeries> {
+  const params = new URLSearchParams({ type: metricType, from, to });
+  const res = await apiFetch(`/api/v1/monitoring/metrics/${encodeURIComponent(serverId)}?${params}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load metric history.");
+  return res.json() as Promise<MetricTimeSeries>;
+}
+
+export async function triggerHealthCheckApi(serverId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/monitoring/check/${encodeURIComponent(serverId)}`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to trigger health check.");
+}
+
+export async function fetchMonitoringProfileApi(serverId: string): Promise<MonitoringProfile> {
+  const res = await apiFetch(`/api/v1/monitoring/profiles/${encodeURIComponent(serverId)}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load monitoring profile.");
+  return res.json() as Promise<MonitoringProfile>;
+}
+
+export async function updateMonitoringProfileApi(
+  serverId: string,
+  body: Partial<MonitoringProfile>,
+): Promise<MonitoringProfile> {
+  const res = await apiFetch(`/api/v1/monitoring/profiles/${encodeURIComponent(serverId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new ApiError(res.status, "Failed to save monitoring profile.");
+  return res.json() as Promise<MonitoringProfile>;
+}
+
+export async function resetMonitoringProfileApi(serverId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/monitoring/profiles/${encodeURIComponent(serverId)}/reset`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to reset monitoring profile.");
+}
+
+export async function fetchMaintenanceWindowsApi(): Promise<MaintenanceWindow[]> {
+  const res = await apiFetch("/api/v1/monitoring/maintenance");
+  if (!res.ok) throw new ApiError(res.status, "Failed to load maintenance windows.");
+  return res.json() as Promise<MaintenanceWindow[]>;
+}
+
+export async function createMaintenanceWindowApi(body: {
+  serverId: string;
+  reason: string;
+  startAt: string;
+  endAt: string;
+}): Promise<MaintenanceWindow> {
+  const res = await apiFetch("/api/v1/monitoring/maintenance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to create maintenance window" }));
+    throw new ApiError(res.status, err.message || "Failed to create maintenance window");
+  }
+  return res.json() as Promise<MaintenanceWindow>;
+}
+
+export async function deleteMaintenanceWindowApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/monitoring/maintenance/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, "Failed to delete maintenance window.");
+  }
+}

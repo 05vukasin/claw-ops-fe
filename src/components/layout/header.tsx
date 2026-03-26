@@ -21,14 +21,7 @@ export function Header() {
           <img
             src="/logo/logo.png"
             alt="ClawOps"
-            className="h-7 object-contain dark:hidden"
-            draggable={false}
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/logo/logo-dark.png"
-            alt="ClawOps"
-            className="hidden h-7 object-contain dark:block"
+            className="h-7 object-contain"
             draggable={false}
           />
         </div>

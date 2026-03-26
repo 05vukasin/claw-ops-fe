@@ -14,6 +14,7 @@ import {
   FiWifi,
 } from "react-icons/fi";
 import { TerminalSection } from "./terminal-section";
+import { HealthSection } from "./health-section";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
@@ -126,11 +127,6 @@ export function ServerDashboardPanel({
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
-
-  /* ---- load SSL on mount ---- */
-  useEffect(() => {
-    fetchSslForServer(server.id).then(setSsl).catch(() => {});
-  }, [server.id]);
 
   /* ---- cleanup SSL polling on unmount ---- */
   useEffect(() => {
@@ -274,7 +270,17 @@ export function ServerDashboardPanel({
   const handleViewLog = useCallback(async (jobId: string) => {
     setSslExpanded(true);
     setShowLog(true);
-    pollSslJob(jobId);
+    // Immediately fetch the job so the panel shows right away
+    try {
+      const job = await fetchSslJobApi(jobId);
+      setSslJob(job);
+      // If still running, start polling
+      if (job.status !== "COMPLETED" && job.status !== "FAILED") {
+        pollSslJob(jobId);
+      }
+    } catch {
+      pollSslJob(jobId);
+    }
   }, [pollSslJob]);
 
   const handleRetryJob = useCallback(async () => {
@@ -289,6 +295,18 @@ export function ServerDashboardPanel({
       }
     }
   }, [sslJob, pollSslJob]);
+
+  /* ---- load SSL on mount + auto-poll active jobs ---- */
+  useEffect(() => {
+    fetchSslForServer(server.id).then((cert) => {
+      setSsl(cert);
+      if (cert && cert.provisioningJobId && (cert.status === "PROVISIONING" || cert.status === "PENDING")) {
+        setSslExpanded(true);
+        setShowLog(true);
+        pollSslJob(cert.provisioningJobId);
+      }
+    }).catch(() => {});
+  }, [server.id, pollSslJob]);
 
   const handleDelete = useCallback(() => {
     if (window.confirm(`Delete server "${server.name}"? This cannot be undone.`)) {
@@ -442,6 +460,9 @@ export function ServerDashboardPanel({
           )}
         </div>
 
+        {/* ===== HEALTH (collapsible) ===== */}
+        <HealthSection serverId={server.id} />
+
         {/* ===== SSL (collapsible) ===== */}
         <div className="border-b border-canvas-border">
           <button
@@ -465,6 +486,11 @@ export function ServerDashboardPanel({
                       {ssl.status === "PROVISIONING" && (
                         <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-400" />
                       )}
+                      {ssl.status === "PROVISIONING" && sslJob && (
+                        <span className="text-[10px] text-canvas-muted">
+                          {STEP_LABELS[sslJob.currentStep] ?? sslJob.currentStep}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       {ssl.status === "ACTIVE" && (
@@ -472,7 +498,7 @@ export function ServerDashboardPanel({
                           Renew
                         </ActionBtn>
                       )}
-                      {(ssl.status === "PROVISIONING" || ssl.status === "FAILED") && ssl.provisioningJobId && (
+                      {ssl.provisioningJobId && (
                         <ActionBtn onClick={() => handleViewLog(ssl.provisioningJobId!)}>
                           View Log
                         </ActionBtn>
@@ -491,7 +517,15 @@ export function ServerDashboardPanel({
                   )}
 
                   {/* Live log panel */}
-                  {showLog && sslJob && <SslLogPanel job={sslJob} onRetry={handleRetryJob} onClose={() => { setShowLog(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } }} />}
+                  {showLog && (
+                    sslJob ? (
+                      <SslLogPanel job={sslJob} onRetry={handleRetryJob} onClose={() => { setShowLog(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } }} />
+                    ) : (
+                      <div className="mt-2 rounded-md border border-canvas-border bg-[#0d1117] px-3 py-4 text-center text-[11px] text-gray-500">
+                        Loading job logs...
+                      </div>
+                    )
+                  )}
                 </div>
               ) : server.assignedDomain ? (
                 <div className="flex items-center justify-between">

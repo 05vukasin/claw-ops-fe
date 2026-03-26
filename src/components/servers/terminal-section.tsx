@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSessionTokenApi, ApiError } from "@/lib/api";
-import { API_ORIGIN } from "@/lib/apiClient";
+import { getApiOrigin } from "@/lib/apiClient";
 
 type TermStatus = "idle" | "connecting" | "connected" | "error" | "closed";
 
@@ -140,7 +140,7 @@ export function TerminalSection({ serverId }: TerminalSectionProps) {
 
     try {
       const token = await getSessionTokenApi(serverId);
-      const wsBase = API_ORIGIN.replace(/^https/, "wss").replace(/^http/, "ws");
+      const wsBase = getApiOrigin().replace(/^https/, "wss").replace(/^http/, "ws");
       const ws = new WebSocket(`${wsBase}/ws/terminal?token=${encodeURIComponent(token)}&cols=${xtermRef.current?.cols ?? 120}&rows=${xtermRef.current?.rows ?? 40}`);
       wsRef.current = ws;
 

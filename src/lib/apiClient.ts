@@ -20,9 +20,35 @@
 
 import { getStoredAuth, updateStoredRefreshToken } from "./auth";
 
-export const API_ORIGIN = (
-  process.env.NEXT_PUBLIC_API_ORIGIN ?? "http://localhost:8080"
-).replace(/\/+$/, ""); // strip any accidental trailing slashes
+declare global {
+  interface Window {
+    __CLAWOPS_API_ORIGIN__?: string;
+  }
+}
+
+/**
+ * Resolve the API origin at runtime:
+ *  - Client: reads window.__CLAWOPS_API_ORIGIN__ (injected by server layout)
+ *  - Server: reads the non-public env var (NOT NEXT_PUBLIC_ to avoid bundler inlining)
+ *  - Fallback: http://localhost:8080
+ */
+function resolveApiOrigin(): string {
+  if (typeof window !== "undefined" && window.__CLAWOPS_API_ORIGIN__) {
+    return window.__CLAWOPS_API_ORIGIN__.replace(/\/+$/, "");
+  }
+  // Server-side fallback: use a non-NEXT_PUBLIC_ env var to prevent build-time inlining
+  // The layout.tsx injects the value for the client, so this only runs during SSR
+  const envKey = "NEXT_PUBLIC_API_ORIGIN";
+  const serverVal = typeof process !== "undefined" ? process.env[envKey] : undefined;
+  return (serverVal ?? "http://localhost:8080").replace(/\/+$/, "");
+}
+
+export function getApiOrigin(): string {
+  return resolveApiOrigin();
+}
+
+/** @deprecated Use getApiOrigin() — kept for imports that reference API_ORIGIN */
+export const API_ORIGIN = ""; // placeholder, use getApiOrigin() instead
 
 /**
  * Build a fully-qualified URL from a backend path.
@@ -31,15 +57,15 @@ export const API_ORIGIN = (
  * @returns     e.g. "https://viksi.ai/api/v1/auth/login"
  */
 export function buildApiUrl(path: string): string {
+  const origin = getApiOrigin();
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const url = `${API_ORIGIN}${normalizedPath}`;
+  const url = `${origin}${normalizedPath}`;
 
-  // Guard: double /api/ in the URL is always a misconfiguration.
   if (url.includes("/api/api/")) {
     const msg =
       `[apiClient] Double /api detected in URL: ${url}\n` +
       `NEXT_PUBLIC_API_ORIGIN must be a plain origin with no path suffix.\n` +
-      `Current value: "${API_ORIGIN}"`;
+      `Current value: "${origin}"`;
     if (process.env.NODE_ENV === "development") {
       throw new Error(msg);
     } else {
@@ -57,7 +83,7 @@ export function buildApiUrl(path: string): string {
  * @returns       e.g. "wss://viksi.ai/ws?ticket=<uuid>"
  */
 export function buildWsUrl(ticket: string): string {
-  const wsBase = API_ORIGIN.replace(/^https/, "wss").replace(/^http/, "ws");
+  const wsBase = getApiOrigin().replace(/^https/, "wss").replace(/^http/, "ws");
   return `${wsBase}/ws?ticket=${encodeURIComponent(ticket)}`;
 }
 
@@ -145,11 +171,10 @@ export async function apiFetch(
   return res;
 }
 
-// Dev assertion: log the resolved origin and key URLs once on module load.
-if (process.env.NODE_ENV === "development") {
-  console.info(`[apiClient] API_ORIGIN  = ${API_ORIGIN}`);
-  console.info(`[apiClient] Login URL   = ${buildApiUrl("/api/v1/auth/login")}`);
-  console.info(
-    `[apiClient] WS base     = ${API_ORIGIN.replace(/^https/, "wss").replace(/^http/, "ws")}/ws`,
-  );
+// Dev assertion: log the resolved origin once (deferred so window is available).
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  setTimeout(() => {
+    const o = getApiOrigin();
+    console.info(`[apiClient] API_ORIGIN = ${o}`);
+  }, 0);
 }
