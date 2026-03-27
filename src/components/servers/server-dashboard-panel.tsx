@@ -15,10 +15,12 @@ import {
 } from "react-icons/fi";
 import { TerminalSection } from "./terminal-section";
 import { HealthSection } from "./health-section";
+import { ScriptsSection } from "./scripts-section";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
   fetchSslForServer,
+  fetchAssignmentForServer,
   provisionSslApi,
   renewSslApi,
   fetchSslJobApi,
@@ -216,10 +218,22 @@ export function ServerDashboardPanel({
       try {
         const job = await fetchSslJobApi(jobId);
         setSslJob(job);
-        if (job.status === "COMPLETED" || job.status === "FAILED") {
-          // Refresh SSL cert status
-          const updated = await fetchSslForServer(server.id);
-          setSsl(updated);
+        if (job.status === "COMPLETED") {
+          // Refresh SSL cert status — may still 404 right after completion
+          try {
+            const updated = await fetchSslForServer(server.id);
+            if (updated) setSsl(updated);
+            else setSsl({ id: "", serverId: server.id, status: "ACTIVE", lastError: null, provisioningJobId: jobId });
+          } catch {
+            setSsl({ id: "", serverId: server.id, status: "ACTIVE", lastError: null, provisioningJobId: jobId });
+          }
+          return;
+        }
+        if (job.status === "FAILED") {
+          setSsl((prev) => prev
+            ? { ...prev, status: "FAILED", lastError: job.errorMessage, provisioningJobId: jobId }
+            : { id: "", serverId: server.id, status: "FAILED", lastError: job.errorMessage, provisioningJobId: jobId },
+          );
           return;
         }
         pollRef.current = setTimeout(poll, 2000);
@@ -234,19 +248,27 @@ export function ServerDashboardPanel({
     setSslLoading(true);
     try {
       const job = await provisionSslApi(server.id);
-      const updated = await fetchSslForServer(server.id);
-      setSsl(updated);
-      // Start polling the job if we got one back, or from the cert
-      const jobId = job?.id ?? updated?.provisioningJobId;
-      if (jobId) {
+      if (job) {
+        setSsl({
+          id: "",
+          serverId: server.id,
+          status: "PROVISIONING",
+          lastError: null,
+          provisioningJobId: job.id,
+        });
+        setSslJob(job);
         setShowLog(true);
         setSslExpanded(true);
-        pollSslJob(jobId);
+        pollSslJob(job.id);
       }
     } catch (err) {
-      // Show error inline — set a fake "FAILED" state so the user sees it
       if (err instanceof ApiError) {
-        setSsl((prev) => prev ? { ...prev, status: "FAILED", lastError: err.message } : prev);
+        // "already running" — show as PROVISIONING, not FAILED
+        const isAlreadyRunning = err.status === 422 || err.status === 409;
+        setSsl((prev) => prev
+          ? { ...prev, status: isAlreadyRunning ? "PROVISIONING" : "FAILED", lastError: err.message }
+          : { id: "", serverId: server.id, status: isAlreadyRunning ? "PROVISIONING" : "FAILED", lastError: err.message, provisioningJobId: null },
+        );
       }
     }
     setSslLoading(false);
@@ -296,17 +318,28 @@ export function ServerDashboardPanel({
     }
   }, [sslJob, pollSslJob]);
 
-  /* ---- load SSL on mount + auto-poll active jobs ---- */
+  /* ---- load SSL on mount (run once) ---- */
+  const pollSslJobRef = useRef(pollSslJob);
+  pollSslJobRef.current = pollSslJob;
+  const sslLoadedRef = useRef(false);
+
   useEffect(() => {
+    if (sslLoadedRef.current) return;
+    sslLoadedRef.current = true;
+    let cancelled = false;
+
     fetchSslForServer(server.id).then((cert) => {
+      if (cancelled || !cert) return;
       setSsl(cert);
-      if (cert && cert.provisioningJobId && (cert.status === "PROVISIONING" || cert.status === "PENDING")) {
+      if (cert.provisioningJobId && (cert.status === "PROVISIONING" || cert.status === "PENDING")) {
         setSslExpanded(true);
         setShowLog(true);
-        pollSslJob(cert.provisioningJobId);
+        pollSslJobRef.current(cert.provisioningJobId);
       }
-    }).catch(() => {});
-  }, [server.id, pollSslJob]);
+    }).catch(() => { /* 404 = no cert, that's fine */ });
+
+    return () => { cancelled = true; };
+  }, [server.id]);
 
   const handleDelete = useCallback(() => {
     if (window.confirm(`Delete server "${server.name}"? This cannot be undone.`)) {
@@ -541,6 +574,9 @@ export function ServerDashboardPanel({
           )}
         </div>
 
+        {/* ===== SCRIPTS (collapsible) ===== */}
+        <ScriptsSection serverId={server.id} />
+
         {/* ===== TERMINAL (collapsible) ===== */}
         <div className="border-b border-canvas-border">
           <button
@@ -673,7 +709,7 @@ function SslLogPanel({
       {/* Log output */}
       <pre
         ref={logRef}
-        className="max-h-[200px] overflow-y-auto bg-[#0d1117] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all"
+        className="max-h-50 overflow-y-auto bg-[#0d1117] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all"
       >
         {job.logs || "Waiting for logs..."}
       </pre>

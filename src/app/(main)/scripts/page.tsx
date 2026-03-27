@@ -158,7 +158,7 @@ export default function ScriptsPage() {
                         {s.scriptType}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-canvas-muted max-w-[250px] truncate">{s.description || "—"}</td>
+                    <td className="px-4 py-3 text-canvas-muted max-w-62.5 truncate">{s.description || "—"}</td>
                     <td className="px-4 py-3 text-xs text-canvas-muted whitespace-nowrap">{formatDate(s.createdAt)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="flex items-center gap-1">

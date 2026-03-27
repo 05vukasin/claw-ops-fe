@@ -5,3 +5,4 @@ export { ServerDashboardPanel } from "./server-dashboard-panel";
 export { TerminalSection } from "./terminal-section";
 export { FleetSummaryBar } from "./fleet-summary-bar";
 export { HealthSection } from "./health-section";
+export { ScriptsSection } from "./scripts-section";

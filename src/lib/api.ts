@@ -275,17 +275,42 @@ export async function fetchSslForServer(serverId: string): Promise<SslCertificat
   return res.json() as Promise<SslCertificate>;
 }
 
+/** Find the active domain assignment for a server (used for SSL provisioning). */
+export async function fetchAssignmentForServer(serverId: string): Promise<{ id: string; status: string; hostname: string } | null> {
+  const res = await apiFetch(`/api/v1/domain-assignments?resourceId=${encodeURIComponent(serverId)}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  const list = Array.isArray(data) ? data : (data.content ?? []);
+  return list.find((a: { status: string }) => a.status !== "RELEASED") ?? null;
+}
+
+/**
+ * Find the active domain assignment for a server, then provision SSL.
+ * The backend expects { assignmentId }, not { serverId }.
+ */
 export async function provisionSslApi(serverId: string): Promise<SslJob | null> {
+  // Step 1: find the server's active domain assignment
+  const assignRes = await apiFetch(`/api/v1/domain-assignments?resourceId=${encodeURIComponent(serverId)}`);
+  if (!assignRes.ok) {
+    throw new ApiError(assignRes.status, "Failed to find domain assignment for this server.");
+  }
+  const assignData = await assignRes.json();
+  const assignments = Array.isArray(assignData) ? assignData : (assignData.content ?? []);
+  const active = assignments.find((a: { status: string }) => a.status !== "RELEASED");
+  if (!active) {
+    throw new ApiError(400, "No active domain assignment found. Assign a domain first.");
+  }
+
+  // Step 2: provision SSL using the assignment ID
   const res = await apiFetch("/api/v1/ssl-certificates", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ serverId }),
+    body: JSON.stringify({ assignmentId: active.id }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: "SSL provisioning failed" }));
     throw new ApiError(res.status, err.message || "SSL provisioning failed");
   }
-  // May return a job object or empty
   try { return (await res.json()) as SslJob; } catch { return null; }
 }
 
@@ -490,6 +515,84 @@ export async function fetchScriptsApi(
   const res = await apiFetch(`/api/v1/deployment-scripts?page=${page}&size=${size}&sort=createdAt,desc`);
   if (!res.ok) throw new ApiError(res.status, "Failed to load scripts.");
   return res.json() as Promise<PageResponse<DeploymentScript>>;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Deployment Jobs                                                    */
+/* ------------------------------------------------------------------ */
+
+export type DeploymentJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
+export interface DeploymentJob {
+  id: string;
+  scriptId: string;
+  scriptName: string | null;
+  serverId: string;
+  status: DeploymentJobStatus;
+  interactive: boolean;
+  terminalSessionId: string | null;
+  logs: string | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export async function fetchDeploymentJobsApi(
+  serverId: string,
+  size = 50,
+): Promise<PageResponse<DeploymentJob>> {
+  const res = await apiFetch(`/api/v1/deployment-jobs?serverId=${encodeURIComponent(serverId)}&size=${size}&sort=createdAt,desc`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load deployment jobs.");
+  return res.json() as Promise<PageResponse<DeploymentJob>>;
+}
+
+export async function fetchDeploymentJobApi(id: string): Promise<DeploymentJob> {
+  const res = await apiFetch(`/api/v1/deployment-jobs/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load job details.");
+  return res.json() as Promise<DeploymentJob>;
+}
+
+export async function createDeploymentJobApi(body: {
+  scriptId: string;
+  serverId: string;
+  interactive: boolean;
+}): Promise<DeploymentJob> {
+  const res = await apiFetch("/api/v1/deployment-jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to run script" }));
+    throw new ApiError(res.status, err.message || "Failed to run script");
+  }
+  return res.json() as Promise<DeploymentJob>;
+}
+
+export async function stopDeploymentJobApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/deployment-jobs/${encodeURIComponent(id)}/stop`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to stop job" }));
+    throw new ApiError(res.status, err.message || "Failed to stop job");
+  }
+}
+
+export async function cancelDeploymentJobApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/deployment-jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to cancel job" }));
+    throw new ApiError(res.status, err.message || "Failed to cancel job");
+  }
+}
+
+export async function getDeploymentTerminalTokenApi(jobId: string): Promise<string> {
+  const res = await apiFetch(`/api/v1/deployment-jobs/${encodeURIComponent(jobId)}/terminal-token`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to get terminal token" }));
+    throw new ApiError(res.status, err.message || "Failed to get terminal token");
+  }
+  const data = (await res.json()) as { token: string };
+  return data.token;
 }
 
 export async function fetchScriptApi(id: string): Promise<DeploymentScript> {
