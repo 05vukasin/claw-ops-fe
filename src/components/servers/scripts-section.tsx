@@ -69,6 +69,7 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
   // Inline log viewer
   const [logJobId, setLogJobId] = useState<string | null>(null);
   const [logDetail, setLogDetail] = useState<DeploymentJob | null>(null);
+  const logPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Terminal popup
   const [termJobId, setTermJobId] = useState<string | null>(null);
@@ -117,12 +118,17 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
       if (isInteractive) {
         setTermJobId(job.id);
         setTermLabel(scriptName);
+      } else {
+        // Auto-open live logs for non-interactive jobs
+        setLogJobId(job.id);
+        setLogDetail(job);
+        startLogPolling(job.id);
       }
     } catch (err) {
       alert(err instanceof ApiError ? err.message : "Failed to run script");
     }
     setRunningScriptId(null);
-  }, [serverId, runningScriptId, loadJobs]);
+  }, [serverId, runningScriptId, loadJobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Stop / Cancel ── */
   const handleStop = useCallback(async (id: string) => {
@@ -145,16 +151,47 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
     }
   }, [loadJobs]);
 
+  /* ── Log polling for running jobs ── */
+  const stopLogPolling = useCallback(() => {
+    if (logPollRef.current) { clearTimeout(logPollRef.current); logPollRef.current = null; }
+  }, []);
+
+  const startLogPolling = useCallback((id: string) => {
+    stopLogPolling();
+    const poll = async () => {
+      try {
+        const detail = await fetchDeploymentJobApi(id);
+        setLogDetail(detail);
+        if (detail.status === "RUNNING" || detail.status === "PENDING") {
+          logPollRef.current = setTimeout(poll, 2000);
+        } else {
+          loadJobs(); // refresh job list when done
+        }
+      } catch {
+        logPollRef.current = setTimeout(poll, 3000);
+      }
+    };
+    poll();
+  }, [stopLogPolling, loadJobs]);
+
+  // Cleanup log polling on unmount
+  useEffect(() => { return stopLogPolling; }, [stopLogPolling]);
+
   /* ── View logs ── */
   const handleViewLogs = useCallback(async (id: string) => {
-    if (logJobId === id) { setLogJobId(null); setLogDetail(null); return; }
+    if (logJobId === id) { setLogJobId(null); setLogDetail(null); stopLogPolling(); return; }
     setLogJobId(id);
     setLogDetail(null);
+    stopLogPolling();
     try {
       const detail = await fetchDeploymentJobApi(id);
       setLogDetail(detail);
+      // If still active, start polling
+      if (detail.status === "RUNNING" || detail.status === "PENDING") {
+        startLogPolling(id);
+      }
     } catch { setLogDetail(null); }
-  }, [logJobId]);
+  }, [logJobId, stopLogPolling, startLogPolling]);
 
   /* ── Resume terminal ── */
   const handleResume = useCallback((job: DeploymentJob) => {
@@ -310,6 +347,11 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
                               <SmBtn onClick={() => handleStop(job.id)} icon={<FiSquare size={9} />} danger>Stop</SmBtn>
                               {job.interactive && (
                                 <SmBtn onClick={() => handleResume(job)} icon={<FiTerminal size={9} />}>Resume</SmBtn>
+                              )}
+                              {!job.interactive && (
+                                <SmBtn onClick={() => handleViewLogs(job.id)} icon={<FiFileText size={9} />}>
+                                  {logJobId === job.id ? "Hide" : "Logs"}
+                                </SmBtn>
                               )}
                             </>
                           )}
