@@ -2,7 +2,7 @@
 
 import { ThemeProvider } from "next-themes";
 import { useEffect, type ReactNode } from "react";
-import { registerServiceWorker } from "@/lib/register-sw";
+import { unregisterServiceWorker } from "@/lib/register-sw";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -10,7 +10,7 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   useEffect(() => {
-    registerServiceWorker();
+    unregisterServiceWorker();
   }, []);
 
   return (

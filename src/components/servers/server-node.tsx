@@ -93,7 +93,7 @@ export function ServerNode({
       style={{
         left: pos.x,
         top: pos.y,
-        zIndex: isActive ? 1 : 0,
+        zIndex: dragging ? 100 : isActive ? 1 : 0,
         transform: "translate(-50%, -50%)",
         touchAction: "none",
         cursor: dragging ? "grabbing" : "grab",

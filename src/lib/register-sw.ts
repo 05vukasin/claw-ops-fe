@@ -1,13 +1,21 @@
 /**
- * Registers the service worker for PWA support.
- * Call this once from a client component on mount.
+ * Unregisters any existing service worker and clears all caches.
+ * Called on app startup to clean up the old SW that caused stale content.
  */
-export function registerServiceWorker() {
-  if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch((err) => {
-        console.error("SW registration failed:", err);
-      });
+export function unregisterServiceWorker() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const reg of registrations) {
+      reg.unregister();
+    }
+  });
+
+  if ("caches" in window) {
+    caches.keys().then((keys) => {
+      for (const key of keys) {
+        caches.delete(key);
+      }
     });
   }
 }

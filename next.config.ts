@@ -9,6 +9,14 @@ const nextConfig: NextConfig = {
       source: "/(.*)",
       headers: [
         {
+          key: "Cache-Control",
+          value: "no-cache, no-store, must-revalidate",
+        },
+        {
+          key: "Pragma",
+          value: "no-cache",
+        },
+        {
           key: "Content-Security-Policy",
           value: [
             "default-src 'self'",
@@ -22,13 +30,6 @@ const nextConfig: NextConfig = {
             "frame-ancestors 'none'",
           ].join("; ").concat(";"),
         },
-      ],
-    },
-    {
-      source: "/sw.js",
-      headers: [
-        { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
-        { key: "Service-Worker-Allowed", value: "/" },
       ],
     },
   ],
