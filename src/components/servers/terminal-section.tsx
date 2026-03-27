@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getSessionTokenApi, ApiError } from "@/lib/api";
 import { getApiOrigin } from "@/lib/apiClient";
 
@@ -11,11 +11,15 @@ interface WsMessage {
   data: string;
 }
 
+export interface TerminalSectionHandle {
+  sendCommand: (cmd: string) => void;
+}
+
 interface TerminalSectionProps {
   serverId: string;
 }
 
-export function TerminalSection({ serverId }: TerminalSectionProps) {
+export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(function TerminalSection({ serverId }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,6 +27,15 @@ export function TerminalSection({ serverId }: TerminalSectionProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fitRef = useRef<any>(null);
   const [status, setStatus] = useState<TermStatus>("idle");
+
+  /* ── Expose sendCommand to parent via ref ── */
+  useImperativeHandle(ref, () => ({
+    sendCommand(cmd: string) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd }));
+      }
+    },
+  }), []);
 
   /* ── Initialize xterm.js ── */
   useEffect(() => {
@@ -187,6 +200,20 @@ export function TerminalSection({ serverId }: TerminalSectionProps) {
     setStatus("idle");
   }, []);
 
+  /* ── Auto-connect once xterm is ready ── */
+  const autoConnectedRef = useRef(false);
+  useEffect(() => {
+    if (autoConnectedRef.current) return;
+    const timer = setInterval(() => {
+      if (xtermRef.current && !autoConnectedRef.current) {
+        autoConnectedRef.current = true;
+        clearInterval(timer);
+        connect();
+      }
+    }, 100);
+    return () => clearInterval(timer);
+  }, [connect]);
+
   const statusDot =
     status === "connected" ? "bg-green-400"
     : status === "connecting" ? "bg-yellow-400 animate-pulse"
@@ -227,4 +254,4 @@ export function TerminalSection({ serverId }: TerminalSectionProps) {
       />
     </div>
   );
-}
+});

@@ -6,3 +6,4 @@ export { TerminalSection } from "./terminal-section";
 export { FleetSummaryBar } from "./fleet-summary-bar";
 export { HealthSection } from "./health-section";
 export { ScriptsSection } from "./scripts-section";
+export { FileBrowser } from "./file-browser";

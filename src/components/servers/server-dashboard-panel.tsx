@@ -13,9 +13,10 @@ import {
   FiRefreshCw,
   FiWifi,
 } from "react-icons/fi";
-import { TerminalSection } from "./terminal-section";
+import { TerminalSection, type TerminalSectionHandle } from "./terminal-section";
 import { HealthSection } from "./health-section";
 import { ScriptsSection } from "./scripts-section";
+import { FileBrowser } from "./file-browser";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
@@ -38,7 +39,7 @@ import {
 
 const PANEL_W = 480;
 const PANEL_MIN_W = 340;
-const PANEL_MAX_W = 860;
+const PANEL_MAX_W = 1400;
 const PANEL_W_KEY = "openclaw-panel-width";
 
 interface PanelPos {
@@ -105,6 +106,7 @@ export function ServerDashboardPanel({
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [sslExpanded, setSslExpanded] = useState(false);
   const [termExpanded, setTermExpanded] = useState(false);
+  const termRef = useRef<TerminalSectionHandle>(null);
 
   /* ---- test connection ---- */
   const [testState, setTestState] = useState<"idle" | "loading" | "ok" | "fail">("idle");
@@ -577,7 +579,7 @@ export function ServerDashboardPanel({
         {/* ===== SCRIPTS (collapsible) ===== */}
         <ScriptsSection serverId={server.id} />
 
-        {/* ===== TERMINAL (collapsible) ===== */}
+        {/* ===== TERMINAL + FILES (collapsible) ===== */}
         <div className="border-b border-canvas-border">
           <button
             type="button"
@@ -589,7 +591,17 @@ export function ServerDashboardPanel({
             {termExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
           </button>
 
-          {termExpanded && <TerminalSection serverId={server.id} />}
+          {termExpanded && (
+            <div className="border-t border-canvas-border">
+              {/* File browser on top */}
+              <FileBrowser
+                serverId={server.id}
+                onFileClick={(cmd) => termRef.current?.sendCommand(cmd)}
+              />
+              {/* Terminal on bottom */}
+              <TerminalSection ref={termRef} serverId={server.id} />
+            </div>
+          )}
         </div>
       </div>
     </div>

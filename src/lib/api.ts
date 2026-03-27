@@ -266,6 +266,28 @@ export async function getSessionTokenApi(serverId: string): Promise<string> {
 }
 
 /* ------------------------------------------------------------------ */
+/*  SFTP / File Browser                                                */
+/* ------------------------------------------------------------------ */
+
+export interface SftpFile {
+  name: string;
+  path: string;
+  directory: boolean;
+  size: number;
+}
+
+export async function listFilesApi(serverId: string, path: string): Promise<SftpFile[]> {
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/sftp/ls?path=${encodeURIComponent(path)}`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to list directory" }));
+    throw new ApiError(res.status, err.message || "Failed to list directory");
+  }
+  return res.json() as Promise<SftpFile[]>;
+}
+
+/* ------------------------------------------------------------------ */
 /*  SSL Certificates                                                   */
 /* ------------------------------------------------------------------ */
 
