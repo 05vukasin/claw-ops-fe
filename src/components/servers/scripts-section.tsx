@@ -523,28 +523,59 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
         const observer = new ResizeObserver(() => { fit.fit(); });
         observer.observe(containerRef.current!);
 
-        try {
-          const token = await getDeploymentTerminalTokenApi(jobId);
-          const wsBase = getApiOrigin().replace(/^https/, "wss").replace(/^http/, "ws");
-          const ws = new WebSocket(`${wsBase}/ws/terminal?token=${encodeURIComponent(token)}&mode=deployment&jobId=${encodeURIComponent(jobId)}`);
-          wsRef.current = ws;
+        // Small delay to let the backend job initialize before requesting terminal token
+        const connectWs = async (retries = 3): Promise<void> => {
+          try {
+            const token = await getDeploymentTerminalTokenApi(jobId);
+            if (cancelled) return;
+            const wsBase = getApiOrigin().replace(/^https/, "wss").replace(/^http/, "ws");
+            const cols = term.cols || 120;
+            const rows = term.rows || 40;
+            const ws = new WebSocket(`${wsBase}/ws/terminal?token=${encodeURIComponent(token)}&mode=deployment&jobId=${encodeURIComponent(jobId)}&cols=${cols}&rows=${rows}`);
+            wsRef.current = ws;
 
-          ws.onopen = () => { if (!cancelled) { setStatus("connected"); term.focus(); } };
+            ws.onopen = () => {
+              if (!cancelled) {
+                setStatus("connected");
+                term.focus();
+              }
+            };
 
-          ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === "OUTPUT") term.write(msg.data);
-            else if (msg.type === "ERROR") term.writeln(`\r\n\x1b[31m[ERROR] ${msg.data}\x1b[0m`);
-            else if (msg.type === "DEPLOYMENT_COMPLETE") { term.writeln("\r\n\x1b[32m--- Script completed ---\x1b[0m"); if (!cancelled) setStatus("completed"); }
-            else if (msg.type === "CLOSED") { term.writeln("\r\n\x1b[90m--- Session ended ---\x1b[0m"); if (!cancelled) setStatus("closed"); }
-          };
+            ws.onmessage = (event) => {
+              const msg = JSON.parse(event.data);
+              if (msg.type === "OUTPUT") {
+                term.write(msg.data);
+              } else if (msg.type === "ERROR") {
+                term.writeln(`\r\n\x1b[31m[ERROR] ${msg.data}\x1b[0m`);
+              } else if (msg.type === "DEPLOYMENT_COMPLETE") {
+                term.writeln("\r\n\x1b[32m--- Script completed ---\x1b[0m");
+                if (!cancelled) setStatus("completed");
+              } else if (msg.type === "CLOSED") {
+                term.writeln("\r\n\x1b[90m--- Session ended ---\x1b[0m");
+                if (!cancelled) setStatus("closed");
+              }
+            };
 
-          ws.onclose = () => { if (!cancelled) setStatus("closed"); };
-          ws.onerror = () => { term.writeln("\r\n\x1b[31m--- Connection error ---\x1b[0m"); if (!cancelled) setStatus("failed"); };
-        } catch (err) {
-          term.writeln(`\r\n\x1b[31m[ERROR] ${err instanceof Error ? err.message : "Connection failed"}\x1b[0m`);
-          if (!cancelled) setStatus("failed");
-        }
+            ws.onclose = () => {
+              if (!cancelled) setStatus("closed");
+            };
+
+            ws.onerror = () => {
+              term.writeln("\r\n\x1b[31m--- Connection error ---\x1b[0m");
+              if (!cancelled) setStatus("failed");
+            };
+          } catch (err) {
+            if (retries > 0 && !cancelled) {
+              term.writeln(`\x1b[90mWaiting for job to start...\x1b[0m\r\n`);
+              await new Promise((r) => setTimeout(r, 1500));
+              if (!cancelled) return connectWs(retries - 1);
+            }
+            term.writeln(`\r\n\x1b[31m[ERROR] ${err instanceof Error ? err.message : "Connection failed"}\x1b[0m`);
+            if (!cancelled) setStatus("failed");
+          }
+        };
+
+        await connectWs();
 
         setTimeout(() => { if (!cancelled) fit.fit(); }, 100);
       }).catch(() => {});
