@@ -70,7 +70,12 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
 
   const handleSelect = useCallback(
     (id: string) => {
-      if (openIds.includes(id)) return;
+      if (openIds.includes(id)) {
+        // Already open — move to end so workspace-panel brings it to front
+        const reordered = [...openIds.filter((x) => x !== id), id];
+        router.push(`/?servers=${reordered.join(",")}`);
+        return;
+      }
       const newIds = [...openIds, id];
       router.push(`/?servers=${newIds.join(",")}`);
     },

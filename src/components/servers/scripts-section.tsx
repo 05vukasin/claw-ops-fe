@@ -26,6 +26,7 @@ import {
   type DeploymentJob,
 } from "@/lib/api";
 import { getApiOrigin } from "@/lib/apiClient";
+import { TERMINAL_OPTIONS, loadTerminalAddons } from "@/lib/terminal-config";
 
 /* ------------------------------------------------------------------ */
 /*  Status badge styles                                                */
@@ -469,32 +470,15 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
       ]).then(async ([{ Terminal }, { FitAddon }]) => {
         if (cancelled || !containerRef.current || xtermRef.current) return;
 
-        const term = new Terminal({
-          cursorBlink: true,
-          cursorStyle: "bar",
-          fontSize: 13,
-          fontFamily: "'Cascadia Code', 'Fira Code', Consolas, Monaco, monospace",
-          lineHeight: 1.4,
-          scrollback: 5000,
-          theme: {
-            background: "#0d1117",
-            foreground: "#c9d1d9",
-            cursor: "#58a6ff",
-            selectionBackground: "#264f78",
-            black: "#484f58", red: "#ff7b72", green: "#3fb950", yellow: "#d29922",
-            blue: "#58a6ff", magenta: "#bc8cff", cyan: "#39c5cf", white: "#b1bac4",
-            brightBlack: "#6e7681", brightRed: "#ffa198", brightGreen: "#56d364",
-            brightYellow: "#e3b341", brightBlue: "#79c0ff", brightMagenta: "#d2a8ff",
-            brightCyan: "#56d4dd", brightWhite: "#f0f6fc",
-          },
-        });
-
+        const term = new Terminal(TERMINAL_OPTIONS);
         const fit = new FitAddon();
         term.loadAddon(fit);
         term.open(containerRef.current!);
         fit.fit();
         xtermRef.current = term;
         fitRef.current = fit;
+
+        loadTerminalAddons(term);
 
         term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
           if (e.type === "keydown" && e.ctrlKey && e.key === "c" && term.hasSelection()) {
@@ -622,7 +606,7 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
         {/* xterm */}
         <div
           ref={containerRef}
-          style={{ height: 400, padding: "4px 6px", background: "#0d1117" }}
+          style={{ height: 400, padding: "0 6px 4px", background: "#0d1117" }}
         />
 
         {/* Footer */}

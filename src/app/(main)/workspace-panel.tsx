@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ServerDashboardPanel, ServerModal } from "@/components/servers";
 import { useServers } from "@/lib/use-servers";
@@ -36,6 +36,12 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
       return [...without, id];
     });
   }, []);
+
+  // Auto-focus the last panel in the URL (most recently clicked node)
+  useEffect(() => {
+    const lastId = openIds[openIds.length - 1];
+    if (lastId) handleFocus(lastId);
+  }, [openIds, handleFocus]);
 
   const getZIndex = useCallback((id: string) => {
     const idx = focusOrder.indexOf(id);

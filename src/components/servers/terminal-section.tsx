@@ -3,6 +3,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getSessionTokenApi, ApiError } from "@/lib/api";
 import { getApiOrigin } from "@/lib/apiClient";
+import { TERMINAL_OPTIONS, loadTerminalAddons } from "@/lib/terminal-config";
 
 type TermStatus = "idle" | "connecting" | "connected" | "error" | "closed";
 
@@ -40,10 +41,8 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
   /* ── Initialize xterm.js ── */
   useEffect(() => {
     if (!containerRef.current) return;
-
     let cancelled = false;
 
-    // Small delay to ensure the container is laid out (collapsible section)
     const initTimer = setTimeout(() => {
       if (cancelled || !containerRef.current) return;
 
@@ -53,79 +52,50 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       ]).then(([{ Terminal }, { FitAddon }]) => {
         if (cancelled || !containerRef.current || xtermRef.current) return;
 
-        const term = new Terminal({
-        cursorBlink: true,
-        cursorStyle: "bar",
-        fontSize: 13,
-        fontFamily: "'Cascadia Code', 'Fira Code', Consolas, Monaco, monospace",
-        lineHeight: 1.4,
-        scrollback: 5000,
-        theme: {
-          background: "#0d1117",
-          foreground: "#c9d1d9",
-          cursor: "#58a6ff",
-          selectionBackground: "#264f78",
-          black: "#484f58",
-          red: "#ff7b72",
-          green: "#3fb950",
-          yellow: "#d29922",
-          blue: "#58a6ff",
-          magenta: "#bc8cff",
-          cyan: "#39c5cf",
-          white: "#b1bac4",
-          brightBlack: "#6e7681",
-          brightRed: "#ffa198",
-          brightGreen: "#56d364",
-          brightYellow: "#e3b341",
-          brightBlue: "#79c0ff",
-          brightMagenta: "#d2a8ff",
-          brightCyan: "#56d4dd",
-          brightWhite: "#f0f6fc",
-        },
-      });
+        const term = new Terminal(TERMINAL_OPTIONS);
+        const fit = new FitAddon();
+        term.loadAddon(fit);
+        term.open(containerRef.current!);
+        fit.fit();
 
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.open(containerRef.current);
-      fit.fit();
+        xtermRef.current = term;
+        fitRef.current = fit;
 
-      xtermRef.current = term;
-      fitRef.current = fit;
+        // Load performance + UX addons
+        loadTerminalAddons(term);
 
-      // Ctrl+C: copy selected text, else send SIGINT
-      term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-        if (e.type === "keydown" && e.ctrlKey && e.key === "c" && term.hasSelection()) {
-          navigator.clipboard.writeText(term.getSelection()).catch(() => {});
-          term.clearSelection();
-          return false; // prevent xterm from handling it
-        }
-        return true;
-      });
+        // Ctrl+C: copy selected text, else send SIGINT
+        term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+          if (e.type === "keydown" && e.ctrlKey && e.key === "c" && term.hasSelection()) {
+            navigator.clipboard.writeText(term.getSelection()).catch(() => {});
+            term.clearSelection();
+            return false;
+          }
+          return true;
+        });
 
-      // Send typed data to WebSocket
-      term.onData((data: string) => {
-        wsRef.current?.send(JSON.stringify({ type: "INPUT", data }));
-      });
+        // Send typed data to WebSocket
+        term.onData((data: string) => {
+          wsRef.current?.send(JSON.stringify({ type: "INPUT", data }));
+        });
 
-      // Right-click paste
-      containerRef.current.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        navigator.clipboard.readText()
-          .then((text) => {
-            if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: "INPUT", data: text }));
-            }
-          })
-          .catch(() => {});
-      });
+        // Right-click paste
+        containerRef.current!.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          navigator.clipboard.readText()
+            .then((text) => {
+              if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: "INPUT", data: text }));
+              }
+            })
+            .catch(() => {});
+        });
 
-      // Keep terminal sized to container
-      const observer = new ResizeObserver(() => { fit.fit(); });
-      observer.observe(containerRef.current);
+        // Keep terminal sized to container
+        const observer = new ResizeObserver(() => { fit.fit(); });
+        observer.observe(containerRef.current!);
 
         term.writeln("\x1b[90mTerminal ready. Click Connect to start.\x1b[0m");
-
-        // Fit again after a short delay to catch any layout shifts
         setTimeout(() => { if (!cancelled) fit.fit(); }, 100);
       }).catch(() => {});
     }, 50);
@@ -228,8 +198,8 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
     : "Closed";
 
   return (
-    <div className="flex flex-1 flex-col min-h-0">
-      {/* Status bar */}
+    <div className="flex flex-1 flex-col min-h-0 bg-[#0d1117]">
+      {/* Status bar — seamless with terminal bg */}
       <div className="flex shrink-0 items-center gap-2 bg-[#161b22] px-4 py-1.5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />
         <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">{statusLabel}</span>
@@ -246,11 +216,11 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         )}
       </div>
 
-      {/* xterm.js container — flex-1 fills available space */}
+      {/* xterm.js container — fills remaining space, no top padding to prevent gap */}
       <div
         ref={containerRef}
-        className="flex-1 min-h-0 bg-[#0d1117]"
-        style={{ padding: "4px 6px" }}
+        className="flex-1 min-h-0"
+        style={{ padding: "0 6px 4px", background: "#0d1117" }}
       />
     </div>
   );

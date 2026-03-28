@@ -626,9 +626,30 @@ export function ServerDashboardPanel({
           <button
             type="button"
             onClick={() => {
-              setTermExpanded((p) => {
-                if (p) setPanelH(null); // reset height on collapse
-                return !p;
+              setTermExpanded((prev) => {
+                if (prev) {
+                  setPanelH(null);
+                } else {
+                  // Expanding — smoothly nudge panel up if it would overflow
+                  const expandedH = panelH ?? window.innerHeight * 0.85;
+                  const maxY = window.innerHeight - expandedH - 8;
+                  if (posRef.current.y > maxY && maxY > 0) {
+                    const startY = posRef.current.y;
+                    const targetY = Math.max(8, maxY);
+                    const duration = 400;
+                    const startTime = performance.now();
+                    const ease = (t: number) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+                    function animate(now: number) {
+                      const t = Math.min((now - startTime) / duration, 1);
+                      const y = startY + (targetY - startY) * ease(t);
+                      setPos((p) => ({ ...p, y }));
+                      if (t < 1) requestAnimationFrame(animate);
+                      else saveNum(panelKey(server.id, "y"), targetY);
+                    }
+                    requestAnimationFrame(animate);
+                  }
+                }
+                return !prev;
               });
             }}
             className="flex w-full shrink-0 items-center gap-2 border-y border-canvas-border px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
