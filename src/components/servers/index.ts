@@ -7,3 +7,4 @@ export { FleetSummaryBar } from "./fleet-summary-bar";
 export { HealthSection } from "./health-section";
 export { ScriptsSection } from "./scripts-section";
 export { FileBrowser } from "./file-browser";
+export { AgentNode } from "./agent-node";

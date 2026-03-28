@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Z_INDEX } from "@/lib/z-index";
 import { ServerNode } from "@/components/servers/server-node";
+import { AgentNode } from "@/components/servers/agent-node";
 import type { ServerWithUI } from "@/lib/use-servers";
+import type { AgentWithUI } from "@/lib/use-agents";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
@@ -37,10 +39,12 @@ function saveCamera(cam: Camera) {
 
 interface CanvasStageProps {
   servers: ServerWithUI[];
+  agents?: AgentWithUI[];
   onMoveServer: (id: string, x: number, y: number) => void;
+  onMoveAgent?: (serverId: string, name: string, offsetX: number, offsetY: number) => void;
 }
 
-export function CanvasStage({ servers, onMoveServer }: CanvasStageProps) {
+export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }: CanvasStageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Multi-panel: read comma-separated servers param
@@ -75,14 +79,61 @@ export function CanvasStage({ servers, onMoveServer }: CanvasStageProps) {
 
   const handleFocus = useCallback(() => {}, []);
 
+  // Server lookup for agent positioning
+  const serverMap = useMemo(() => new Map(servers.map((s) => [s.id, s])), [servers]);
+
+  // Live server positions (updated during drag for smooth agent following)
+  const [livePos, setLivePos] = useState<Record<string, { x: number; y: number }>>({});
+
+  const handleMove = useCallback((id: string, x: number, y: number) => {
+    setLivePos((prev) => ({ ...prev, [id]: { x, y } }));
+  }, []);
+
   // Convert a node's world-space move into camera-adjusted coordinates
   const handleMoveEnd = useCallback(
     (id: string, screenX: number, screenY: number) => {
-      // screenX/Y are relative to the transformed container, so they're already world coords
+      setLivePos((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       onMoveServer(id, screenX, screenY);
     },
     [onMoveServer],
   );
+
+  // Get live server position (during drag) or stored position
+  const getServerPos = useCallback((id: string) => {
+    const live = livePos[id];
+    if (live) return live;
+    const s = serverMap.get(id);
+    return s ? { x: s.x, y: s.y } : null;
+  }, [livePos, serverMap]);
+
+  // Live agent spring positions for connector lines (updated every animation frame)
+  const agentLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
+
+  const handleSpringPos = useCallback((serverId: string, name: string, x: number, y: number) => {
+    const key = `${serverId}::${name}`;
+    const line = agentLineRefs.current.get(key);
+    if (line) {
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y2", String(y));
+    }
+  }, []);
+
+  // Update connector x1/y1 when server positions change (live drag or stored)
+  useEffect(() => {
+    for (const a of agents) {
+      const sp = livePos[a.serverId] ?? (() => { const s = serverMap.get(a.serverId); return s ? { x: s.x, y: s.y } : null; })();
+      if (!sp) continue;
+      const line = agentLineRefs.current.get(`${a.serverId}::${a.name}`);
+      if (line) {
+        line.setAttribute("x1", String(sp.x));
+        line.setAttribute("y1", String(sp.y));
+      }
+    }
+  });
 
   /* ── Zoom (wheel) ── */
   useEffect(() => {
@@ -119,7 +170,7 @@ export function CanvasStage({ servers, onMoveServer }: CanvasStageProps) {
     if (e.button !== PAN_BUTTON) return;
     const target = e.target as HTMLElement;
     // If the click hit a server node, don't pan
-    if (target.closest("[data-server-node]")) return;
+    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]")) return;
 
     panning.current = true;
     panStart.current = {
@@ -175,12 +226,61 @@ export function CanvasStage({ servers, onMoveServer }: CanvasStageProps) {
           height: 1,
         }}
       >
+        {/* Connector lines SVG */}
+        <svg
+          className="pointer-events-none absolute text-canvas-muted"
+          style={{ left: 0, top: 0, overflow: "visible" }}
+          width="1"
+          height="1"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {agents.map((a) => {
+            const sp = getServerPos(a.serverId);
+            if (!sp) return null;
+            const key = `${a.serverId}::${a.name}`;
+            return (
+              <line
+                key={`line-${key}`}
+                ref={(el) => { if (el) agentLineRefs.current.set(key, el); else agentLineRefs.current.delete(key); }}
+                x1={sp.x}
+                y1={sp.y}
+                x2={sp.x + a.offsetX}
+                y2={sp.y + a.offsetY}
+                stroke="currentColor"
+                strokeOpacity={0.3}
+                strokeWidth={3}
+                strokeDasharray="0 10"
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </svg>
+
+        {/* Agent nodes */}
+        {agents.map((a) => {
+          const sp = getServerPos(a.serverId);
+          if (!sp) return null;
+          return (
+            <AgentNode
+              key={`agent-${a.serverId}::${a.name}`}
+              agent={a}
+              serverX={sp.x}
+              serverY={sp.y}
+              onMoveEnd={onMoveAgent ?? (() => {})}
+              onSpringPos={handleSpringPos}
+              zoom={camera.zoom}
+            />
+          );
+        })}
+
+        {/* Server nodes */}
         {servers.map((s) => (
           <ServerNode
             key={s.id}
             server={s}
             isActive={openIds.includes(s.id)}
             onMoveEnd={handleMoveEnd}
+            onMove={handleMove}
             onFocus={handleFocus}
             onSelect={handleSelect}
             zoom={camera.zoom}

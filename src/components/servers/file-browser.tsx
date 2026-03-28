@@ -136,7 +136,7 @@ export function FileBrowser({ serverId, onFileClick, height }: FileBrowserProps)
       </div>
 
       {/* File list */}
-      <div className={height != null ? "flex-1 min-h-0 overflow-y-auto" : "max-h-[180px] overflow-y-auto"}>
+      <div className={height != null ? "flex-1 min-h-0 overflow-y-auto" : "max-h-45 overflow-y-auto"}>
         {loading ? (
           <p className="px-5 py-3 text-center text-[10px] text-canvas-muted">Loading...</p>
         ) : error ? (

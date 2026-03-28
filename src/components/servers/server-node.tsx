@@ -17,6 +17,7 @@ interface ServerNodeProps {
   server: ServerWithUI;
   isActive: boolean;
   onMoveEnd: (id: string, x: number, y: number) => void;
+  onMove?: (id: string, x: number, y: number) => void;
   onFocus: (id: string) => void;
   onSelect: (id: string) => void;
   zoom: number;
@@ -26,6 +27,7 @@ export function ServerNode({
   server,
   isActive,
   onMoveEnd,
+  onMove,
   onFocus,
   onSelect,
   zoom,
@@ -60,9 +62,12 @@ export function ServerNode({
         didDrag.current = true;
       }
       if (!didDrag.current) return;
-      setPos({ x: origin.current.ox + dx, y: origin.current.oy + dy });
+      const nx = origin.current.ox + dx;
+      const ny = origin.current.oy + dy;
+      setPos({ x: nx, y: ny });
+      onMove?.(server.id, nx, ny);
     },
-    [dragging, zoom],
+    [dragging, zoom, server.id, onMove],
   );
 
   const handlePointerUp = useCallback(

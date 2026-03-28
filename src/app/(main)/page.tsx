@@ -4,15 +4,17 @@ import { Suspense } from "react";
 import { CanvasStage } from "@/components/canvas";
 import { FleetSummaryBar } from "@/components/servers";
 import { useServers } from "@/lib/use-servers";
+import { useAgents } from "@/lib/use-agents";
 import { WorkspacePanel } from "./workspace-panel";
 import { NewServerButton } from "./new-server-button";
 
 export default function ServersPage() {
   const { servers, moveServer, refresh } = useServers();
+  const { agents, moveAgent } = useAgents(servers);
 
   return (
     <>
-      <CanvasStage servers={servers} onMoveServer={moveServer} />
+      <CanvasStage servers={servers} agents={agents} onMoveServer={moveServer} onMoveAgent={moveAgent} />
       <FleetSummaryBar />
 
       {servers.length === 0 && (
