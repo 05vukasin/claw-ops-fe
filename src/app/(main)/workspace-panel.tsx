@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ServerDashboardPanel, ServerModal } from "@/components/servers";
 import { useServers } from "@/lib/use-servers";
-import { useState } from "react";
+import { Z_INDEX } from "@/lib/z-index";
 import type { Server } from "@/lib/api";
 
 interface WorkspacePanelProps {
@@ -27,6 +27,22 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     [openIds, servers],
   );
 
+  // Focus order — last ID in array = highest z-index (topmost panel)
+  const [focusOrder, setFocusOrder] = useState<string[]>([]);
+
+  const handleFocus = useCallback((id: string) => {
+    setFocusOrder((prev) => {
+      const without = prev.filter((sid) => sid !== id);
+      return [...without, id];
+    });
+  }, []);
+
+  const getZIndex = useCallback((id: string) => {
+    const idx = focusOrder.indexOf(id);
+    // Base z-index + position in focus stack
+    return Z_INDEX.DROPDOWN + (idx >= 0 ? idx + 1 : 0);
+  }, [focusOrder]);
+
   // Edit modal
   const [editServer, setEditServer] = useState<Server | null>(null);
 
@@ -39,10 +55,12 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   }, [router]);
 
   const handleClose = useCallback((id: string) => {
+    setFocusOrder((prev) => prev.filter((sid) => sid !== id));
     updateUrl(openIds.filter((sid) => sid !== id));
   }, [openIds, updateUrl]);
 
   const handleDelete = useCallback((id: string) => {
+    setFocusOrder((prev) => prev.filter((sid) => sid !== id));
     removeServer(id);
     updateUrl(openIds.filter((sid) => sid !== id));
   }, [openIds, removeServer, updateUrl]);
@@ -71,6 +89,8 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           onClose={() => handleClose(server.id)}
           onDelete={(id: string) => handleDelete(id)}
           onEdit={(s: Server) => handleEdit(s)}
+          zIndex={getZIndex(server.id)}
+          onFocus={() => handleFocus(server.id)}
         />
       ))}
 

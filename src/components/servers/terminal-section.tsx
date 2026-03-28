@@ -230,7 +230,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
   return (
     <div className="flex flex-1 flex-col min-h-0">
       {/* Status bar */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-[#1b2331] bg-[#0d1117] px-4 py-1.5">
+      <div className="flex shrink-0 items-center gap-2 bg-[#161b22] px-4 py-1.5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />
         <span className="min-w-0 flex-1 truncate text-[11px] text-gray-400">{statusLabel}</span>
 
@@ -250,7 +250,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       <div
         ref={containerRef}
         className="flex-1 min-h-0 bg-[#0d1117]"
-        style={{ padding: "6px 2px" }}
+        style={{ padding: "4px 6px" }}
       />
     </div>
   );

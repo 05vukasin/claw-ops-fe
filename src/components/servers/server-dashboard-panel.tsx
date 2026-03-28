@@ -83,6 +83,8 @@ interface ServerDashboardPanelProps {
   onClose: () => void;
   onDelete: (id: string) => void;
   onEdit: (server: Server) => void;
+  zIndex?: number;
+  onFocus?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -94,6 +96,8 @@ export function ServerDashboardPanel({
   onClose,
   onDelete,
   onEdit,
+  zIndex,
+  onFocus,
 }: ServerDashboardPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -434,7 +438,7 @@ export function ServerDashboardPanel({
       aria-label={`Dashboard for ${server.name}`}
       className="fixed flex flex-col overflow-hidden rounded-lg border border-canvas-border bg-canvas-bg shadow-2xl"
       style={{
-        zIndex: Z_INDEX.DROPDOWN,
+        zIndex: zIndex ?? Z_INDEX.DROPDOWN,
         left: pos.x,
         top: pos.y,
         width: panelW,
@@ -444,7 +448,7 @@ export function ServerDashboardPanel({
           ? { height: panelH ?? "85vh" }
           : { maxHeight: "85vh" }),
       }}
-      onPointerDown={handlePointerDown}
+      onPointerDown={(e) => { onFocus?.(); handlePointerDown(e); }}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
@@ -648,7 +652,7 @@ export function ServerDashboardPanel({
 
               {/* Draggable split divider */}
               <div
-                className="h-1 shrink-0 cursor-row-resize border-y border-canvas-border bg-canvas-surface-hover/50 transition-colors hover:bg-blue-500/30 active:bg-blue-500/50"
+                className="h-1 shrink-0 cursor-row-resize bg-[#21262d] transition-colors hover:bg-blue-500/30 active:bg-blue-500/50"
                 onPointerDown={handleSplitResizeStart}
               />
 

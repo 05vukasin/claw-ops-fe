@@ -257,7 +257,7 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
             </div>
 
             {/* Script list */}
-            <div className="max-h-[180px] overflow-y-auto">
+            <div className="max-h-45 overflow-y-auto">
               {filtered.length === 0 ? (
                 <p className="px-5 py-3 text-center text-[10px] text-canvas-muted">
                   {scripts.length === 0 ? "No scripts available" : "No matches"}
@@ -313,7 +313,7 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
             </div>
 
             {/* Job list */}
-            <div className="max-h-[220px] overflow-y-auto">
+            <div className="max-h-55 overflow-y-auto">
               {jobs.length === 0 ? (
                 <p className="px-5 py-3 text-center text-[10px] text-canvas-muted">No jobs yet</p>
               ) : (
@@ -376,7 +376,7 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
                                   {logDetail.errorMessage}
                                 </div>
                               )}
-                              <pre className="max-h-[200px] overflow-y-auto bg-[#0d1117] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all">
+                              <pre className="max-h-50 overflow-y-auto bg-[#0d1117] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all">
                                 {logDetail.logs || "(no output)"}
                               </pre>
                             </div>
@@ -609,10 +609,10 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
   const isRunning = status === "connected" || status === "connecting";
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px]">
       <div className="mx-4 flex w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-canvas-border bg-canvas-bg shadow-2xl">
         {/* Header */}
-        <div className="flex items-center gap-3 border-b border-canvas-border bg-[#161b22] px-4 py-2.5">
+        <div className="flex items-center gap-3 border-b border-[#21262d] bg-[#161b22] px-4 py-2.5">
           <FiTerminal size={14} className="shrink-0 text-gray-400" />
           <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#c9d1d9]">{label}</span>
           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />
@@ -622,7 +622,7 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
         {/* xterm */}
         <div
           ref={containerRef}
-          style={{ height: 400, padding: "4px 0 4px 6px", background: "#0d1117" }}
+          style={{ height: 400, padding: "4px 6px", background: "#0d1117" }}
         />
 
         {/* Footer */}
