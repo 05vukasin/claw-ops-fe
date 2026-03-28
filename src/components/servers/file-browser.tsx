@@ -30,13 +30,15 @@ function formatSize(bytes: number): string {
 interface FileBrowserProps {
   serverId: string;
   onFileClick?: (command: string) => void;
+  /** When provided, component uses this fixed height and flex layout */
+  height?: number;
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component — renders inline (no collapsible wrapper)                */
 /* ------------------------------------------------------------------ */
 
-export function FileBrowser({ serverId, onFileClick }: FileBrowserProps) {
+export function FileBrowser({ serverId, onFileClick, height }: FileBrowserProps) {
   const [currentPath, setCurrentPath] = useState("~");
   const [files, setFiles] = useState<SftpFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -97,9 +99,12 @@ export function FileBrowser({ serverId, onFileClick }: FileBrowserProps) {
       }, [{ label: "/", path: "/" }]);
 
   return (
-    <div className="border-b border-canvas-border">
+    <div
+      className={height != null ? "flex flex-col overflow-hidden" : "border-b border-canvas-border"}
+      style={height != null ? { height } : undefined}
+    >
       {/* Header + actions */}
-      <div className="flex items-center gap-2 border-b border-canvas-border px-4 py-1.5">
+      <div className="flex shrink-0 items-center gap-2 border-b border-canvas-border px-4 py-1.5">
         <FiFolder size={11} className="shrink-0 text-canvas-muted" />
         <span className="text-[10px] font-semibold uppercase tracking-wider text-canvas-muted">Files</span>
         <span className="flex-1" />
@@ -115,7 +120,7 @@ export function FileBrowser({ serverId, onFileClick }: FileBrowserProps) {
       </div>
 
       {/* Breadcrumb */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-canvas-border bg-canvas-surface-hover/30 px-4 py-1 font-mono text-[10px] text-canvas-muted">
+      <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-canvas-border bg-canvas-surface-hover/30 px-4 py-1 font-mono text-[10px] text-canvas-muted">
         {breadcrumbs.map((seg, i) => (
           <span key={seg.path} className="flex items-center gap-0.5">
             {i > 0 && <span className="opacity-40">/</span>}
@@ -131,7 +136,7 @@ export function FileBrowser({ serverId, onFileClick }: FileBrowserProps) {
       </div>
 
       {/* File list */}
-      <div className="max-h-[180px] overflow-y-auto">
+      <div className={height != null ? "flex-1 min-h-0 overflow-y-auto" : "max-h-[180px] overflow-y-auto"}>
         {loading ? (
           <p className="px-5 py-3 text-center text-[10px] text-canvas-muted">Loading...</p>
         ) : error ? (

@@ -43,7 +43,10 @@ interface CanvasStageProps {
 export function CanvasStage({ servers, onMoveServer }: CanvasStageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeId = searchParams.get("server");
+  // Multi-panel: read comma-separated servers param
+  const serversParam = searchParams.get("servers") ?? searchParams.get("server") ?? "";
+  const openIds = serversParam.split(",").filter(Boolean);
+  const activeId = openIds.length > 0 ? openIds[openIds.length - 1] : null;
 
   const [camera, setCamera] = useState<Camera>(loadCamera);
   const cameraRef = useRef(camera);
@@ -63,9 +66,11 @@ export function CanvasStage({ servers, onMoveServer }: CanvasStageProps) {
 
   const handleSelect = useCallback(
     (id: string) => {
-      router.push(`/?server=${id}`);
+      if (openIds.includes(id)) return;
+      const newIds = [...openIds, id];
+      router.push(`/?servers=${newIds.join(",")}`);
     },
-    [router],
+    [router, openIds],
   );
 
   const handleFocus = useCallback(() => {}, []);
@@ -174,7 +179,7 @@ export function CanvasStage({ servers, onMoveServer }: CanvasStageProps) {
           <ServerNode
             key={s.id}
             server={s}
-            isActive={s.id === activeId}
+            isActive={openIds.includes(s.id)}
             onMoveEnd={handleMoveEnd}
             onFocus={handleFocus}
             onSelect={handleSelect}

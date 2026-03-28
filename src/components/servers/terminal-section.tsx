@@ -228,7 +228,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
     : "Closed";
 
   return (
-    <div className="flex flex-col border-t border-canvas-border">
+    <div className="flex flex-1 flex-col min-h-0">
       {/* Status bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[#1b2331] bg-[#0d1117] px-4 py-1.5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />
@@ -246,11 +246,11 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         )}
       </div>
 
-      {/* xterm.js container */}
+      {/* xterm.js container — flex-1 fills available space */}
       <div
         ref={containerRef}
-        className="bg-[#0d1117]"
-        style={{ height: 280, padding: "6px 2px" }}
+        className="flex-1 min-h-0 bg-[#0d1117]"
+        style={{ padding: "6px 2px" }}
       />
     </div>
   );

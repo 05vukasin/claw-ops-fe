@@ -40,7 +40,17 @@ import {
 const PANEL_W = 480;
 const PANEL_MIN_W = 340;
 const PANEL_MAX_W = 1400;
-const PANEL_W_KEY = "openclaw-panel-width";
+
+/** Per-server localStorage helpers */
+function panelKey(serverId: string, suffix: string) {
+  return `openclaw-panel-${serverId}-${suffix}`;
+}
+function loadNum(key: string, fallback: number): number {
+  try { const v = localStorage.getItem(key); return v ? parseInt(v, 10) || fallback : fallback; } catch { return fallback; }
+}
+function saveNum(key: string, val: number) {
+  try { localStorage.setItem(key, String(Math.round(val))); } catch {}
+}
 
 interface PanelPos {
   x: number;
@@ -87,18 +97,16 @@ export function ServerDashboardPanel({
 }: ServerDashboardPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  /* ---- position ---- */
-  const [pos, setPos] = useState<PanelPos>(DEFAULT_POS);
+  /* ---- position (per-server) ---- */
+  const [pos, setPos] = useState<PanelPos>(() => ({
+    x: loadNum(panelKey(server.id, "x"), DEFAULT_POS.x),
+    y: loadNum(panelKey(server.id, "y"), DEFAULT_POS.y),
+  }));
   const posRef = useRef(pos);
   posRef.current = pos;
 
-  /* ---- panel width ---- */
-  const [panelW, setPanelW] = useState<number>(() => {
-    try {
-      const v = localStorage.getItem(PANEL_W_KEY);
-      return v ? parseInt(v, 10) || PANEL_W : PANEL_W;
-    } catch { return PANEL_W; }
-  });
+  /* ---- panel width (per-server) ---- */
+  const [panelW, setPanelW] = useState<number>(() => loadNum(panelKey(server.id, "w"), PANEL_W));
   const panelWRef = useRef(panelW);
   panelWRef.current = panelW;
 
@@ -107,6 +115,9 @@ export function ServerDashboardPanel({
   const [sslExpanded, setSslExpanded] = useState(false);
   const [termExpanded, setTermExpanded] = useState(false);
   const termRef = useRef<TerminalSectionHandle>(null);
+  const [fileBrowserH, setFileBrowserH] = useState(200);
+  const fileBrowserHRef = useRef(200);
+  const [panelH, setPanelH] = useState<number | null>(null);
 
   /* ---- test connection ---- */
   const [testState, setTestState] = useState<"idle" | "loading" | "ok" | "fail">("idle");
@@ -161,7 +172,10 @@ export function ServerDashboardPanel({
     if (!dragging.current) return;
     dragging.current = false;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-  }, []);
+    // Persist position
+    saveNum(panelKey(server.id, "x"), posRef.current.x);
+    saveNum(panelKey(server.id, "y"), posRef.current.y);
+  }, [server.id]);
 
   /* ---- resize ---- */
   const handleResizeStart = useCallback(
@@ -187,13 +201,58 @@ export function ServerDashboardPanel({
         el.releasePointerCapture(e.pointerId);
         el.removeEventListener("pointermove", onMove);
         el.removeEventListener("pointerup", onUp);
-        try { localStorage.setItem(PANEL_W_KEY, String(panelWRef.current)); } catch {}
+        saveNum(panelKey(server.id, "w"), panelWRef.current);
       }
       el.addEventListener("pointermove", onMove);
       el.addEventListener("pointerup", onUp);
     },
     [],
   );
+
+  /* ---- split resize (files ↔ terminal) ---- */
+  const handleSplitResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = fileBrowserHRef.current;
+    function onMove(ev: PointerEvent) {
+      const dy = ev.clientY - startY;
+      const newH = Math.max(80, Math.min(400, startH + dy));
+      setFileBrowserH(newH);
+      fileBrowserHRef.current = newH;
+    }
+    function onUp() {
+      el.releasePointerCapture(e.pointerId);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+    }
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  }, []);
+
+  /* ---- bottom resize (panel height) ---- */
+  const handleBottomResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = panelRef.current?.offsetHeight ?? 600;
+    function onMove(ev: PointerEvent) {
+      const dy = ev.clientY - startY;
+      const newH = Math.max(300, Math.min(window.innerHeight - posRef.current.y - 8, startH + dy));
+      setPanelH(newH);
+    }
+    function onUp() {
+      el.releasePointerCapture(e.pointerId);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+    }
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  }, []);
 
   /* ---- actions ---- */
   const handleTest = useCallback(async () => {
@@ -380,7 +439,10 @@ export function ServerDashboardPanel({
         top: pos.y,
         width: panelW,
         maxWidth: "calc(100vw - 16px)",
-        maxHeight: "85vh",
+        transition: "height 500ms cubic-bezier(0.4, 0, 0.2, 1)",
+        ...(termExpanded
+          ? { height: panelH ?? "85vh" }
+          : { maxHeight: "85vh" }),
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -388,6 +450,9 @@ export function ServerDashboardPanel({
     >
       {/* Resize handles */}
       <div className="absolute left-0 top-0 z-10 h-full w-1.5 cursor-ew-resize" onPointerDown={(e) => handleResizeStart(e, "left")} />
+      {termExpanded && (
+        <div className="absolute bottom-0 left-0 z-10 h-1.5 w-full cursor-ns-resize" onPointerDown={handleBottomResizeStart} />
+      )}
       <div className="absolute right-0 top-0 z-10 h-full w-1.5 cursor-ew-resize" onPointerDown={(e) => handleResizeStart(e, "right")} />
 
       {/* ===== HEADER (drag handle) ===== */}
@@ -429,177 +494,168 @@ export function ServerDashboardPanel({
         </button>
       </div>
 
-      {/* ===== Domain row ===== */}
-      {server.assignedDomain && (
-        <div className="shrink-0 border-b border-canvas-border px-5 py-2.5">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Domain</p>
-          <p className="mt-0.5 font-mono text-xs text-canvas-fg">{server.assignedDomain}</p>
-        </div>
-      )}
+      {/* ===== Panel body ===== */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
 
-      {/* ===== Scrollable body ===== */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* ── Collapsing sections (animated with CSS Grid) ── */}
+        <div
+          className="grid transition-[grid-template-rows,opacity] duration-500"
+          style={{
+            gridTemplateRows: termExpanded ? "0fr" : "1fr",
+            opacity: termExpanded ? 0 : 1,
+            transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className={termExpanded ? "" : "overflow-y-auto"} style={termExpanded ? undefined : { maxHeight: "calc(85vh - 70px)" }}>
 
-        {/* ===== Quick actions ===== */}
-        <div className="flex items-center gap-2 border-b border-canvas-border px-5 py-3">
-          <ActionBtn onClick={handleTest} disabled={testState === "loading"} icon={<FiWifi size={13} />}>
-            {testState === "loading" ? "Testing..." : "Test Connection"}
-          </ActionBtn>
-          <ActionBtn onClick={() => onEdit(server)} icon={<FiEdit2 size={13} />}>
-            Edit
-          </ActionBtn>
-        </div>
+              {/* Domain row */}
+              {server.assignedDomain && (
+                <div className="border-b border-canvas-border px-5 py-2.5">
+                  <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Domain</p>
+                  <p className="mt-0.5 font-mono text-xs text-canvas-fg">{server.assignedDomain}</p>
+                </div>
+              )}
 
-        {/* Test result */}
-        {testState !== "idle" && testState !== "loading" && (
-          <div className={`border-b border-canvas-border px-5 py-2 text-[11px] ${testState === "ok" ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
-            {testMsg}
-          </div>
-        )}
-
-        {/* ===== SERVER DETAILS (collapsible) ===== */}
-        <div className="border-b border-canvas-border">
-          <button
-            type="button"
-            onClick={() => setDetailsExpanded((p) => !p)}
-            className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
-          >
-            <FiServer size={13} className="text-canvas-muted" />
-            <span className="flex-1 text-xs font-medium text-canvas-muted">Server Details</span>
-            {detailsExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
-          </button>
-
-          {detailsExpanded && (
-            <div className="border-t border-canvas-border px-5 py-4">
-              <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                <InfoCell label="Host" value={server.hostname || server.ipAddress || "—"} />
-                <InfoCell label="Port" value={String(server.sshPort)} />
-                <InfoCell label="Username" value={server.sshUsername} />
-                <InfoCell label="Auth" value={authLabel} />
-                <InfoCell label="Environment" value={server.environment || "default"} />
-                <InfoCell label="Created" value={formattedDate} />
+              {/* Quick actions */}
+              <div className="flex items-center gap-2 border-b border-canvas-border px-5 py-3">
+                <ActionBtn onClick={handleTest} disabled={testState === "loading"} icon={<FiWifi size={13} />}>
+                  {testState === "loading" ? "Testing..." : "Test Connection"}
+                </ActionBtn>
+                <ActionBtn onClick={() => onEdit(server)} icon={<FiEdit2 size={13} />}>
+                  Edit
+                </ActionBtn>
               </div>
 
-              {/* Delete */}
-              <div className="mt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  className="flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/5 dark:text-red-400 dark:hover:bg-red-400/5"
-                >
-                  <FiTrash2 size={13} />
-                  Delete
+              {/* Test result */}
+              {testState !== "idle" && testState !== "loading" && (
+                <div className={`border-b border-canvas-border px-5 py-2 text-[11px] ${testState === "ok" ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}>
+                  {testMsg}
+                </div>
+              )}
+
+              {/* SERVER DETAILS */}
+              <div className="border-b border-canvas-border">
+                <button type="button" onClick={() => setDetailsExpanded((p) => !p)} className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover">
+                  <FiServer size={13} className="text-canvas-muted" />
+                  <span className="flex-1 text-xs font-medium text-canvas-muted">Server Details</span>
+                  {detailsExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
                 </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ===== HEALTH (collapsible) ===== */}
-        <HealthSection serverId={server.id} />
-
-        {/* ===== SSL (collapsible) ===== */}
-        <div className="border-b border-canvas-border">
-          <button
-            type="button"
-            onClick={() => setSslExpanded((p) => !p)}
-            className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
-          >
-            <FiShield size={13} className="text-canvas-muted" />
-            <span className="flex-1 text-xs font-medium text-canvas-muted">SSL Certificate</span>
-            {sslExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
-          </button>
-
-          {sslExpanded && (
-            <div className="border-t border-canvas-border px-5 py-4">
-              {ssl ? (
-                <div className="space-y-3">
-                  {/* Status + actions row */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <p className={`text-xs font-medium ${SSL_BADGE[ssl.status] ?? "text-canvas-muted"}`}>{ssl.status}</p>
-                      {ssl.status === "PROVISIONING" && (
-                        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-400" />
-                      )}
-                      {ssl.status === "PROVISIONING" && sslJob && (
-                        <span className="text-[10px] text-canvas-muted">
-                          {STEP_LABELS[sslJob.currentStep] ?? sslJob.currentStep}
-                        </span>
-                      )}
+                {detailsExpanded && (
+                  <div className="border-t border-canvas-border px-5 py-4">
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                      <InfoCell label="Host" value={server.hostname || server.ipAddress || "—"} />
+                      <InfoCell label="Port" value={String(server.sshPort)} />
+                      <InfoCell label="Username" value={server.sshUsername} />
+                      <InfoCell label="Auth" value={authLabel} />
+                      <InfoCell label="Environment" value={server.environment || "default"} />
+                      <InfoCell label="Created" value={formattedDate} />
                     </div>
-                    <div className="flex items-center gap-1">
-                      {ssl.status === "ACTIVE" && (
-                        <ActionBtn onClick={handleRenewSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>
-                          Renew
-                        </ActionBtn>
-                      )}
-                      {ssl.provisioningJobId && (
-                        <ActionBtn onClick={() => handleViewLog(ssl.provisioningJobId!)}>
-                          View Log
-                        </ActionBtn>
-                      )}
-                      {ssl.status === "FAILED" && (
-                        <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>
-                          Retry
-                        </ActionBtn>
-                      )}
+                    <div className="mt-4 flex justify-end">
+                      <button type="button" onClick={handleDelete} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/5 dark:text-red-400 dark:hover:bg-red-400/5">
+                        <FiTrash2 size={13} />
+                        Delete
+                      </button>
                     </div>
                   </div>
+                )}
+              </div>
 
-                  {/* Error message */}
-                  {ssl.lastError && (
-                    <p className="text-[11px] text-red-500 dark:text-red-400">{ssl.lastError}</p>
-                  )}
+              {/* HEALTH */}
+              <HealthSection serverId={server.id} />
 
-                  {/* Live log panel */}
-                  {showLog && (
-                    sslJob ? (
-                      <SslLogPanel job={sslJob} onRetry={handleRetryJob} onClose={() => { setShowLog(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } }} />
-                    ) : (
-                      <div className="mt-2 rounded-md border border-canvas-border bg-[#0d1117] px-3 py-4 text-center text-[11px] text-gray-500">
-                        Loading job logs...
+              {/* SSL */}
+              <div className="border-b border-canvas-border">
+                <button type="button" onClick={() => setSslExpanded((p) => !p)} className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover">
+                  <FiShield size={13} className="text-canvas-muted" />
+                  <span className="flex-1 text-xs font-medium text-canvas-muted">SSL Certificate</span>
+                  {sslExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
+                </button>
+                {sslExpanded && (
+                  <div className="border-t border-canvas-border px-5 py-4">
+                    {ssl ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <p className={`text-xs font-medium ${SSL_BADGE[ssl.status] ?? "text-canvas-muted"}`}>{ssl.status}</p>
+                            {ssl.status === "PROVISIONING" && <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-400" />}
+                            {ssl.status === "PROVISIONING" && sslJob && <span className="text-[10px] text-canvas-muted">{STEP_LABELS[sslJob.currentStep] ?? sslJob.currentStep}</span>}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {ssl.status === "ACTIVE" && <ActionBtn onClick={handleRenewSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Renew</ActionBtn>}
+                            {ssl.provisioningJobId && <ActionBtn onClick={() => handleViewLog(ssl.provisioningJobId!)}>View Log</ActionBtn>}
+                            {ssl.status === "FAILED" && <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Retry</ActionBtn>}
+                          </div>
+                        </div>
+                        {ssl.lastError && <p className="text-[11px] text-red-500 dark:text-red-400">{ssl.lastError}</p>}
+                        {showLog && (
+                          sslJob ? (
+                            <SslLogPanel job={sslJob} onRetry={handleRetryJob} onClose={() => { setShowLog(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } }} />
+                          ) : (
+                            <div className="mt-2 rounded-md border border-canvas-border bg-[#0d1117] px-3 py-4 text-center text-[11px] text-gray-500">Loading job logs...</div>
+                          )
+                        )}
                       </div>
-                    )
-                  )}
-                </div>
-              ) : server.assignedDomain ? (
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] text-canvas-muted">No certificate provisioned</p>
-                  <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiShield size={11} />}>
-                    {sslLoading ? "Provisioning..." : "Provision"}
-                  </ActionBtn>
-                </div>
-              ) : (
-                <p className="text-[11px] text-canvas-muted">No domain assigned — SSL not available</p>
-              )}
+                    ) : server.assignedDomain ? (
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] text-canvas-muted">No certificate provisioned</p>
+                        <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiShield size={11} />}>{sslLoading ? "Provisioning..." : "Provision"}</ActionBtn>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-canvas-muted">No domain assigned — SSL not available</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* SCRIPTS */}
+              <ScriptsSection serverId={server.id} />
             </div>
-          )}
+          </div>
         </div>
 
-        {/* ===== SCRIPTS (collapsible) ===== */}
-        <ScriptsSection serverId={server.id} />
-
-        {/* ===== TERMINAL + FILES (collapsible) ===== */}
-        <div className="border-b border-canvas-border">
+        {/* ── Terminal section (grows to fill when expanded) ── */}
+        <div className={`flex flex-col transition-[flex] duration-500 ${termExpanded ? "flex-1 min-h-0" : "shrink-0"}`}
+          style={{ transitionTimingFunction: "cubic-bezier(0.4, 0, 0.2, 1)" }}
+        >
+          {/* Toggle button — always visible */}
           <button
             type="button"
-            onClick={() => setTermExpanded((p) => !p)}
-            className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
+            onClick={() => {
+              setTermExpanded((p) => {
+                if (p) setPanelH(null); // reset height on collapse
+                return !p;
+              });
+            }}
+            className="flex w-full shrink-0 items-center gap-2 border-y border-canvas-border px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
           >
             <FiTerminal size={13} className="text-canvas-muted" />
             <span className="flex-1 text-xs font-medium text-canvas-muted">Terminal</span>
             {termExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
           </button>
 
+          {/* Files + Terminal content */}
           {termExpanded && (
-            <div className="border-t border-canvas-border">
-              {/* File browser on top */}
-              <FileBrowser
-                serverId={server.id}
-                onFileClick={(cmd) => termRef.current?.sendCommand(cmd)}
+            <div className="flex flex-1 flex-col min-h-0 animate-fade-slide-in">
+              {/* File browser — fixed height, resizable */}
+              <div style={{ height: fileBrowserH, flexShrink: 0 }} className="overflow-hidden">
+                <FileBrowser
+                  serverId={server.id}
+                  onFileClick={(cmd) => termRef.current?.sendCommand(cmd)}
+                  height={fileBrowserH}
+                />
+              </div>
+
+              {/* Draggable split divider */}
+              <div
+                className="h-1 shrink-0 cursor-row-resize border-y border-canvas-border bg-canvas-surface-hover/50 transition-colors hover:bg-blue-500/30 active:bg-blue-500/50"
+                onPointerDown={handleSplitResizeStart}
               />
-              {/* Terminal on bottom */}
-              <TerminalSection ref={termRef} serverId={server.id} />
+
+              {/* Terminal — fills remaining space */}
+              <div className="flex flex-1 flex-col min-h-0">
+                <TerminalSection ref={termRef} serverId={server.id} />
+              </div>
             </div>
           )}
         </div>
