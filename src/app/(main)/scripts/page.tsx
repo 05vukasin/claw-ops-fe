@@ -51,6 +51,7 @@ function ScriptsPageContent() {
   // Popup
   const [popupOpen, setPopupOpen] = useState(false);
   const [editScript, setEditScript] = useState<DeploymentScript | null>(null);
+  const closingRef = useRef(false);
 
   const showAlert = useCallback((msg: string, type: "success" | "error") => {
     setAlert({ msg, type });
@@ -73,11 +74,12 @@ function ScriptsPageContent() {
 
   // Auto-open script from URL param
   useEffect(() => {
-    if (!urlScriptId || !data) return;
+    if (!urlScriptId || !data || closingRef.current) return;
     if (popupOpen && editScript?.id === urlScriptId) return;
 
     fetchScriptApi(urlScriptId)
       .then((script) => {
+        if (closingRef.current) return;
         setEditScript(script);
         setPopupOpen(true);
       })
@@ -125,28 +127,34 @@ function ScriptsPageContent() {
   );
 
   const handlePopupClose = useCallback(() => {
+    closingRef.current = true;
     setPopupOpen(false);
     setEditScript(null);
-    router.push("/scripts");
+    router.replace("/scripts");
+    setTimeout(() => { closingRef.current = false; }, 100);
   }, [router]);
 
   const handleSaved = useCallback(
     (msg: string) => {
+      closingRef.current = true;
       setPopupOpen(false);
       setEditScript(null);
-      router.push("/scripts");
+      router.replace("/scripts");
       showAlert(msg, "success");
       loadScripts();
+      setTimeout(() => { closingRef.current = false; }, 100);
     },
     [router, showAlert, loadScripts],
   );
 
   const handleDeleteFromPopup = useCallback(() => {
     if (editScript) {
+      closingRef.current = true;
       handleDelete(editScript).then(() => {
         setPopupOpen(false);
         setEditScript(null);
-        router.push("/scripts");
+        router.replace("/scripts");
+        setTimeout(() => { closingRef.current = false; }, 100);
       });
     }
   }, [editScript, handleDelete, router]);
@@ -292,13 +300,11 @@ function ScriptPopup({
     );
   }, [isEdit, name, scriptType, description, content, script]);
 
-  // Escape key
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  // Refs for keyboard handler (updated every render)
+  const isDirtyRef = useRef(false);
+  isDirtyRef.current = isDirty;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleSubmitRef = useRef<any>(null);
 
   // Lock body scroll
   useEffect(() => {
@@ -344,9 +350,32 @@ function ScriptPopup({
     }
   }, [name, scriptType, description, content, isEdit, script, onSaved]);
 
+  handleSubmitRef.current = handleSubmit;
+
+  const confirmClose = useCallback(() => {
+    if (isDirtyRef.current && isEdit) {
+      if (!window.confirm("You have unsaved changes. Discard them?")) return;
+    }
+    onClose();
+  }, [onClose, isEdit]);
+
+  // Keyboard: Escape (with dirty check) + Ctrl+S to save
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); confirmClose(); }
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (isDirtyRef.current) handleSubmitRef.current?.();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, confirmClose]);
+
   const handleBackdropClick = useCallback((e: React.MouseEvent) => {
-    if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
-  }, [onClose]);
+    if (panelRef.current && !panelRef.current.contains(e.target as Node)) confirmClose();
+  }, [confirmClose]);
 
   if (!mounted || !open) return null;
 
@@ -358,14 +387,14 @@ function ScriptPopup({
       role="presentation"
     >
       {/* Backdrop */}
-      <div className="pointer-events-none fixed inset-0 bg-black/40 dark:bg-black/60" />
+      <div className="pointer-events-none fixed inset-0 bg-black/40 dark:bg-black/60 animate-backdrop-in" />
 
       {/* Panel */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-canvas-border bg-canvas-bg shadow-2xl"
+        className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-canvas-border bg-canvas-bg shadow-2xl animate-modal-in"
         style={{ height: "85vh" }}
       >
         {/* ── Header ── */}
@@ -428,7 +457,7 @@ function ScriptPopup({
             className="min-h-0 flex-1 resize-none border-none bg-[#0d1117] px-6 py-4 font-mono text-[13px] leading-relaxed text-[#e6edf3] placeholder:text-gray-600 outline-none"
             style={{ fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace" }}
             spellCheck={false}
-            placeholder="#!/bin/bash&#10;set -e&#10;&#10;# Your script here..."
+            placeholder={"#!/bin/bash\nset -e\n\n# Your script here..."}
           />
         </div>
 
@@ -480,7 +509,7 @@ function ScriptPopup({
           {/* Right: Cancel + Save */}
           <button
             type="button"
-            onClick={onClose}
+            onClick={confirmClose}
             className="rounded-md px-4 py-1.5 text-sm text-canvas-muted transition-colors hover:text-canvas-fg"
           >
             Cancel

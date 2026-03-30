@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FiActivity,
-  FiChevronDown,
   FiChevronRight,
   FiRefreshCw,
 } from "react-icons/fi";
@@ -280,15 +279,12 @@ export function HealthSection({ serverId }: HealthSectionProps) {
             {health.overallState}
           </span>
         )}
-        {expanded ? (
-          <FiChevronDown size={14} className="text-canvas-muted" />
-        ) : (
-          <FiChevronRight size={14} className="text-canvas-muted" />
-        )}
+        <FiChevronRight size={14} className={`text-canvas-muted chevron-rotate ${expanded ? "open" : ""}`} />
       </button>
 
-      {expanded && (
-        <div className="border-t border-canvas-border px-5 py-4">
+      <div className={`animate-collapse ${expanded ? "open" : ""}`}>
+        <div className="collapse-inner">
+          <div className="border-t border-canvas-border px-5 py-4">
           {loading && !health ? (
             <p className="text-[11px] text-canvas-muted">Loading...</p>
           ) : health ? (
@@ -337,7 +333,7 @@ export function HealthSection({ serverId }: HealthSectionProps) {
                     onClick={() => setDetailExpanded((p) => !p)}
                     className="flex items-center gap-1.5 text-[10px] font-medium text-canvas-muted transition-colors hover:text-canvas-fg"
                   >
-                    {detailExpanded ? <FiChevronDown size={11} /> : <FiChevronRight size={11} />}
+                    <FiChevronRight size={11} className={`chevron-rotate ${detailExpanded ? "open" : ""}`} />
                     All metrics ({metrics.length})
                   </button>
 
@@ -379,7 +375,8 @@ export function HealthSection({ serverId }: HealthSectionProps) {
             </p>
           )}
         </div>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

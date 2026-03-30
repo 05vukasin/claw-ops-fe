@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  FiChevronDown,
   FiChevronRight,
   FiServer,
   FiShield,
@@ -543,26 +542,28 @@ export function ServerDashboardPanel({
                 <button type="button" onClick={() => setDetailsExpanded((p) => !p)} className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover">
                   <FiServer size={13} className="text-canvas-muted" />
                   <span className="flex-1 text-xs font-medium text-canvas-muted">Server Details</span>
-                  {detailsExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
+                  <FiChevronRight size={14} className={`text-canvas-muted chevron-rotate ${detailsExpanded ? "open" : ""}`} />
                 </button>
-                {detailsExpanded && (
-                  <div className="border-t border-canvas-border px-5 py-4">
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-                      <InfoCell label="Host" value={server.hostname || server.ipAddress || "—"} />
-                      <InfoCell label="Port" value={String(server.sshPort)} />
-                      <InfoCell label="Username" value={server.sshUsername} />
-                      <InfoCell label="Auth" value={authLabel} />
-                      <InfoCell label="Environment" value={server.environment || "default"} />
-                      <InfoCell label="Created" value={formattedDate} />
-                    </div>
-                    <div className="mt-4 flex justify-end">
-                      <button type="button" onClick={handleDelete} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/5 dark:text-red-400 dark:hover:bg-red-400/5">
-                        <FiTrash2 size={13} />
-                        Delete
-                      </button>
+                <div className={`animate-collapse ${detailsExpanded ? "open" : ""}`}>
+                  <div className="collapse-inner">
+                    <div className="border-t border-canvas-border px-5 py-4">
+                      <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+                        <InfoCell label="Host" value={server.hostname || server.ipAddress || "—"} />
+                        <InfoCell label="Port" value={String(server.sshPort)} />
+                        <InfoCell label="Username" value={server.sshUsername} />
+                        <InfoCell label="Auth" value={authLabel} />
+                        <InfoCell label="Environment" value={server.environment || "default"} />
+                        <InfoCell label="Created" value={formattedDate} />
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <button type="button" onClick={handleDelete} className="flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/5 dark:text-red-400 dark:hover:bg-red-400/5">
+                          <FiTrash2 size={13} />
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
 
               {/* HEALTH */}
@@ -573,10 +574,11 @@ export function ServerDashboardPanel({
                 <button type="button" onClick={() => setSslExpanded((p) => !p)} className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover">
                   <FiShield size={13} className="text-canvas-muted" />
                   <span className="flex-1 text-xs font-medium text-canvas-muted">SSL Certificate</span>
-                  {sslExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
+                  <FiChevronRight size={14} className={`text-canvas-muted chevron-rotate ${sslExpanded ? "open" : ""}`} />
                 </button>
-                {sslExpanded && (
-                  <div className="border-t border-canvas-border px-5 py-4">
+                <div className={`animate-collapse ${sslExpanded ? "open" : ""}`}>
+                  <div className="collapse-inner">
+                    <div className="border-t border-canvas-border px-5 py-4">
                     {ssl ? (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
@@ -609,7 +611,8 @@ export function ServerDashboardPanel({
                       <p className="text-[11px] text-canvas-muted">No domain assigned — SSL not available</p>
                     )}
                   </div>
-                )}
+                  </div>
+                </div>
               </div>
 
               {/* SCRIPTS */}
@@ -656,7 +659,7 @@ export function ServerDashboardPanel({
           >
             <FiTerminal size={13} className="text-canvas-muted" />
             <span className="flex-1 text-xs font-medium text-canvas-muted">Terminal</span>
-            {termExpanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
+            <FiChevronRight size={14} className={`text-canvas-muted chevron-rotate ${termExpanded ? "open" : ""}`} />
           </button>
 
           {/* Files + Terminal content */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useSyncExternalStore } from "react";
 import { Z_INDEX } from "@/lib/z-index";
@@ -18,7 +18,7 @@ const emptySubscribe = () => () => {};
  *
  * Centered overlay dialog rendered via portal.
  * Click-outside and Escape key close the modal.
- * Scrollable when content exceeds viewport height.
+ * Animated entrance (scale+fade) and exit.
  */
 export function Modal({ open, onClose, children }: ModalProps) {
   const mounted = useSyncExternalStore(
@@ -27,35 +27,62 @@ export function Modal({ open, onClose, children }: ModalProps) {
     () => false,
   );
   const panelRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  // Show on open, animate out when closed externally
+  useEffect(() => {
+    if (open) {
+      setVisible(true);
+      setClosing(false);
+    } else if (visible && !closing) {
+      // Parent set open=false directly (e.g. Cancel button) — play exit animation
+      setClosing(true);
+      setTimeout(() => {
+        setClosing(false);
+        setVisible(false);
+      }, 150);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleClose = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      setVisible(false);
+      onClose();
+    }, 150);
+  }, [onClose, closing]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") handleClose();
     },
-    [onClose],
+    [handleClose],
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [open, handleKeyDown]);
+  }, [visible, handleKeyDown]);
 
   // Lock body scroll when open
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open]);
+  }, [visible]);
 
-  if (!mounted || !open) return null;
+  if (!mounted || !visible) return null;
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -67,14 +94,14 @@ export function Modal({ open, onClose, children }: ModalProps) {
       role="presentation"
     >
       {/* Backdrop */}
-      <div className="pointer-events-none fixed inset-0 bg-black/40 dark:bg-black/60" />
+      <div className={`pointer-events-none fixed inset-0 bg-black/40 dark:bg-black/60 ${closing ? "animate-backdrop-out" : "animate-backdrop-in"}`} />
 
       {/* Panel */}
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        className="relative my-8 w-full max-w-md rounded-lg border border-canvas-border bg-canvas-bg shadow-xl sm:my-0"
+        className={`relative my-8 w-full max-w-md rounded-lg border border-canvas-border bg-canvas-bg shadow-xl sm:my-0 ${closing ? "animate-modal-out" : "animate-modal-in"}`}
       >
         {children}
       </div>

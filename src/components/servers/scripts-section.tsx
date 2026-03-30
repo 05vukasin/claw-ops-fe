@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  FiChevronDown,
   FiChevronRight,
   FiCode,
   FiPlay,
@@ -237,11 +236,12 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
       >
         <FiCode size={13} className="text-canvas-muted" />
         <span className="flex-1 text-xs font-medium text-canvas-muted">Scripts</span>
-        {expanded ? <FiChevronDown size={14} className="text-canvas-muted" /> : <FiChevronRight size={14} className="text-canvas-muted" />}
+        <FiChevronRight size={14} className={`text-canvas-muted chevron-rotate ${expanded ? "open" : ""}`} />
       </button>
 
-      {expanded && (
-        <div className="border-t border-canvas-border">
+      <div className={`animate-collapse ${expanded ? "open" : ""}`}>
+        <div className="collapse-inner">
+          <div className="border-t border-canvas-border">
 
           {/* ===== SCRIPT LIBRARY ===== */}
           <div className="border-b border-canvas-border">
@@ -392,8 +392,9 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
               )}
             </div>
           </div>
+          </div>
         </div>
-      )}
+      </div>
 
       {/* ===== Terminal popup (portal-like overlay within the panel) ===== */}
       {termJobId && (
@@ -593,8 +594,8 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
   const isRunning = status === "connected" || status === "connecting";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px]">
-      <div className="mx-4 flex w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-canvas-border bg-canvas-bg shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-[2px] animate-backdrop-in">
+      <div className="mx-4 flex w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-canvas-border bg-canvas-bg shadow-2xl animate-modal-in">
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-[#21262d] bg-[#161b22] px-4 py-2.5">
           <FiTerminal size={14} className="shrink-0 text-gray-400" />

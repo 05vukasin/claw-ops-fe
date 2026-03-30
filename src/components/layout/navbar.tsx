@@ -153,10 +153,10 @@ export function Navbar({ open, onClose }: NavbarProps) {
           {/* Nav links */}
           <nav className="flex-1 overflow-y-auto px-3 py-3">
             <ul className="space-y-0.5">
-              {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "ADMIN").map((item) => {
+              {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "ADMIN").map((item, i) => {
                 const isActive = pathname === item.href;
                 return (
-                  <li key={item.href}>
+                  <li key={item.href} className="animate-nav-item" style={{ animationDelay: `${i * 40}ms` }}>
                     <button
                       type="button"
                       onClick={() => handleNav(item.href)}

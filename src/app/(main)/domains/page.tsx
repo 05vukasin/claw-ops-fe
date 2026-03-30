@@ -360,7 +360,7 @@ function AccountRow({
     <>
       <tr className="border-b border-canvas-border cursor-pointer transition-colors hover:bg-canvas-surface-hover/50" onClick={onToggle}>
         <td className="px-3 py-3 text-canvas-muted">
-          {isOpen ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}
+          <FiChevronRight size={14} className={`chevron-rotate ${isOpen ? "open" : ""}`} />
         </td>
         <td className="px-4 py-3 font-medium text-canvas-fg whitespace-nowrap">{acc.displayName}</td>
         <td className="px-4 py-3"><Badge className="bg-canvas-surface-hover text-canvas-muted">{acc.providerType}</Badge></td>
@@ -375,10 +375,11 @@ function AccountRow({
           </div>
         </td>
       </tr>
-      {isOpen && (
-        <tr className="border-b border-canvas-border">
-          <td colSpan={7} className="p-0">
-            <div className="bg-canvas-surface-hover/30 px-8 py-3">
+      <tr className="border-b border-canvas-border">
+        <td colSpan={7} className="p-0">
+          <div className={`animate-collapse ${isOpen ? "open" : ""}`}>
+            <div className="collapse-inner">
+              <div className="bg-canvas-surface-hover/30 px-8 py-3">
               {zones.length === 0 ? (
                 <p className="text-xs text-canvas-muted py-2">No domains found. Click "Sync" to import domains from this provider.</p>
               ) : (
@@ -419,9 +420,10 @@ function AccountRow({
                 </table>
               )}
             </div>
-          </td>
-        </tr>
-      )}
+            </div>
+          </div>
+        </td>
+      </tr>
     </>
   );
 }
@@ -788,11 +790,12 @@ function MobileAccountCard({
             <span className="text-[10px] text-canvas-muted">{zones.length} domain{zones.length !== 1 ? "s" : ""}</span>
           </div>
         </div>
-        {expanded ? <FiChevronDown size={14} className="shrink-0 text-canvas-muted" /> : <FiChevronRight size={14} className="shrink-0 text-canvas-muted" />}
+        <FiChevronRight size={14} className={`shrink-0 text-canvas-muted chevron-rotate ${expanded ? "open" : ""}`} />
       </button>
 
-      {expanded && (
-        <div className="border-t border-canvas-border px-4 py-3 space-y-3">
+      <div className={`animate-collapse ${expanded ? "open" : ""}`}>
+        <div className="collapse-inner">
+          <div className="border-t border-canvas-border px-4 py-3 space-y-3">
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-2">
             <MobileActionBtn icon={<FiRefreshCw size={11} />} label={busy === `sync-${acc.id}` ? "Syncing..." : "Sync"} onClick={onSync} disabled={busy === `sync-${acc.id}`} />
@@ -834,8 +837,9 @@ function MobileAccountCard({
           )}
 
           <p className="text-[10px] text-canvas-muted">Created {fmt(acc.createdAt)}</p>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -867,8 +871,9 @@ function MobileAssignmentCard({
         <FiChevronDown size={12} className={`shrink-0 text-canvas-muted transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
 
-      {expanded && (
-        <div className="space-y-2 border-t border-canvas-border px-3.5 py-2.5 text-[11px]">
+      <div className={`animate-collapse ${expanded ? "open" : ""}`}>
+        <div className="collapse-inner">
+          <div className="space-y-2 border-t border-canvas-border px-3.5 py-2.5 text-[11px]">
           <div className="flex justify-between">
             <span className="text-canvas-muted">Target</span>
             <span className="font-mono text-canvas-fg">{a.targetValue}</span>
@@ -895,9 +900,10 @@ function MobileAssignmentCard({
             {a.status !== "RELEASED" && (
               <MobileActionBtn icon={<FiTrash2 size={11} />} label="Release" onClick={onRelease} danger />
             )}
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
