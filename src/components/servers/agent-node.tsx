@@ -25,6 +25,8 @@ interface AgentNodeProps {
   agent: AgentWithUI;
   serverX: number;
   serverY: number;
+  /** Server's assigned domain (e.g. "clawops.viksi.ai") for building agent URL */
+  serverDomain?: string | null;
   onMoveEnd: (serverId: string, name: string, offsetX: number, offsetY: number) => void;
   /** Called every frame with the agent's current animated position (for connector lines) */
   onSpringPos?: (serverId: string, name: string, x: number, y: number) => void;
@@ -35,7 +37,7 @@ interface AgentNodeProps {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function AgentNode({ agent, serverX, serverY, onMoveEnd, onSpringPos, zoom }: AgentNodeProps) {
+export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, onSpringPos, zoom }: AgentNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: agent.offsetX, y: agent.offsetY });
   const [dragging, setDragging] = useState(false);
@@ -172,9 +174,12 @@ export function AgentNode({ agent, serverX, serverY, onMoveEnd, onSpringPos, zoo
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       if (didDrag.current) {
         onMoveEnd(agent.serverId, agent.name, offset.x, offset.y);
+      } else if (serverDomain) {
+        // Click (not drag) — open agent URL in new tab
+        window.open(`https://${serverDomain}/${agent.name}/`, "_blank", "noopener");
       }
     },
-    [agent.serverId, agent.name, offset, onMoveEnd],
+    [agent.serverId, agent.name, offset, onMoveEnd, serverDomain],
   );
 
   const initX = spring.current.x;

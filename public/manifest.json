@@ -12,13 +12,13 @@
   "categories": ["productivity", "utilities"],
   "icons": [
     {
-      "src": "/logo/logo.png",
+      "src": "/logo/logo-with-background.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/logo/logo.png",
+      "src": "/logo/logo-with-background.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

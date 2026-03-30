@@ -21,7 +21,7 @@ export function Header() {
           <img
             src="/logo/logo.png"
             alt="ClawOps"
-            className="h-7 object-contain"
+            className="h-7 rounded bg-white px-1 object-contain"
             draggable={false}
           />
         </div>

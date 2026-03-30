@@ -271,6 +271,7 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
               agent={a}
               serverX={sp.x}
               serverY={sp.y}
+              serverDomain={serverMap.get(a.serverId)?.assignedDomain}
               onMoveEnd={onMoveAgent ?? (() => {})}
               onSpringPos={handleSpringPos}
               zoom={camera.zoom}

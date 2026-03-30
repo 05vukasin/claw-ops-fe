@@ -22,7 +22,13 @@
       "Bash(docker build:*)",
       "Bash(curl -s http://65.108.217.214:3000/login)",
       "Bash(ls -la /e/Reputeo/claw-ops-fe/src/app/\\\\\\(main\\\\\\)/)",
-      "Bash(wc -l /e/Reputeo/claw-ops-fe/src/components/servers/*.tsx)"
+      "Bash(wc -l /e/Reputeo/claw-ops-fe/src/components/servers/*.tsx)",
+      "Bash(find /e/Reputeo/claw-ops -type f -name *.java -not -path */node_modules/* -not -path */.git/*)",
+      "Bash(find /e/Reputeo/claw-ops -type f -name SessionTokenInfo.java -not -path */node_modules/*)",
+      "Bash(xargs cat:*)",
+      "Bash(find /e/Reputeo/claw-ops -type f -name DeploymentController.java -not -path */node_modules/*)",
+      "Bash(grep -r deployment-jobs.*terminal-token /e/Reputeo/claw-ops --include=*.java)",
+      "Bash(find /e/Reputeo/claw-ops/src -type f -name *Controller.java)"
     ],
     "additionalDirectories": [
       "\\tmp"

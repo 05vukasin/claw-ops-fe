@@ -42,8 +42,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/logo/logo.ico" sizes="any" />
-        <link rel="apple-touch-icon" href="/logo/logo.png" />
+        <link rel="icon" href="/logo/logo-with-background.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/logo/logo-with-background.png" />
         {/* Inject API origin at runtime so it's never hardcoded in the JS bundle */}
         <script
           dangerouslySetInnerHTML={{
