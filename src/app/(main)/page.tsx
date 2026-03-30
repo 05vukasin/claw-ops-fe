@@ -2,15 +2,26 @@
 
 import { Suspense } from "react";
 import { CanvasStage } from "@/components/canvas";
-import { FleetSummaryBar } from "@/components/servers";
+import { FleetSummaryBar, MobileServerDashboard } from "@/components/servers";
 import { useServers } from "@/lib/use-servers";
 import { useAgents } from "@/lib/use-agents";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import { WorkspacePanel } from "./workspace-panel";
 import { NewServerButton } from "./new-server-button";
 
 export default function ServersPage() {
   const { servers, moveServer, refresh } = useServers();
   const { agents, moveAgent } = useAgents(servers);
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <>
+        <FleetSummaryBar />
+        <MobileServerDashboard servers={servers} onRefresh={refresh} />
+      </>
+    );
+  }
 
   return (
     <>

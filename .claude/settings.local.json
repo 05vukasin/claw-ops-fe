@@ -28,7 +28,14 @@
       "Bash(xargs cat:*)",
       "Bash(find /e/Reputeo/claw-ops -type f -name DeploymentController.java -not -path */node_modules/*)",
       "Bash(grep -r deployment-jobs.*terminal-token /e/Reputeo/claw-ops --include=*.java)",
-      "Bash(find /e/Reputeo/claw-ops/src -type f -name *Controller.java)"
+      "Bash(find /e/Reputeo/claw-ops/src -type f -name *Controller.java)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(find e:/Reputeo/claw-ops-fe/src -name *media* -o -name *breakpoint* -o -name *responsive*)",
+      "Bash(ls e:/Reputeo/claw-ops-fe/src/lib/hooks* e:/Reputeo/claw-ops-fe/src/hooks*)",
+      "Bash(ls -la \"/e/Reputeo/claw-ops-fe/src/app/\\(main\\)/\")",
+      "Bash(find \"/e/Reputeo/claw-ops-fe/src/app/\\(main\\)/scripts\" -type f)",
+      "Bash(find \"e:/Reputeo/claw-ops-fe/src/app/\\(main\\)\" -type f -name \"*.tsx\")",
+      "Bash(ls e:/Reputeo/claw-ops-fe/src/app/\\\\\\(main\\\\\\)/scripts/)"
     ],
     "additionalDirectories": [
       "\\tmp"

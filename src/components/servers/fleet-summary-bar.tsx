@@ -37,7 +37,7 @@ export function FleetSummaryBar() {
       className="pointer-events-auto fixed left-1/2 top-14 -translate-x-1/2"
       style={{ zIndex: Z_INDEX.FLOATING }}
     >
-      <div className="surface-overlay flex items-center gap-1 rounded-lg border border-canvas-border px-2 py-1.5 shadow-lg">
+      <div className="surface-overlay flex items-center gap-1 overflow-x-auto rounded-lg border border-canvas-border px-1.5 py-1.5 shadow-lg max-w-[calc(100vw-2rem)] sm:max-w-none sm:overflow-x-visible sm:px-2">
         <Card value={data.totalServers} label="Total" />
         <Sep />
         <Card value={data.healthy} label="Healthy" color="text-green-500" />
@@ -62,11 +62,11 @@ function Card({
   color?: string;
 }) {
   return (
-    <div className="flex flex-col items-center px-2.5 py-0.5">
-      <span className={`text-base font-bold leading-tight tabular-nums ${color ?? "text-canvas-fg"}`}>
+    <div className="flex flex-col items-center px-1.5 py-0.5 sm:px-2.5">
+      <span className={`text-sm font-bold leading-tight tabular-nums sm:text-base ${color ?? "text-canvas-fg"}`}>
         {value}
       </span>
-      <span className="text-[9px] font-medium uppercase tracking-wider text-canvas-muted">
+      <span className="whitespace-nowrap text-[9px] font-medium uppercase tracking-wider text-canvas-muted">
         {label}
       </span>
     </div>

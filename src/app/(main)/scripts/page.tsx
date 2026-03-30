@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useSyncExternalStore } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FiFile, FiUpload, FiTrash2, FiX } from "react-icons/fi";
 import { Z_INDEX } from "@/lib/z-index";
+import { useIsMobile } from "@/lib/use-is-mobile";
+import { MobileScriptsDashboard } from "@/components/scripts";
 import {
   fetchScriptsApi,
   fetchScriptApi,
@@ -28,6 +31,19 @@ const TYPE_STYLE: Record<string, string> = {
 };
 
 export default function ScriptsPage() {
+  return (
+    <Suspense>
+      <ScriptsPageContent />
+    </Suspense>
+  );
+}
+
+function ScriptsPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const isMobile = useIsMobile();
+  const urlScriptId = searchParams.get("id");
+
   const [data, setData] = useState<PageResponse<DeploymentScript> | null>(null);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState<{ msg: string; type: "success" | "error" } | null>(null);
@@ -55,12 +71,36 @@ export default function ScriptsPage() {
 
   useEffect(() => { loadScripts(); }, [loadScripts]);
 
+  // Auto-open script from URL param
+  useEffect(() => {
+    if (!urlScriptId || !data) return;
+    if (popupOpen && editScript?.id === urlScriptId) return;
+
+    fetchScriptApi(urlScriptId)
+      .then((script) => {
+        setEditScript(script);
+        setPopupOpen(true);
+      })
+      .catch(() => {
+        router.replace("/scripts");
+      });
+  }, [urlScriptId, data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close modal when URL param disappears (browser back)
+  useEffect(() => {
+    if (!urlScriptId && popupOpen) {
+      setPopupOpen(false);
+      setEditScript(null);
+    }
+  }, [urlScriptId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleCreate = useCallback(() => {
     setEditScript(null);
     setPopupOpen(true);
   }, []);
 
   const handleRowClick = useCallback(async (script: DeploymentScript) => {
+    router.push(`/scripts?id=${script.id}`);
     try {
       const full = await fetchScriptApi(script.id);
       setEditScript(full);
@@ -68,7 +108,7 @@ export default function ScriptsPage() {
       setEditScript(script);
     }
     setPopupOpen(true);
-  }, []);
+  }, [router]);
 
   const handleDelete = useCallback(
     async (script: DeploymentScript) => {
@@ -87,16 +127,18 @@ export default function ScriptsPage() {
   const handlePopupClose = useCallback(() => {
     setPopupOpen(false);
     setEditScript(null);
-  }, []);
+    router.push("/scripts");
+  }, [router]);
 
   const handleSaved = useCallback(
     (msg: string) => {
       setPopupOpen(false);
       setEditScript(null);
+      router.push("/scripts");
       showAlert(msg, "success");
       loadScripts();
     },
-    [showAlert, loadScripts],
+    [router, showAlert, loadScripts],
   );
 
   const handleDeleteFromPopup = useCallback(() => {
@@ -104,11 +146,17 @@ export default function ScriptsPage() {
       handleDelete(editScript).then(() => {
         setPopupOpen(false);
         setEditScript(null);
+        router.push("/scripts");
       });
     }
-  }, [editScript, handleDelete]);
+  }, [editScript, handleDelete, router]);
 
   const scripts = data?.content ?? [];
+
+  // Mobile: read-only card dashboard
+  if (isMobile) {
+    return <MobileScriptsDashboard scripts={scripts} loading={loading} />;
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
