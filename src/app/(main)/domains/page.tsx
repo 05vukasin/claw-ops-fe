@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FiChevronRight, FiChevronDown, FiEye, FiEyeOff } from "react-icons/fi";
+import { FiChevronRight, FiChevronDown, FiEye, FiEyeOff, FiRefreshCw, FiCheckCircle, FiTrash2, FiStar, FiGlobe } from "react-icons/fi";
 import { Modal } from "@/components/ui/modal";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import {
   fetchProviderAccountsApi,
   createProviderAccountApi,
@@ -46,6 +47,7 @@ const ASSIGN_STYLE: Record<string, string> = {
 };
 
 export default function DomainsPage() {
+  const isMobile = useIsMobile();
   const [alert, setAlert] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const showAlert = useCallback((msg: string, type: "success" | "error") => {
     setAlert({ msg, type });
@@ -163,6 +165,59 @@ export default function DomainsPage() {
   const accounts = accData?.content ?? [];
   const assignments = assignData?.content ?? [];
 
+  const modals = (
+    <>
+      <ProviderModal
+        key={provModalOpen ? "prov" : "closed"}
+        open={provModalOpen}
+        onClose={() => setProvModalOpen(false)}
+        onSaved={(msg) => { setProvModalOpen(false); showAlert(msg, "success"); loadAccounts(accPage); }}
+      />
+      <CustomRecordModal
+        key={customModalOpen ? "custom" : "closed"}
+        open={customModalOpen}
+        zones={activeZones}
+        onClose={() => setCustomModalOpen(false)}
+        onSaved={() => { setCustomModalOpen(false); showAlert("Custom record created", "success"); loadAssignments(assignPage, filterZone); }}
+      />
+    </>
+  );
+
+  /* ── Mobile view ── */
+  if (isMobile) {
+    return (
+      <>
+      <MobileDomainsView
+        alert={alert}
+        accounts={accounts}
+        accData={accData}
+        zones={zones}
+        assignments={assignments}
+        assignData={assignData}
+        activeZones={activeZones}
+        filterZone={filterZone}
+        busyAcc={busyAcc}
+        busyAssign={busyAssign}
+        zonesByAccount={zonesByAccount}
+        onFilterZone={setFilterZone}
+        onLoadAccounts={loadAccounts}
+        onLoadAssignments={loadAssignments}
+        onSync={handleSync}
+        onValidate={handleValidate}
+        onDeleteAccount={handleDeleteAccount}
+        onSetDefault={handleSetDefault}
+        onDeleteZone={handleDeleteZone}
+        onVerify={handleVerify}
+        onRelease={handleRelease}
+        onOpenProvModal={() => setProvModalOpen(true)}
+        onOpenCustomModal={() => setCustomModalOpen(true)}
+      />
+      {modals}
+      </>
+    );
+  }
+
+  /* ── Desktop view ── */
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       {alert && (
@@ -285,19 +340,7 @@ export default function DomainsPage() {
       </div>
 
       {/* Modals */}
-      <ProviderModal
-        key={provModalOpen ? "prov" : "closed"}
-        open={provModalOpen}
-        onClose={() => setProvModalOpen(false)}
-        onSaved={(msg) => { setProvModalOpen(false); showAlert(msg, "success"); loadAccounts(accPage); }}
-      />
-      <CustomRecordModal
-        key={customModalOpen ? "custom" : "closed"}
-        open={customModalOpen}
-        zones={activeZones}
-        onClose={() => setCustomModalOpen(false)}
-        onSaved={() => { setCustomModalOpen(false); showAlert("Custom record created", "success"); loadAssignments(assignPage, filterZone); }}
-      />
+      {modals}
     </div>
   );
 }
@@ -541,6 +584,355 @@ function CustomRecordModal({ open, zones, onClose, onSaved }: { open: boolean; z
         </div>
       </form>
     </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  Mobile Domains View                                                */
+/* ================================================================== */
+
+function MobileDomainsView({
+  alert,
+  accounts,
+  accData,
+  zones,
+  assignments,
+  assignData,
+  activeZones,
+  filterZone,
+  busyAcc,
+  busyAssign,
+  zonesByAccount,
+  onFilterZone,
+  onLoadAccounts,
+  onLoadAssignments,
+  onSync,
+  onValidate,
+  onDeleteAccount,
+  onSetDefault,
+  onDeleteZone,
+  onVerify,
+  onRelease,
+  onOpenProvModal,
+  onOpenCustomModal,
+}: {
+  alert: { msg: string; type: "success" | "error" } | null;
+  accounts: ProviderAccount[];
+  accData: PageResponse<ProviderAccount> | null;
+  zones: ZoneFull[];
+  assignments: DomainAssignment[];
+  assignData: PageResponse<DomainAssignment> | null;
+  activeZones: ZoneFull[];
+  filterZone: string;
+  busyAcc: string | null;
+  busyAssign: string | null;
+  zonesByAccount: (id: string) => ZoneFull[];
+  onFilterZone: (v: string) => void;
+  onLoadAccounts: (p: number) => void;
+  onLoadAssignments: (p: number, z?: string) => void;
+  onSync: (id: string) => void;
+  onValidate: (id: string) => void;
+  onDeleteAccount: (acc: ProviderAccount) => void;
+  onSetDefault: (id: string) => void;
+  onDeleteZone: (z: ZoneFull) => void;
+  onVerify: (id: string) => void;
+  onRelease: (a: DomainAssignment) => void;
+  onOpenProvModal: () => void;
+  onOpenCustomModal: () => void;
+}) {
+  const [tab, setTab] = useState<"accounts" | "subdomains">("accounts");
+
+  return (
+    <div className="min-h-[calc(100vh-3rem)] px-3 pb-8 pt-20">
+      {/* Alert */}
+      {alert && (
+        <div className={`mb-3 rounded-md border px-3 py-2 text-xs ${alert.type === "success" ? "border-green-500/20 bg-green-500/5 text-green-600 dark:text-green-400" : "border-red-500/20 bg-red-500/5 text-red-500 dark:text-red-400"}`}>
+          {alert.msg}
+        </div>
+      )}
+
+      {/* Tab switcher */}
+      <div className="mb-4 flex rounded-lg border border-canvas-border bg-canvas-bg p-0.5">
+        <button
+          type="button"
+          onClick={() => setTab("accounts")}
+          className={`flex-1 rounded-md py-2 text-xs font-medium transition-colors ${
+            tab === "accounts" ? "bg-canvas-fg text-canvas-bg" : "text-canvas-muted"
+          }`}
+        >
+          Accounts
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("subdomains")}
+          className={`flex-1 rounded-md py-2 text-xs font-medium transition-colors ${
+            tab === "subdomains" ? "bg-canvas-fg text-canvas-bg" : "text-canvas-muted"
+          }`}
+        >
+          Subdomains
+        </button>
+      </div>
+
+      {/* ── Accounts tab ── */}
+      {tab === "accounts" && (
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-canvas-fg">Provider Accounts</h2>
+            <button
+              type="button"
+              onClick={onOpenProvModal}
+              className="rounded-md bg-canvas-fg px-3 py-1.5 text-[11px] font-medium text-canvas-bg transition-opacity hover:opacity-90"
+            >
+              + Add
+            </button>
+          </div>
+
+          {accounts.length === 0 ? (
+            <div className="py-12 text-center text-xs text-canvas-muted">No provider accounts yet.</div>
+          ) : (
+            <div className="space-y-3">
+              {accounts.map((acc) => (
+                <MobileAccountCard
+                  key={acc.id}
+                  acc={acc}
+                  zones={zonesByAccount(acc.id)}
+                  busy={busyAcc}
+                  onSync={() => onSync(acc.id)}
+                  onValidate={() => onValidate(acc.id)}
+                  onDelete={() => onDeleteAccount(acc)}
+                  onSetDefault={onSetDefault}
+                  onDeleteZone={onDeleteZone}
+                />
+              ))}
+            </div>
+          )}
+
+          {accData && accData.totalPages > 1 && (
+            <MobilePagination data={accData} onPage={onLoadAccounts} />
+          )}
+        </>
+      )}
+
+      {/* ── Subdomains tab ── */}
+      {tab === "subdomains" && (
+        <>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <select
+              value={filterZone}
+              onChange={(e) => onFilterZone(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-canvas-border bg-transparent px-2 py-1.5 text-xs text-canvas-fg focus:outline-none"
+            >
+              <option value="">All domains</option>
+              {activeZones.map((z) => <option key={z.id} value={z.id}>{z.zoneName}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={onOpenCustomModal}
+              className="shrink-0 rounded-md bg-canvas-fg px-3 py-1.5 text-[11px] font-medium text-canvas-bg transition-opacity hover:opacity-90"
+            >
+              + Record
+            </button>
+          </div>
+
+          {assignments.length === 0 ? (
+            <div className="py-12 text-center text-xs text-canvas-muted">No subdomains found.</div>
+          ) : (
+            <div className="space-y-2">
+              {assignments.map((a) => (
+                <MobileAssignmentCard
+                  key={a.id}
+                  assignment={a}
+                  busy={busyAssign}
+                  onVerify={() => onVerify(a.id)}
+                  onRelease={() => onRelease(a)}
+                />
+              ))}
+            </div>
+          )}
+
+          {assignData && assignData.totalPages > 1 && (
+            <MobilePagination data={assignData} onPage={(p) => onLoadAssignments(p, filterZone)} />
+          )}
+        </>
+      )}
+
+      {/* Modals rendered via portal from parent */}
+    </div>
+  );
+}
+
+/* ── Mobile account card ── */
+
+function MobileAccountCard({
+  acc, zones, busy, onSync, onValidate, onDelete, onSetDefault, onDeleteZone,
+}: {
+  acc: ProviderAccount; zones: ZoneFull[]; busy: string | null;
+  onSync: () => void; onValidate: () => void; onDelete: () => void;
+  onSetDefault: (id: string) => void; onDeleteZone: (z: ZoneFull) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-canvas-border bg-canvas-bg shadow-sm">
+      {/* Header */}
+      <button
+        type="button"
+        onClick={() => setExpanded((p) => !p)}
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-canvas-fg">{acc.displayName}</p>
+          <div className="mt-0.5 flex items-center gap-2">
+            <Badge className="bg-canvas-surface-hover text-canvas-muted">{acc.providerType}</Badge>
+            <Badge className={HEALTH_STYLE[acc.healthStatus] ?? HEALTH_STYLE.UNKNOWN}>{acc.healthStatus}</Badge>
+            <span className="text-[10px] text-canvas-muted">{zones.length} domain{zones.length !== 1 ? "s" : ""}</span>
+          </div>
+        </div>
+        {expanded ? <FiChevronDown size={14} className="shrink-0 text-canvas-muted" /> : <FiChevronRight size={14} className="shrink-0 text-canvas-muted" />}
+      </button>
+
+      {expanded && (
+        <div className="border-t border-canvas-border px-4 py-3 space-y-3">
+          {/* Actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            <MobileActionBtn icon={<FiRefreshCw size={11} />} label={busy === `sync-${acc.id}` ? "Syncing..." : "Sync"} onClick={onSync} disabled={busy === `sync-${acc.id}`} />
+            <MobileActionBtn icon={<FiCheckCircle size={11} />} label={busy === `val-${acc.id}` ? "..." : "Validate"} onClick={onValidate} disabled={busy === `val-${acc.id}`} />
+            <MobileActionBtn icon={<FiTrash2 size={11} />} label="Delete" onClick={onDelete} danger />
+          </div>
+
+          {/* Zones */}
+          {zones.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Domains</p>
+              {zones.map((z) => (
+                <div key={z.id} className="flex items-center gap-2 rounded-lg border border-canvas-border px-3 py-2">
+                  <FiGlobe size={11} className="shrink-0 text-canvas-muted" />
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-canvas-fg">{z.zoneName}</span>
+                  {z.defaultForAutoAssign && (
+                    <Badge className="bg-green-500/10 text-green-600 dark:text-green-400">Default</Badge>
+                  )}
+                  <Badge className={z.active ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"}>
+                    {z.active ? "Active" : "Inactive"}
+                  </Badge>
+                  <div className="flex items-center gap-1">
+                    {z.active && !z.defaultForAutoAssign && (
+                      <button type="button" onClick={() => onSetDefault(z.id)} disabled={busy === `def-${z.id}`} className="rounded p-1 text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg disabled:opacity-40" title="Set Default">
+                        <FiStar size={11} />
+                      </button>
+                    )}
+                    <button type="button" onClick={() => onDeleteZone(z)} className="rounded p-1 text-red-500 hover:bg-red-500/5 dark:text-red-400" title="Delete">
+                      <FiTrash2 size={11} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {zones.length === 0 && (
+            <p className="text-[11px] text-canvas-muted">No domains. Click &quot;Sync&quot; to import.</p>
+          )}
+
+          <p className="text-[10px] text-canvas-muted">Created {fmt(acc.createdAt)}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Mobile assignment card ── */
+
+function MobileAssignmentCard({
+  assignment: a, busy, onVerify, onRelease,
+}: {
+  assignment: DomainAssignment; busy: string | null;
+  onVerify: () => void; onRelease: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-canvas-border bg-canvas-bg shadow-sm">
+      <button
+        type="button"
+        onClick={() => setExpanded((p) => !p)}
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-xs font-medium text-canvas-fg">{a.hostname}</p>
+          <div className="mt-0.5 flex items-center gap-2">
+            <Badge className="bg-canvas-surface-hover text-canvas-muted">{a.recordType}</Badge>
+            <Badge className={ASSIGN_STYLE[a.status] ?? ASSIGN_STYLE.REQUESTED}>{a.status}</Badge>
+          </div>
+        </div>
+        <FiChevronDown size={12} className={`shrink-0 text-canvas-muted transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+
+      {expanded && (
+        <div className="space-y-2 border-t border-canvas-border px-3.5 py-2.5 text-[11px]">
+          <div className="flex justify-between">
+            <span className="text-canvas-muted">Target</span>
+            <span className="font-mono text-canvas-fg">{a.targetValue}</span>
+          </div>
+          {a.zoneName && (
+            <div className="flex justify-between">
+              <span className="text-canvas-muted">Domain</span>
+              <span className="text-canvas-fg">{a.zoneName}</span>
+            </div>
+          )}
+          <div className="flex justify-between">
+            <span className="text-canvas-muted">Created</span>
+            <span className="text-canvas-fg">{fmt(a.createdAt)}</span>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            {a.status !== "RELEASED" && a.status !== "VERIFIED" && (
+              <MobileActionBtn
+                icon={<FiCheckCircle size={11} />}
+                label={busy === `ver-${a.id}` ? "..." : "Verify"}
+                onClick={onVerify}
+                disabled={busy === `ver-${a.id}`}
+              />
+            )}
+            {a.status !== "RELEASED" && (
+              <MobileActionBtn icon={<FiTrash2 size={11} />} label="Release" onClick={onRelease} danger />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Mobile helpers ── */
+
+function MobileActionBtn({
+  icon, label, onClick, danger, disabled,
+}: {
+  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean; disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${
+        danger
+          ? "border-red-500/20 text-red-500 hover:bg-red-500/5 dark:text-red-400"
+          : "border-canvas-border text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function MobilePagination({ data, onPage }: { data: PageResponse<unknown>; onPage: (p: number) => void }) {
+  return (
+    <div className="mt-4 flex items-center justify-between text-xs text-canvas-muted">
+      <button type="button" onClick={() => onPage(data.number - 1)} disabled={data.first} className="rounded-md border border-canvas-border px-3 py-1.5 text-[11px] font-medium text-canvas-muted disabled:opacity-30">Prev</button>
+      <span>{data.number + 1} / {data.totalPages}</span>
+      <button type="button" onClick={() => onPage(data.number + 1)} disabled={data.last} className="rounded-md border border-canvas-border px-3 py-1.5 text-[11px] font-medium text-canvas-muted disabled:opacity-30">Next</button>
+    </div>
   );
 }
 

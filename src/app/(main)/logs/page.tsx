@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FiFilter, FiChevronDown, FiX } from "react-icons/fi";
 import { getUser } from "@/lib/auth";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import {
   fetchAuditLogsApi,
   type AuditLogEntry,
@@ -43,6 +45,7 @@ function actionColor(action: string): string {
 
 export default function LogsPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getUser>>(null);
 
   useEffect(() => {
@@ -125,11 +128,42 @@ export default function LogsPage() {
   if (!currentUser || currentUser.role !== "ADMIN") return null;
 
   const logs = data?.content ?? [];
+  const hasActiveFilters = !!(filterAction || filterEntityType || filterUserId || filterFrom || filterTo);
 
   const selectBase =
     "rounded-md border border-canvas-border bg-transparent px-2.5 py-1.5 text-xs text-canvas-fg transition-colors focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10";
   const inputBase = selectBase;
 
+  /* ── Mobile view ── */
+  if (isMobile) {
+    return (
+      <MobileLogsView
+        logs={logs}
+        loading={loading}
+        error={error}
+        data={data}
+        page={page}
+        autoRefresh={autoRefresh}
+        hasActiveFilters={hasActiveFilters}
+        filterAction={filterAction}
+        filterEntityType={filterEntityType}
+        filterUserId={filterUserId}
+        filterFrom={filterFrom}
+        filterTo={filterTo}
+        onFilterAction={setFilterAction}
+        onFilterEntityType={setFilterEntityType}
+        onFilterUserId={setFilterUserId}
+        onFilterFrom={setFilterFrom}
+        onFilterTo={setFilterTo}
+        onAutoRefresh={setAutoRefresh}
+        onFilter={handleFilter}
+        onClear={handleClear}
+        onLoadPage={loadLogs}
+      />
+    );
+  }
+
+  /* ── Desktop view ── */
   return (
     <div className="mx-auto max-w-7xl px-4 py-6">
       {/* Header */}
@@ -327,4 +361,307 @@ function formatTimestamp(iso: string): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatTimeShort(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/* ================================================================== */
+/*  Mobile Logs View                                                   */
+/* ================================================================== */
+
+function MobileLogsView({
+  logs,
+  loading,
+  error,
+  data,
+  page,
+  autoRefresh,
+  hasActiveFilters,
+  filterAction,
+  filterEntityType,
+  filterUserId,
+  filterFrom,
+  filterTo,
+  onFilterAction,
+  onFilterEntityType,
+  onFilterUserId,
+  onFilterFrom,
+  onFilterTo,
+  onAutoRefresh,
+  onFilter,
+  onClear,
+  onLoadPage,
+}: {
+  logs: AuditLogEntry[];
+  loading: boolean;
+  error: string;
+  data: PageResponse<AuditLogEntry> | null;
+  page: number;
+  autoRefresh: boolean;
+  hasActiveFilters: boolean;
+  filterAction: string;
+  filterEntityType: string;
+  filterUserId: string;
+  filterFrom: string;
+  filterTo: string;
+  onFilterAction: (v: string) => void;
+  onFilterEntityType: (v: string) => void;
+  onFilterUserId: (v: string) => void;
+  onFilterFrom: (v: string) => void;
+  onFilterTo: (v: string) => void;
+  onAutoRefresh: (v: boolean) => void;
+  onFilter: () => void;
+  onClear: () => void;
+  onLoadPage: (page: number) => void;
+}) {
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const selectBase =
+    "w-full rounded-md border border-canvas-border bg-transparent px-2.5 py-2 text-xs text-canvas-fg transition-colors focus:outline-none focus:border-canvas-fg/25";
+
+  return (
+    <div className="min-h-[calc(100vh-3rem)] px-3 pb-8 pt-20">
+      {/* Header */}
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="text-base font-semibold text-canvas-fg">
+          Audit Log
+          {data && (
+            <span className="ml-2 text-sm font-normal text-canvas-muted">
+              ({data.totalElements})
+            </span>
+          )}
+        </h1>
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((p) => !p)}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+            hasActiveFilters
+              ? "border-canvas-fg bg-canvas-fg text-canvas-bg"
+              : "border-canvas-border text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+          }`}
+        >
+          <FiFilter size={11} />
+          Filters
+          {hasActiveFilters && <span className="ml-0.5">*</span>}
+          <FiChevronDown size={11} className={`transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+
+      {/* Collapsible filters */}
+      {filtersOpen && (
+        <div className="mb-4 space-y-3 rounded-xl border border-canvas-border bg-canvas-bg p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-canvas-muted">FILTERS</span>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(false)}
+              className="rounded-md p-1 text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+            >
+              <FiX size={13} />
+            </button>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-medium text-canvas-muted">Action</label>
+            <select value={filterAction} onChange={(e) => onFilterAction(e.target.value)} className={selectBase}>
+              <option value="">All actions</option>
+              {ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-medium text-canvas-muted">Entity Type</label>
+            <select value={filterEntityType} onChange={(e) => onFilterEntityType(e.target.value)} className={selectBase}>
+              <option value="">All types</option>
+              {ENTITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-medium text-canvas-muted">User ID</label>
+            <input
+              type="text"
+              placeholder="UUID"
+              value={filterUserId}
+              onChange={(e) => onFilterUserId(e.target.value)}
+              className={selectBase}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-[10px] font-medium text-canvas-muted">From</label>
+              <input
+                type="datetime-local"
+                value={filterFrom}
+                onChange={(e) => onFilterFrom(e.target.value)}
+                className={selectBase}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] font-medium text-canvas-muted">To</label>
+              <input
+                type="datetime-local"
+                value={filterTo}
+                onChange={(e) => onFilterTo(e.target.value)}
+                className={selectBase}
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-[11px] text-canvas-muted cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => onAutoRefresh(e.target.checked)}
+              className="accent-canvas-fg"
+            />
+            Auto-refresh (10s)
+          </label>
+
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => { onFilter(); setFiltersOpen(false); }}
+              className="flex-1 rounded-md bg-canvas-fg py-2 text-xs font-medium text-canvas-bg transition-opacity hover:opacity-90"
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              onClick={() => { onClear(); setFiltersOpen(false); }}
+              className="rounded-md border border-canvas-border px-4 py-2 text-xs font-medium text-canvas-muted transition-colors hover:text-canvas-fg"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mb-3 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-500 dark:text-red-400">
+          {error}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && logs.length === 0 && (
+        <div className="space-y-2">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-16 animate-pulse rounded-xl border border-canvas-border bg-canvas-surface-hover" />
+          ))}
+        </div>
+      )}
+
+      {/* Empty */}
+      {!loading && logs.length === 0 && (
+        <div className="py-12 text-center text-sm text-canvas-muted">No audit logs found</div>
+      )}
+
+      {/* Log cards */}
+      {logs.length > 0 && (
+        <div className="space-y-2">
+          {logs.map((l) => (
+            <LogCard key={l.id} log={l} />
+          ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {data && data.totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-between text-xs text-canvas-muted">
+          <button
+            type="button"
+            onClick={() => onLoadPage(page - 1)}
+            disabled={data.first}
+            className="rounded-md border border-canvas-border px-3 py-1.5 text-[11px] font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg disabled:opacity-30"
+          >
+            Prev
+          </button>
+          <span>
+            {data.number + 1} / {data.totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => onLoadPage(page + 1)}
+            disabled={data.last}
+            className="rounded-md border border-canvas-border px-3 py-1.5 text-[11px] font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg disabled:opacity-30"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Mobile log card ── */
+
+function LogCard({ log }: { log: AuditLogEntry }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-canvas-border bg-canvas-bg shadow-sm">
+      <button
+        type="button"
+        onClick={() => setExpanded((p) => !p)}
+        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-xs font-medium ${actionColor(log.action)}`}>
+            {log.action}
+          </p>
+          <p className="mt-0.5 text-[10px] text-canvas-muted">
+            {log.entityType}
+            {log.entityId && <span className="ml-1 opacity-60">{log.entityId.substring(0, 8)}</span>}
+            <span className="mx-1.5">·</span>
+            {formatTimeShort(log.createdAt)}
+          </p>
+        </div>
+        <FiChevronDown
+          size={12}
+          className={`shrink-0 text-canvas-muted transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {expanded && (
+        <div className="space-y-1.5 border-t border-canvas-border px-3.5 py-2.5 text-[11px]">
+          <div className="flex justify-between">
+            <span className="text-canvas-muted">Time</span>
+            <span className="text-canvas-fg">{formatTimestamp(log.createdAt)}</span>
+          </div>
+          {log.userId && (
+            <div className="flex justify-between">
+              <span className="text-canvas-muted">User</span>
+              <span className="font-mono text-canvas-fg">{log.userId.substring(0, 12)}...</span>
+            </div>
+          )}
+          {log.ipAddress && (
+            <div className="flex justify-between">
+              <span className="text-canvas-muted">IP</span>
+              <span className="font-mono text-canvas-fg">{log.ipAddress}</span>
+            </div>
+          )}
+          {log.details && (
+            <div className="pt-1">
+              <span className="text-canvas-muted">Details</span>
+              <p className="mt-0.5 break-all rounded-md bg-canvas-surface-hover px-2 py-1.5 font-mono text-[10px] text-canvas-fg">
+                {log.details}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

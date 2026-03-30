@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiEye, FiEyeOff } from "react-icons/fi";
 import { Modal } from "@/components/ui/modal";
+import { MobileUsersDashboard } from "@/components/users";
 import { getUser } from "@/lib/auth";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import {
   fetchUsersApi,
   createUserApi,
@@ -22,6 +24,7 @@ const ROLES: UserRole[] = ["DEVOPS", "ADMIN"];
 
 export default function UsersPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getUser>>(null);
 
   // Read user after mount (AuthGuard guarantees auth is ready)
@@ -100,6 +103,56 @@ export default function UsersPage() {
   if (!currentUser || currentUser.role !== "ADMIN") return null;
 
   const users = data?.content ?? [];
+
+  if (isMobile) {
+    return (
+      <>
+        {/* Alert (above mobile dashboard) */}
+        {alert && (
+          <div className="fixed left-3 right-3 top-14 z-50">
+            <div
+              className={`rounded-md border px-4 py-2.5 text-sm ${
+                alert.type === "success"
+                  ? "border-green-500/20 bg-green-500/5 text-green-600 dark:text-green-400"
+                  : "border-red-500/20 bg-red-500/5 text-red-500 dark:text-red-400"
+              }`}
+            >
+              {alert.msg}
+            </div>
+          </div>
+        )}
+
+        <MobileUsersDashboard
+          users={users}
+          loading={loading}
+          data={data}
+          page={page}
+          onLoadPage={loadUsers}
+          onCreateUser={() => { setEditUser(null); setModalOpen(true); }}
+          onEdit={(u) => { setEditUser(u); setModalOpen(true); }}
+          onPassword={(id) => { setPwdUserId(id); setPwdModalOpen(true); }}
+          onToggle={handleToggle}
+          onDelete={handleDelete}
+        />
+
+        <UserModal
+          key={editUser?.id ?? "new"}
+          open={modalOpen}
+          user={editUser}
+          onClose={() => { setModalOpen(false); setEditUser(null); }}
+          onSaved={(msg) => { setModalOpen(false); setEditUser(null); showAlert(msg, "success"); loadUsers(page); }}
+        />
+        <PasswordModal
+          key={`pwd-${pwdUserId}`}
+          open={pwdModalOpen}
+          userId={pwdUserId}
+          onClose={() => setPwdModalOpen(false)}
+          onSaved={() => { setPwdModalOpen(false); showAlert("Password changed", "success"); }}
+          onError={(msg) => showAlert(msg, "error")}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
