@@ -16,12 +16,21 @@ export function Header() {
         className="surface-overlay fixed left-0 right-0 top-0 flex h-12 items-center justify-between px-4"
         style={{ zIndex: Z_INDEX.HEADER }}
       >
+        {/* White-to-transparent gradient behind logo for dark mode visibility */}
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0"
+          style={{
+            width: 180,
+            background: "linear-gradient(to right, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0.4) 40%, rgba(255,255,255,0) 100%)",
+          }}
+        />
+
         <div className="flex h-full items-center gap-2.5 py-1.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo/logo.png"
             alt="ClawOps"
-            className="h-7 rounded bg-white px-1 object-contain"
+            className="relative z-10 h-7 object-contain"
             draggable={false}
           />
         </div>
