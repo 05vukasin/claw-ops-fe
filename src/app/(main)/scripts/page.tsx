@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { FiFile, FiUpload } from "react-icons/fi";
-import { Modal } from "@/components/ui/modal";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { useSyncExternalStore } from "react";
+import { FiFile, FiUpload, FiTrash2, FiX } from "react-icons/fi";
+import { Z_INDEX } from "@/lib/z-index";
 import {
   fetchScriptsApi,
   fetchScriptApi,
@@ -30,8 +32,8 @@ export default function ScriptsPage() {
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
-  // Modal
-  const [modalOpen, setModalOpen] = useState(false);
+  // Popup
+  const [popupOpen, setPopupOpen] = useState(false);
   const [editScript, setEditScript] = useState<DeploymentScript | null>(null);
 
   const showAlert = useCallback((msg: string, type: "success" | "error") => {
@@ -51,24 +53,22 @@ export default function ScriptsPage() {
     }
   }, [showAlert]);
 
-  useEffect(() => {
-    loadScripts();
-  }, [loadScripts]);
+  useEffect(() => { loadScripts(); }, [loadScripts]);
 
   const handleCreate = useCallback(() => {
     setEditScript(null);
-    setModalOpen(true);
+    setPopupOpen(true);
   }, []);
 
-  const handleEdit = useCallback(async (id: string) => {
+  const handleRowClick = useCallback(async (script: DeploymentScript) => {
     try {
-      const script = await fetchScriptApi(id);
-      setEditScript(script);
-      setModalOpen(true);
+      const full = await fetchScriptApi(script.id);
+      setEditScript(full);
     } catch {
-      showAlert("Failed to load script", "error");
+      setEditScript(script);
     }
-  }, [showAlert]);
+    setPopupOpen(true);
+  }, []);
 
   const handleDelete = useCallback(
     async (script: DeploymentScript) => {
@@ -84,20 +84,29 @@ export default function ScriptsPage() {
     [showAlert, loadScripts],
   );
 
-  const handleModalClose = useCallback(() => {
-    setModalOpen(false);
+  const handlePopupClose = useCallback(() => {
+    setPopupOpen(false);
     setEditScript(null);
   }, []);
 
   const handleSaved = useCallback(
     (msg: string) => {
-      setModalOpen(false);
+      setPopupOpen(false);
       setEditScript(null);
       showAlert(msg, "success");
       loadScripts();
     },
     [showAlert, loadScripts],
   );
+
+  const handleDeleteFromPopup = useCallback(() => {
+    if (editScript) {
+      handleDelete(editScript).then(() => {
+        setPopupOpen(false);
+        setEditScript(null);
+      });
+    }
+  }, [editScript, handleDelete]);
 
   const scripts = data?.content ?? [];
 
@@ -143,14 +152,15 @@ export default function ScriptsPage() {
                   <Th>Type</Th>
                   <Th>Description</Th>
                   <Th>Created</Th>
-                  <Th>Actions</Th>
+                  <Th className="w-16" />
                 </tr>
               </thead>
               <tbody>
                 {scripts.map((s) => (
                   <tr
                     key={s.id}
-                    className="border-b border-canvas-border last:border-b-0 transition-colors hover:bg-canvas-surface-hover/50"
+                    onClick={() => handleRowClick(s)}
+                    className="cursor-pointer border-b border-canvas-border last:border-b-0 transition-colors hover:bg-canvas-surface-hover/50"
                   >
                     <td className="px-4 py-3 font-medium text-canvas-fg whitespace-nowrap">{s.name}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -158,13 +168,17 @@ export default function ScriptsPage() {
                         {s.scriptType}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-canvas-muted max-w-62.5 truncate">{s.description || "—"}</td>
+                    <td className="px-4 py-3 text-canvas-muted max-w-xs truncate">{s.description || "—"}</td>
                     <td className="px-4 py-3 text-xs text-canvas-muted whitespace-nowrap">{formatDate(s.createdAt)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1">
-                        <GhostBtn onClick={() => handleEdit(s.id)}>Edit</GhostBtn>
-                        <GhostBtn onClick={() => handleDelete(s)} danger>Delete</GhostBtn>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(s); }}
+                        className="rounded-md p-1.5 text-canvas-muted transition-colors hover:bg-red-500/5 hover:text-red-500 dark:hover:text-red-400"
+                        title="Delete"
+                      >
+                        <FiTrash2 size={13} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -174,35 +188,42 @@ export default function ScriptsPage() {
         )}
       </div>
 
-      {/* Script modal */}
-      <ScriptModal
+      {/* Script popup */}
+      <ScriptPopup
         key={editScript?.id ?? "new"}
-        open={modalOpen}
+        open={popupOpen}
         script={editScript}
-        onClose={handleModalClose}
+        onClose={handlePopupClose}
         onSaved={handleSaved}
+        onDelete={editScript ? handleDeleteFromPopup : undefined}
       />
     </div>
   );
 }
 
 /* ================================================================== */
-/*  Script Create/Edit Modal                                           */
+/*  Script Detail/Edit Popup (wider, inline editing, dirty tracking)  */
 /* ================================================================== */
 
-function ScriptModal({
+const emptySubscribe = () => () => {};
+
+function ScriptPopup({
   open,
   script,
   onClose,
   onSaved,
+  onDelete,
 }: {
   open: boolean;
   script: DeploymentScript | null;
   onClose: () => void;
   onSaved: (msg: string) => void;
+  onDelete?: () => void;
 }) {
-  const isEdit = !!script;
+  const mounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEdit = !!script;
 
   const [name, setName] = useState(script?.name ?? "");
   const [scriptType, setScriptType] = useState<ScriptType>(script?.scriptType ?? "GENERAL");
@@ -212,190 +233,235 @@ function ScriptModal({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Dirty tracking
+  const isDirty = useMemo(() => {
+    if (!isEdit) return true; // new script always shows Save
+    return (
+      name !== (script?.name ?? "") ||
+      scriptType !== (script?.scriptType ?? "GENERAL") ||
+      description !== (script?.description ?? "") ||
+      content !== (script?.scriptContent ?? "")
+    );
+  }, [isEdit, name, scriptType, description, content, script]);
+
+  // Escape key
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, onClose]);
+
+  // Lock body scroll
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      setContent(reader.result as string);
-      setFileName(file.name);
-    };
+    reader.onload = () => { setContent(reader.result as string); setFileName(file.name); };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      setError("");
+  const handleSubmit = useCallback(async () => {
+    setError("");
+    if (!name.trim()) { setError("Name is required."); return; }
+    if (!content.trim()) { setError("Script content is required."); return; }
 
-      if (!name.trim()) { setError("Name is required."); return; }
-      if (!content.trim()) { setError("Script content is required."); return; }
-
-      setSubmitting(true);
-      try {
-        const body = {
-          name: name.trim(),
-          scriptType,
-          description: description.trim() || null,
-          scriptContent: content,
-        };
-
-        if (isEdit) {
-          await updateScriptApi(script!.id, body);
-          onSaved("Script updated");
-        } else {
-          await createScriptApi(body);
-          onSaved("Script created");
-        }
-      } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Save failed");
-      } finally {
-        setSubmitting(false);
+    setSubmitting(true);
+    try {
+      const body = {
+        name: name.trim(),
+        scriptType,
+        description: description.trim() || null,
+        scriptContent: content,
+      };
+      if (isEdit) {
+        await updateScriptApi(script!.id, body);
+        onSaved("Script updated");
+      } else {
+        await createScriptApi(body);
+        onSaved("Script created");
       }
-    },
-    [name, scriptType, description, content, isEdit, script, onSaved],
-  );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Save failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [name, scriptType, description, content, isEdit, script, onSaved]);
 
-  const inputBase =
-    "w-full rounded-md border border-canvas-border bg-transparent px-3 py-2 text-sm text-canvas-fg placeholder:text-canvas-muted/60 transition-colors focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10";
+  const handleBackdropClick = useCallback((e: React.MouseEvent) => {
+    if (panelRef.current && !panelRef.current.contains(e.target as Node)) onClose();
+  }, [onClose]);
 
-  return (
-    <Modal open={open} onClose={onClose}>
-      <form onSubmit={handleSubmit} noValidate>
-        {/* Header */}
-        <div className="px-6 pb-1 pt-6">
-          <h3 className="text-[15px] font-semibold tracking-tight text-canvas-fg">
-            {isEdit ? "Edit Script" : "New Script"}
-          </h3>
-        </div>
+  if (!mounted || !open) return null;
 
-        {/* Body */}
-        <div className="max-h-[65vh] overflow-y-auto px-6 pb-2 pt-4 space-y-3">
-          <div>
-            <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">
-              Name <span className="text-red-500/70">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              maxLength={100}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={inputBase}
-              autoFocus
-            />
-          </div>
+  return createPortal(
+    <div
+      className="fixed inset-0 flex items-center justify-center overflow-y-auto p-4"
+      style={{ zIndex: Z_INDEX.MODAL }}
+      onClick={handleBackdropClick}
+      role="presentation"
+    >
+      {/* Backdrop */}
+      <div className="pointer-events-none fixed inset-0 bg-black/40 dark:bg-black/60" />
 
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">
-                Type <span className="text-red-500/70">*</span>
-              </label>
-              <select
-                value={scriptType}
-                onChange={(e) => setScriptType(e.target.value as ScriptType)}
-                className={inputBase}
-              >
-                {SCRIPT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
+      {/* Panel */}
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-canvas-border bg-canvas-bg shadow-2xl"
+        style={{ height: "85vh" }}
+      >
+        {/* ── Header ── */}
+        <div className="flex shrink-0 items-center gap-3 border-b border-canvas-border px-6 py-4">
+          {/* Name — editable inline */}
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Script name..."
+            maxLength={100}
+            autoFocus
+            className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold text-canvas-fg placeholder:text-canvas-muted/40 outline-none"
+          />
 
-          <div>
-            <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">
-              Description <span className="ml-1 font-normal text-canvas-muted/50">optional</span>
-            </label>
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className={inputBase}
-            />
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">
-              Script Content <span className="text-red-500/70">*</span>
-            </label>
-            <div className="mb-2 flex items-center gap-2">
+          {/* Type badge selector */}
+          <div className="flex shrink-0 items-center gap-1">
+            {SCRIPT_TYPES.map((t) => (
               <button
+                key={t}
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 rounded-md border border-canvas-border px-3 py-1.5 text-xs font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                onClick={() => setScriptType(t)}
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition-all ${
+                  scriptType === t
+                    ? TYPE_STYLE[t]
+                    : "text-canvas-muted/40 hover:text-canvas-muted"
+                }`}
               >
-                <FiUpload size={13} />
-                Upload .sh file
+                {t}
               </button>
-              {fileName && (
-                <span className="flex items-center gap-1 text-xs text-canvas-muted">
-                  <FiFile size={12} />
-                  {fileName}
-                </span>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".sh,.bash,text/x-sh,text/plain"
-                onChange={handleFile}
-                className="hidden"
-              />
-            </div>
-            <textarea
-              rows={15}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className={`${inputBase} resize-none font-mono text-[12px] leading-relaxed`}
-              spellCheck={false}
-            />
+            ))}
           </div>
 
-          {error && <p className="text-[11px] text-red-500 dark:text-red-400">{error}</p>}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-canvas-border px-6 py-4">
+          {/* Close */}
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-4 py-2 text-sm text-canvas-muted transition-colors hover:text-canvas-fg"
+            className="shrink-0 rounded-md p-1.5 text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
+          >
+            <FiX size={16} />
+          </button>
+        </div>
+
+        {/* ── Description ── */}
+        <div className="shrink-0 border-b border-canvas-border px-6 py-2.5">
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add a description..."
+            className="w-full bg-transparent text-sm text-canvas-muted placeholder:text-canvas-muted/30 outline-none"
+          />
+        </div>
+
+        {/* ── Script content ── */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="min-h-0 flex-1 resize-none border-none bg-[#0d1117] px-6 py-4 font-mono text-[13px] leading-relaxed text-[#e6edf3] placeholder:text-gray-600 outline-none"
+            style={{ fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace" }}
+            spellCheck={false}
+            placeholder="#!/bin/bash&#10;set -e&#10;&#10;# Your script here..."
+          />
+        </div>
+
+        {/* ── Error ── */}
+        {error && (
+          <div className="shrink-0 border-t border-red-500/20 bg-red-500/5 px-6 py-2 text-[11px] text-red-500 dark:text-red-400">
+            {error}
+          </div>
+        )}
+
+        {/* ── Footer ── */}
+        <div className="flex shrink-0 items-center gap-2 border-t border-canvas-border px-6 py-3">
+          {/* Left: Delete + Upload */}
+          {isEdit && onDelete && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-medium text-red-500 transition-colors hover:bg-red-500/5 dark:text-red-400"
+            >
+              <FiTrash2 size={12} />
+              Delete
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 rounded-md border border-canvas-border px-3 py-1.5 text-[11px] font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
+          >
+            <FiUpload size={12} />
+            Upload .sh
+          </button>
+          {fileName && (
+            <span className="flex items-center gap-1 text-[11px] text-canvas-muted">
+              <FiFile size={11} />
+              {fileName}
+            </span>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".sh,.bash,text/x-sh,text/plain"
+            onChange={handleFile}
+            className="hidden"
+          />
+
+          <span className="flex-1" />
+
+          {/* Right: Cancel + Save */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md px-4 py-1.5 text-sm text-canvas-muted transition-colors hover:text-canvas-fg"
           >
             Cancel
           </button>
+
           <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-md border border-canvas-border bg-canvas-fg px-5 py-2 text-sm font-medium text-canvas-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting || !isDirty}
+            className={`rounded-md border border-canvas-border px-5 py-1.5 text-sm font-medium transition-all ${
+              isDirty
+                ? "bg-canvas-fg text-canvas-bg opacity-100 hover:opacity-90"
+                : "bg-canvas-fg/10 text-canvas-muted opacity-50 cursor-default"
+            } disabled:cursor-not-allowed`}
           >
             {submitting ? "Saving..." : "Save"}
           </button>
         </div>
-      </form>
-    </Modal>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
 /* ── Shared sub-components ── */
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
   return (
-    <th className="px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-canvas-muted">{children}</th>
-  );
-}
-
-function GhostBtn({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
-        danger
-          ? "text-red-500 hover:bg-red-500/5 dark:text-red-400"
-          : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
-      }`}
-    >
-      {children}
-    </button>
+    <th className={`px-4 py-2.5 text-[11px] font-medium uppercase tracking-wider text-canvas-muted ${className ?? ""}`}>{children}</th>
   );
 }
 
