@@ -198,7 +198,15 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
     : "Closed";
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 bg-[#0d1117]">
+    <div
+      className="flex flex-1 flex-col min-h-0 bg-[#0d1117]"
+      onKeyDown={(e) => {
+        // Prevent parent scrollable containers from stealing arrow/page keys
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"].includes(e.key)) {
+          e.stopPropagation();
+        }
+      }}
+    >
       {/* Status bar — seamless with terminal bg */}
       <div className="flex shrink-0 items-center gap-2 bg-[#161b22] px-4 py-1.5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDot}`} />

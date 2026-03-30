@@ -17,7 +17,6 @@ export const TERMINAL_OPTIONS: ITerminalOptions = {
   lineHeight: 1.35,
   letterSpacing: 0.5,
   scrollback: 10000,
-  smoothScrollDuration: 100,
   allowProposedApi: true,
   theme: {
     background: "#0d1117",
