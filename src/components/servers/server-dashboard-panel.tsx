@@ -435,7 +435,7 @@ export function ServerDashboardPanel({
       ref={panelRef}
       role="dialog"
       aria-label={`Dashboard for ${server.name}`}
-      className="fixed flex flex-col overflow-hidden rounded-lg border border-canvas-border bg-canvas-bg shadow-2xl"
+      className="fixed flex flex-col overflow-hidden rounded-lg border border-canvas-border bg-canvas-bg shadow-2xl animate-modal-in"
       style={{
         zIndex: zIndex ?? Z_INDEX.DROPDOWN,
         left: pos.x,
