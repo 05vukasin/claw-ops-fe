@@ -1012,3 +1012,43 @@ export async function deleteMaintenanceWindowApi(id: string): Promise<void> {
     throw new ApiError(res.status, "Failed to delete maintenance window.");
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  SSH Command Execution                                              */
+/* ------------------------------------------------------------------ */
+
+export interface CommandResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  serverId: string;
+}
+
+export async function executeCommandApi(
+  serverId: string,
+  command: string,
+  timeoutSeconds?: number,
+): Promise<CommandResult> {
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/ssh/command`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command, timeoutSeconds: timeoutSeconds ?? null }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Command failed" }));
+    throw new ApiError(res.status, err.message || "Command execution failed");
+  }
+  return res.json() as Promise<CommandResult>;
+}
+
+export async function readFileApi(serverId: string, filePath: string): Promise<string> {
+  const result = await executeCommandApi(serverId, `cat '${filePath}'`);
+  if (result.exitCode !== 0) {
+    throw new ApiError(500, result.stderr || `Failed to read ${filePath}`);
+  }
+  return result.stdout;
+}

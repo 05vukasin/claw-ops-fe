@@ -30,6 +30,8 @@ interface AgentNodeProps {
   onMoveEnd: (serverId: string, name: string, offsetX: number, offsetY: number) => void;
   /** Called every frame with the agent's current animated position (for connector lines) */
   onSpringPos?: (serverId: string, name: string, x: number, y: number) => void;
+  /** Called on click (no drag) to open agent dashboard panel */
+  onSelect?: (serverId: string, name: string) => void;
   zoom: number;
 }
 
@@ -37,7 +39,7 @@ interface AgentNodeProps {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, onSpringPos, zoom }: AgentNodeProps) {
+export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, onSpringPos, onSelect, zoom }: AgentNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: agent.offsetX, y: agent.offsetY });
   const [dragging, setDragging] = useState(false);
@@ -174,8 +176,10 @@ export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, on
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       if (didDrag.current) {
         onMoveEnd(agent.serverId, agent.name, offset.x, offset.y);
+      } else if (onSelect) {
+        onSelect(agent.serverId, agent.name);
       } else if (serverDomain) {
-        // Click (not drag) — open agent URL in new tab
+        // Fallback: open agent URL in new tab
         window.open(`https://${serverDomain}/${agent.name}/`, "_blank", "noopener");
       }
     },

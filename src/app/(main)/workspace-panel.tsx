@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ServerDashboardPanel, ServerModal } from "@/components/servers";
+import { AgentDashboardPanel } from "@/components/agents/agent-dashboard-panel";
 import { useServers } from "@/lib/use-servers";
 import { Z_INDEX } from "@/lib/z-index";
 import type { Server } from "@/lib/api";
@@ -27,7 +28,22 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     [openIds, servers],
   );
 
-  // Focus order — last ID in array = highest z-index (topmost panel)
+  // Agent panels from URL
+  const openAgentKeys = useMemo(() => {
+    const param = searchParams.get("agents") ?? "";
+    return param.split(",").filter(Boolean);
+  }, [searchParams]);
+
+  const openAgentEntries = useMemo(
+    () =>
+      openAgentKeys.map((k) => {
+        const [serverId, ...rest] = k.split("::");
+        return { serverId, name: rest.join("::"), key: k };
+      }),
+    [openAgentKeys],
+  );
+
+  // Focus order — shared between server and agent panels
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
 
   const handleFocus = useCallback((id: string) => {
@@ -39,9 +55,15 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
 
   // Auto-focus the last panel in the URL (most recently clicked node)
   useEffect(() => {
-    const lastId = openIds[openIds.length - 1];
-    if (lastId) handleFocus(lastId);
-  }, [openIds, handleFocus]);
+    const lastServerId = openIds[openIds.length - 1];
+    const lastAgentKey = openAgentKeys[openAgentKeys.length - 1];
+    // Focus whichever was most recently added
+    if (lastAgentKey && (!lastServerId || openAgentKeys.length > openIds.length)) {
+      handleFocus(lastAgentKey);
+    } else if (lastServerId) {
+      handleFocus(lastServerId);
+    }
+  }, [openIds, openAgentKeys, handleFocus]);
 
   const getZIndex = useCallback((id: string) => {
     const idx = focusOrder.indexOf(id);
@@ -52,18 +74,25 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   // Edit modal
   const [editServer, setEditServer] = useState<Server | null>(null);
 
-  const updateUrl = useCallback((ids: string[]) => {
-    if (ids.length === 0) {
-      router.push("/");
-    } else {
-      router.push(`/?servers=${ids.join(",")}`);
-    }
-  }, [router]);
+  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[]) => {
+    const sp = new URLSearchParams();
+    if (serverIds.length > 0) sp.set("servers", serverIds.join(","));
+    const agents = agentKeys ?? openAgentKeys;
+    if (agents.length > 0) sp.set("agents", agents.join(","));
+    const qs = sp.toString();
+    router.push(qs ? `/?${qs}` : "/");
+  }, [router, openAgentKeys]);
 
   const handleClose = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
     updateUrl(openIds.filter((sid) => sid !== id));
   }, [openIds, updateUrl]);
+
+  const handleAgentClose = useCallback((key: string) => {
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+    const remaining = openAgentKeys.filter((k) => k !== key);
+    updateUrl(openIds, remaining);
+  }, [openIds, openAgentKeys, updateUrl]);
 
   const handleDelete = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -84,7 +113,10 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     onRefresh();
   }, [onRefresh]);
 
-  if (openServers.length === 0) return null;
+  // Lookup server domain for agent panels
+  const serverMap = useMemo(() => new Map(servers.map((s) => [s.id, s])), [servers]);
+
+  if (openServers.length === 0 && openAgentEntries.length === 0) return null;
 
   return (
     <>
@@ -97,6 +129,18 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           onEdit={(s: Server) => handleEdit(s)}
           zIndex={getZIndex(server.id)}
           onFocus={() => handleFocus(server.id)}
+        />
+      ))}
+
+      {openAgentEntries.map((entry) => (
+        <AgentDashboardPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          agentName={entry.name}
+          serverDomain={serverMap.get(entry.serverId)?.assignedDomain}
+          onClose={() => handleAgentClose(entry.key)}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
         />
       ))}
 

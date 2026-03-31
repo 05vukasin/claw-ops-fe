@@ -82,6 +82,23 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
     [router, openIds],
   );
 
+  const handleAgentSelect = useCallback(
+    (serverId: string, name: string) => {
+      const key = `${serverId}::${name}`;
+      const agentsParam = searchParams.get("agents") ?? "";
+      const openAgents = agentsParam.split(",").filter(Boolean);
+      const updated = openAgents.includes(key)
+        ? [...openAgents.filter((x) => x !== key), key]
+        : [...openAgents, key];
+      const sp = new URLSearchParams(searchParams);
+      sp.set("agents", updated.join(","));
+      const serversVal = sp.get("servers");
+      if (!serversVal) sp.delete("servers");
+      router.push(`/?${sp.toString()}`);
+    },
+    [router, searchParams],
+  );
+
   const handleFocus = useCallback(() => {}, []);
 
   // Server lookup for agent positioning
@@ -274,6 +291,7 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
               serverDomain={serverMap.get(a.serverId)?.assignedDomain}
               onMoveEnd={onMoveAgent ?? (() => {})}
               onSpringPos={handleSpringPos}
+              onSelect={handleAgentSelect}
               zoom={camera.zoom}
             />
           );
