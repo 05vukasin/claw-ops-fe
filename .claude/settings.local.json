@@ -35,7 +35,9 @@
       "Bash(ls -la \"/e/Reputeo/claw-ops-fe/src/app/\\(main\\)/\")",
       "Bash(find \"/e/Reputeo/claw-ops-fe/src/app/\\(main\\)/scripts\" -type f)",
       "Bash(find \"e:/Reputeo/claw-ops-fe/src/app/\\(main\\)\" -type f -name \"*.tsx\")",
-      "Bash(ls e:/Reputeo/claw-ops-fe/src/app/\\\\\\(main\\\\\\)/scripts/)"
+      "Bash(ls e:/Reputeo/claw-ops-fe/src/app/\\\\\\(main\\\\\\)/scripts/)",
+      "Bash(npm -v)",
+      "Bash(ls e:/Reputeo/claw-ops-fe/.env*)"
     ],
     "additionalDirectories": [
       "\\tmp"

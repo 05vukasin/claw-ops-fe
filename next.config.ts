@@ -21,11 +21,11 @@ const nextConfig: NextConfig = {
           value: [
             "default-src 'self'",
             "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "connect-src 'self' http: https: ws: wss:",
             "worker-src 'self' blob:",
             "img-src 'self' data: blob:",
-            "font-src 'self' data:",
+            "font-src 'self' data: https://fonts.gstatic.com",
             "object-src 'none'",
             "frame-ancestors 'none'",
           ].join("; ").concat(";"),
