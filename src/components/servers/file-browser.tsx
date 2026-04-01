@@ -15,7 +15,7 @@ import {
   FiTrash2,
   FiTerminal,
 } from "react-icons/fi";
-import { listFilesApi, readFileApi, executeCommandApi, uploadFileApi, ApiError, type SftpFile } from "@/lib/api";
+import { listFilesApi, downloadFileApi, executeCommandApi, uploadFileApi, ApiError, type SftpFile } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Imperative handle                                                  */
@@ -87,7 +87,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
 
   /* ---- drag-and-drop upload ---- */
   const [dragOver, setDragOver] = useState(false);
-  const [uploading, setUploading] = useState<string | null>(null);
+  const [busyMessage, setBusyMessage] = useState<string | null>(null);
 
   /* ---- context menu ---- */
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
@@ -155,7 +155,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
 
     for (let i = 0; i < droppedFiles.length; i++) {
       const f = droppedFiles[i];
-      setUploading(f.name);
+      setBusyMessage(`Uploading ${f.name}...`);
       try {
         await uploadFileApi(serverId, currentPathRef.current, f);
       } catch (err) {
@@ -163,7 +163,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
         console.error("Upload failed:", err instanceof ApiError ? err.message : err);
       }
     }
-    setUploading(null);
+    setBusyMessage(null);
     loadFiles(currentPathRef.current);
   }, [serverId, loadFiles]);
 
@@ -217,22 +217,50 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
   }, [ctxMenu, navigateTo, onFileOpen]);
 
   const handleCtxSave = useCallback(async () => {
-    if (!ctxMenu || ctxMenu.file.directory) return;
+    if (!ctxMenu) return;
     const file = ctxMenu.file;
     setCtxMenu(null);
+    setBusyMessage(file.directory ? `Zipping ${file.name}...` : `Downloading ${file.name}...`);
     try {
-      const content = await readFileApi(serverId, file.path);
-      const blob = new Blob([content], { type: "application/octet-stream" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.name;
-      a.click();
-      URL.revokeObjectURL(url);
+      if (file.directory) {
+        // Zip the folder on the server, download, then clean up
+        const archivePath = `/tmp/.claw-dl-${Date.now()}.zip`;
+        const escapedName = file.name.replace(/'/g, "'\\''");
+        let resolvedPath = file.path;
+        if (resolvedPath.startsWith("~")) resolvedPath = resolvedPath.replace("~", "$HOME");
+        const parentDir = resolvedPath.substring(0, resolvedPath.lastIndexOf("/")) || "/";
+
+        // Ensure zip is installed (try sudo), then create archive
+        const zipResult = await executeCommandApi(
+          serverId,
+          `which zip >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq zip) >/dev/null 2>&1; cd "${parentDir}" && zip -r ${archivePath} '${escapedName}'`,
+          180,
+        );
+        if (zipResult.exitCode !== 0) {
+          throw new ApiError(500, zipResult.stderr || "Failed to create zip");
+        }
+        const blob = await downloadFileApi(serverId, archivePath);
+        executeCommandApi(serverId, `rm -f ${archivePath}`, 5).catch(() => {});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${file.name}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const blob = await downloadFileApi(serverId, file.path);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("Download failed:", err instanceof ApiError ? err.message : err);
     }
+    setBusyMessage(null);
   }, [ctxMenu, serverId]);
 
   const handleCtxRun = useCallback(() => {
@@ -281,6 +309,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
       return;
     }
 
+    setBusyMessage(`Extracting ${file.name}...`);
     try {
       await executeCommandApi(serverId, cmd, 120);
       loadFiles(currentPathRef.current);
@@ -288,6 +317,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
       // eslint-disable-next-line no-console
       console.error("Extract failed:", err instanceof ApiError ? err.message : err);
     }
+    setBusyMessage(null);
   }, [ctxMenu, serverId, loadFiles]);
 
   const handleCtxDelete = useCallback(async () => {
@@ -331,10 +361,10 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
       onDrop={handleDrop}
     >
       {/* Drop overlay */}
-      {(dragOver || uploading) && (
+      {(dragOver || busyMessage) && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-blue-500/10 border-2 border-dashed border-blue-500/40 rounded">
           <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400">
-            {uploading ? `Uploading ${uploading}...` : "Drop files to upload"}
+            {busyMessage ?? "Drop files to upload"}
           </span>
         </div>
       )}
@@ -438,16 +468,14 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
             <FiTerminal size={11} className="text-canvas-muted" />
             Open
           </button>
-          {!ctxMenu.file.directory && (
-            <button
-              type="button"
-              onClick={handleCtxSave}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-canvas-fg transition-colors hover:bg-canvas-surface-hover"
-            >
-              <FiDownload size={11} className="text-canvas-muted" />
-              Save
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleCtxSave}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-canvas-fg transition-colors hover:bg-canvas-surface-hover"
+          >
+            <FiDownload size={11} className="text-canvas-muted" />
+            {ctxMenu.file.directory ? "Download as .zip" : "Save"}
+          </button>
           {!ctxMenu.file.directory && ctxMenu.file.name.endsWith(".sh") && (
             <button
               type="button"

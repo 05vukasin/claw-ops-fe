@@ -1072,6 +1072,21 @@ export async function writeFileApi(
   }
 }
 
+/** Download a file from the server via SFTP. Returns a Blob. */
+export async function downloadFileApi(
+  serverId: string,
+  remotePath: string,
+): Promise<Blob> {
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/sftp/download?path=${encodeURIComponent(remotePath)}`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Download failed" }));
+    throw new ApiError(res.status, err.message || "Download failed");
+  }
+  return res.blob();
+}
+
 /** Upload a file to the server via SFTP.
  *  Uses POST /api/v1/servers/{id}/sftp/upload?path={dir} with FormData. */
 export async function uploadFileApi(
