@@ -15,7 +15,7 @@ import {
 import { TerminalSection, type TerminalSectionHandle } from "./terminal-section";
 import { HealthSection } from "./health-section";
 import { ScriptsSection } from "./scripts-section";
-import { FileBrowser } from "./file-browser";
+import { FileBrowser, type FileBrowserHandle } from "./file-browser";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
@@ -82,6 +82,7 @@ interface ServerDashboardPanelProps {
   onClose: () => void;
   onDelete: (id: string) => void;
   onEdit: (server: Server) => void;
+  onFileOpen?: (serverId: string, file: import("@/lib/api").SftpFile) => void;
   zIndex?: number;
   onFocus?: () => void;
 }
@@ -95,6 +96,7 @@ export function ServerDashboardPanel({
   onClose,
   onDelete,
   onEdit,
+  onFileOpen,
   zIndex,
   onFocus,
 }: ServerDashboardPanelProps) {
@@ -116,8 +118,9 @@ export function ServerDashboardPanel({
   /* ---- sections ---- */
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [sslExpanded, setSslExpanded] = useState(false);
-  const [termExpanded, setTermExpanded] = useState(false);
+  const [termExpanded, setTermExpanded] = useState(() => loadNum(panelKey(server.id, "term"), 0) === 1);
   const termRef = useRef<TerminalSectionHandle>(null);
+  const fileBrowserRef = useRef<FileBrowserHandle>(null);
   const [fileBrowserH, setFileBrowserH] = useState(200);
   const fileBrowserHRef = useRef(200);
   const [panelH, setPanelH] = useState<number | null>(null);
@@ -652,7 +655,9 @@ export function ServerDashboardPanel({
                     requestAnimationFrame(animate);
                   }
                 }
-                return !prev;
+                const next = !prev;
+                saveNum(panelKey(server.id, "term"), next ? 1 : 0);
+                return next;
               });
             }}
             className="flex w-full shrink-0 items-center gap-2 border-y border-canvas-border px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
@@ -668,8 +673,11 @@ export function ServerDashboardPanel({
               {/* File browser — fixed height, resizable */}
               <div style={{ height: fileBrowserH, flexShrink: 0 }} className="overflow-hidden">
                 <FileBrowser
+                  ref={fileBrowserRef}
                   serverId={server.id}
                   onFileClick={(cmd) => termRef.current?.sendCommand(cmd)}
+                  onFileOpen={onFileOpen ? (file) => onFileOpen(server.id, file) : undefined}
+                  onRunCommand={(cmd) => termRef.current?.queueCommand(cmd)}
                   height={fileBrowserH}
                 />
               </div>
@@ -682,12 +690,17 @@ export function ServerDashboardPanel({
 
               {/* Terminal — fills remaining space */}
               <div className="flex flex-1 flex-col min-h-0">
-                <TerminalSection ref={termRef} serverId={server.id} />
+                <TerminalSection
+                  ref={termRef}
+                  serverId={server.id}
+                  onDirectoryChange={(path) => fileBrowserRef.current?.navigateTo(path)}
+                />
               </div>
             </div>
           )}
         </div>
       </div>
+
     </div>
   );
 }

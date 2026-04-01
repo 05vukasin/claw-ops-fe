@@ -70,16 +70,16 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
 
   const handleSelect = useCallback(
     (id: string) => {
-      if (openIds.includes(id)) {
-        // Already open — move to end so workspace-panel brings it to front
-        const reordered = [...openIds.filter((x) => x !== id), id];
-        router.push(`/?servers=${reordered.join(",")}`);
-        return;
-      }
-      const newIds = [...openIds, id];
-      router.push(`/?servers=${newIds.join(",")}`);
+      const reordered = openIds.includes(id)
+        ? [...openIds.filter((x) => x !== id), id]
+        : [...openIds, id];
+      const sp = new URLSearchParams(searchParams);
+      sp.set("servers", reordered.join(","));
+      const agentsVal = sp.get("agents");
+      if (!agentsVal) sp.delete("agents");
+      router.push(`/?${sp.toString()}`);
     },
-    [router, openIds],
+    [router, openIds, searchParams],
   );
 
   const handleAgentSelect = useCallback(
@@ -278,7 +278,21 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
           })}
         </svg>
 
-        {/* Agent nodes */}
+        {/* Server nodes (render first so agents stack on top) */}
+        {servers.map((s) => (
+          <ServerNode
+            key={s.id}
+            server={s}
+            isActive={openIds.includes(s.id)}
+            onMoveEnd={handleMoveEnd}
+            onMove={handleMove}
+            onFocus={handleFocus}
+            onSelect={handleSelect}
+            zoom={camera.zoom}
+          />
+        ))}
+
+        {/* Agent nodes (render after servers so they sit on top in the DOM) */}
         {agents.map((a) => {
           const sp = getServerPos(a.serverId);
           if (!sp) return null;
@@ -296,20 +310,6 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
             />
           );
         })}
-
-        {/* Server nodes */}
-        {servers.map((s) => (
-          <ServerNode
-            key={s.id}
-            server={s}
-            isActive={openIds.includes(s.id)}
-            onMoveEnd={handleMoveEnd}
-            onMove={handleMove}
-            onFocus={handleFocus}
-            onSelect={handleSelect}
-            zoom={camera.zoom}
-          />
-        ))}
       </div>
     </div>
   );

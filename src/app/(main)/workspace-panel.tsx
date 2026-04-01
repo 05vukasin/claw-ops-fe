@@ -4,9 +4,52 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ServerDashboardPanel, ServerModal } from "@/components/servers";
 import { AgentDashboardPanel } from "@/components/agents/agent-dashboard-panel";
+import { FileEditorPanel } from "@/components/servers/file-editor-panel";
 import { useServers } from "@/lib/use-servers";
 import { Z_INDEX } from "@/lib/z-index";
-import type { Server } from "@/lib/api";
+import type { Server, SftpFile } from "@/lib/api";
+
+/* ------------------------------------------------------------------ */
+/*  Open-file entry                                                    */
+/* ------------------------------------------------------------------ */
+
+interface OpenFileEntry {
+  key: string;       // "file:serverId:filePath"
+  serverId: string;
+  file: SftpFile;
+}
+
+/* ------------------------------------------------------------------ */
+/*  localStorage persistence for open files                            */
+/* ------------------------------------------------------------------ */
+
+const OPEN_FILES_KEY = "openclaw-open-files:v1";
+
+function loadOpenFiles(): OpenFileEntry[] {
+  try {
+    const raw = localStorage.getItem(OPEN_FILES_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as { serverId: string; file: SftpFile }[];
+    return arr.map((e) => ({
+      key: `file:${e.serverId}:${e.file.path}`,
+      serverId: e.serverId,
+      file: e.file,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveOpenFiles(entries: OpenFileEntry[]) {
+  try {
+    const data = entries.map((e) => ({ serverId: e.serverId, file: e.file }));
+    localStorage.setItem(OPEN_FILES_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
 
 interface WorkspacePanelProps {
   onRefresh: () => void;
@@ -43,7 +86,7 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     [openAgentKeys],
   );
 
-  // Focus order — shared between server and agent panels
+  // Focus order — shared between server, agent, and file panels
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
 
   const handleFocus = useCallback((id: string) => {
@@ -116,7 +159,28 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   // Lookup server domain for agent panels
   const serverMap = useMemo(() => new Map(servers.map((s) => [s.id, s])), [servers]);
 
-  if (openServers.length === 0 && openAgentEntries.length === 0) return null;
+  /* ---- Open file editor panels (state lives here, outside server panels) ---- */
+  const [openFiles, setOpenFiles] = useState<OpenFileEntry[]>(loadOpenFiles);
+
+  // Persist open files to localStorage whenever the list changes
+  useEffect(() => {
+    saveOpenFiles(openFiles);
+  }, [openFiles]);
+
+  const handleFileOpen = useCallback((serverId: string, file: SftpFile) => {
+    const key = `file:${serverId}:${file.path}`;
+    setOpenFiles((prev) =>
+      prev.some((e) => e.key === key) ? prev : [...prev, { key, serverId, file }],
+    );
+    handleFocus(key);
+  }, [handleFocus]);
+
+  const handleFileClose = useCallback((key: string) => {
+    setOpenFiles((prev) => prev.filter((e) => e.key !== key));
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+  }, []);
+
+  if (openServers.length === 0 && openAgentEntries.length === 0 && openFiles.length === 0) return null;
 
   return (
     <>
@@ -127,6 +191,7 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           onClose={() => handleClose(server.id)}
           onDelete={(id: string) => handleDelete(id)}
           onEdit={(s: Server) => handleEdit(s)}
+          onFileOpen={handleFileOpen}
           zIndex={getZIndex(server.id)}
           onFocus={() => handleFocus(server.id)}
         />
@@ -141,6 +206,17 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           onClose={() => handleAgentClose(entry.key)}
           zIndex={getZIndex(entry.key)}
           onFocus={() => handleFocus(entry.key)}
+        />
+      ))}
+
+      {openFiles.map((entry) => (
+        <FileEditorPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          file={entry.file}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
+          onClose={() => handleFileClose(entry.key)}
         />
       ))}
 

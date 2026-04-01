@@ -14,13 +14,16 @@ interface WsMessage {
 
 export interface TerminalSectionHandle {
   sendCommand: (cmd: string) => void;
+  /** Queue a command to run once the terminal is connected */
+  queueCommand: (cmd: string) => void;
 }
 
 interface TerminalSectionProps {
   serverId: string;
+  onDirectoryChange?: (path: string) => void;
 }
 
-export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(function TerminalSection({ serverId }, ref) {
+export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(function TerminalSection({ serverId, onDirectoryChange }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,12 +31,24 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fitRef = useRef<any>(null);
   const [status, setStatus] = useState<TermStatus>("idle");
+  const pendingCmdRef = useRef<string | null>(null);
+
+  // Ref for directory change callback so OSC handler always sees latest
+  const dirChangeRef = useRef(onDirectoryChange);
+  dirChangeRef.current = onDirectoryChange;
 
   /* ── Expose sendCommand to parent via ref ── */
   useImperativeHandle(ref, () => ({
     sendCommand(cmd: string) {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd }));
+      }
+    },
+    queueCommand(cmd: string) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd }));
+      } else {
+        pendingCmdRef.current = cmd;
       }
     },
   }), []);
@@ -60,6 +75,14 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
 
         xtermRef.current = term;
         fitRef.current = fit;
+
+        // Track current directory via OSC 7 escape sequences
+        term.parser.registerOscHandler(7, (data: string) => {
+          // OSC 7 format: file://hostname/path/to/dir
+          const match = data.match(/^file:\/\/[^/]*(\/.*)/);
+          if (match) dirChangeRef.current?.(match[1]);
+          return true;
+        });
 
         // Load performance + UX addons
         loadTerminalAddons(term);
@@ -130,6 +153,23 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       ws.onopen = () => {
         setStatus("connected");
         xtermRef.current?.focus();
+        // Inject directory tracking via OSC 7 — emits PWD after each command.
+        // Uses a short delay so the shell prompt renders first, then sends silently.
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "INPUT",
+              data: " export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\\"\\$HOSTNAME\\\" \\\"\\$PWD\\\"\"\r",
+            }));
+          }
+          // Flush any queued command after shell init
+          setTimeout(() => {
+            if (pendingCmdRef.current && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "INPUT", data: pendingCmdRef.current }));
+              pendingCmdRef.current = null;
+            }
+          }, 300);
+        }, 500);
       };
 
       ws.onmessage = (event) => {

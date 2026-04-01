@@ -1045,10 +1045,48 @@ export async function executeCommandApi(
   return res.json() as Promise<CommandResult>;
 }
 
+/** Escape a file path for safe use in single-quoted shell strings */
+function escapeShellPath(path: string): string {
+  return path.replace(/'/g, "'\\''");
+}
+
 export async function readFileApi(serverId: string, filePath: string): Promise<string> {
-  const result = await executeCommandApi(serverId, `cat '${filePath}'`);
+  const result = await executeCommandApi(serverId, `cat '${escapeShellPath(filePath)}'`);
   if (result.exitCode !== 0) {
     throw new ApiError(500, result.stderr || `Failed to read ${filePath}`);
   }
   return result.stdout;
+}
+
+export async function writeFileApi(
+  serverId: string,
+  filePath: string,
+  content: string,
+): Promise<void> {
+  const delimiter = "CLAWEOF_" + Date.now();
+  const escaped = escapeShellPath(filePath);
+  const command = `cat <<'${delimiter}' > '${escaped}'\n${content}\n${delimiter}`;
+  const result = await executeCommandApi(serverId, command, 30);
+  if (result.exitCode !== 0) {
+    throw new ApiError(500, result.stderr || `Failed to write ${filePath}`);
+  }
+}
+
+/** Upload a file to the server via SFTP.
+ *  Uses POST /api/v1/servers/{id}/sftp/upload?path={dir} with FormData. */
+export async function uploadFileApi(
+  serverId: string,
+  dirPath: string,
+  file: File,
+): Promise<void> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/sftp/upload?path=${encodeURIComponent(dirPath)}`,
+    { method: "POST", body: form },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Upload failed" }));
+    throw new ApiError(res.status, err.message || "Upload failed");
+  }
 }

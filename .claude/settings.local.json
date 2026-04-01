@@ -37,7 +37,9 @@
       "Bash(find \"e:/Reputeo/claw-ops-fe/src/app/\\(main\\)\" -type f -name \"*.tsx\")",
       "Bash(ls e:/Reputeo/claw-ops-fe/src/app/\\\\\\(main\\\\\\)/scripts/)",
       "Bash(npm -v)",
-      "Bash(ls e:/Reputeo/claw-ops-fe/.env*)"
+      "Bash(ls e:/Reputeo/claw-ops-fe/.env*)",
+      "Read(//e/Reputeo/claw-ops-fe/src/components/**)",
+      "Bash(grep -n \"readFileApi\\\\|FileBrowser\" /e/Reputeo/claw-ops-fe/src/components/servers/*.tsx)"
     ],
     "additionalDirectories": [
       "\\tmp"

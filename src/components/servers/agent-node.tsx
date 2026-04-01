@@ -171,6 +171,7 @@ export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, on
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
       if (!isDragging.current) return;
+      e.stopPropagation();
       isDragging.current = false;
       setDragging(false);
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
@@ -183,7 +184,7 @@ export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, on
         window.open(`https://${serverDomain}/${agent.name}/`, "_blank", "noopener");
       }
     },
-    [agent.serverId, agent.name, offset, onMoveEnd, serverDomain],
+    [agent.serverId, agent.name, offset, onMoveEnd, onSelect, serverDomain],
   );
 
   const initX = spring.current.x;
@@ -204,7 +205,7 @@ export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, on
         style={{
           left: initX,
           top: initY,
-          zIndex: dragging ? 90 : 0,
+          zIndex: dragging ? 90 : 2,
           transform: "translate(-50%, -50%)",
           touchAction: "none",
         }}
