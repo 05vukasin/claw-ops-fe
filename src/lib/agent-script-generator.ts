@@ -57,6 +57,39 @@ function collectDirectories(entries: ZipEntry[]): string[] {
   return [...dirs].sort();
 }
 
+/**
+ * Strip common root directory prefix from ZIP entries.
+ * When a user zips a folder like `qa/`, all paths start with `qa/`.
+ * We strip it so files land directly under $AGENT_DIR/config/, $AGENT_DIR/workspace/, etc.
+ */
+function stripCommonPrefix(entries: ZipEntry[]): ZipEntry[] {
+  let current = [...entries];
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const paths = current
+      .map((e) => e.path.replace(/\/$/, ""))
+      .filter((p) => p.length > 0);
+    if (paths.length === 0) break;
+
+    // Get unique top-level segments
+    const topLevel = new Set(paths.map((p) => p.split("/")[0]));
+
+    // Only strip if there's exactly one top-level entry (a wrapper directory)
+    if (topLevel.size !== 1) break;
+
+    // Must have nested paths (not just a single file)
+    if (!paths.some((p) => p.includes("/"))) break;
+
+    const prefix = [...topLevel][0] + "/";
+    current = current
+      .map((e) => ({ ...e, path: e.path.startsWith(prefix) ? e.path.slice(prefix.length) : e.path }))
+      .filter((e) => e.path !== "" && e.path !== "/");
+  }
+
+  return current;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Generator                                                          */
 /* ------------------------------------------------------------------ */
@@ -67,7 +100,10 @@ export function generateAgentScript(
   zipFileName?: string,
 ): string {
   const lines: string[] = [];
-  const { entries } = analysis;
+
+  // Strip wrapper directories (e.g., "qa/" or "dpo/") so files
+  // land at $AGENT_DIR/config/... instead of $AGENT_DIR/qa/config/...
+  const entries = stripCommonPrefix(analysis.entries);
 
   const textFiles = entries.filter((e) => !e.isDirectory && !e.isBinary);
   const binaryFiles = entries.filter((e) => !e.isDirectory && e.isBinary);
@@ -367,11 +403,10 @@ export function generateAgentScript(
   lines.push("GATEWAY_TOKEN=$(openssl rand -hex 32)");
   lines.push('if [ -f "$AGENT_DIR/config/openclaw.json" ]; then');
   lines.push("python3 << PYEOF");
-  lines.push("import json, os");
-  lines.push('config_path = os.path.expandvars("$AGENT_DIR/config/openclaw.json")');
-  lines.push('with open(config_path, "r") as f:');
+  lines.push("import json");
+  lines.push('with open("$AGENT_DIR/config/openclaw.json", "r") as f:');
   lines.push("    config = json.load(f)");
-  lines.push('config.setdefault("gateway", {}).setdefault("auth", {})["token"] = "$GATEWAY_TOKEN"');
+  lines.push('config["gateway"]["auth"]["token"] = "$GATEWAY_TOKEN"');
   lines.push('if "channels" not in config: config["channels"] = {}');
   lines.push('if "$USE_TELEGRAM" == "true":');
   lines.push('    tg = config.get("channels", {}).get("telegram", {})');
@@ -385,7 +420,7 @@ export function generateAgentScript(
   lines.push('ui["allowedOrigins"] = ["https://$SUBDOMAIN"]');
   lines.push('ui["dangerouslyDisableDeviceAuth"] = True');
   lines.push('ui["allowInsecureAuth"] = True');
-  lines.push('with open(config_path, "w") as f:');
+  lines.push('with open("$AGENT_DIR/config/openclaw.json", "w") as f:');
   lines.push("    json.dump(config, f, indent=2)");
   lines.push("PYEOF");
   lines.push('step_ok "Config customized"');
