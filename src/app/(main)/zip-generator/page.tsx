@@ -6,15 +6,18 @@ import {
   UploadZone,
   FileTreePreview,
   ScriptEditor,
+  AgentScriptEditor,
 } from "@/components/zip-generator";
 import { analyzeZip, type ZipAnalysis } from "@/lib/zip-analyzer";
 import { createScriptApi } from "@/lib/api";
 
 type WizardStep = 1 | 2 | 3;
+type GeneratorMode = "deployment" | "agent";
 
 const STEP_LABELS = ["Upload", "Preview", "Generate"];
 
 export default function ZipGeneratorPage() {
+  const [mode, setMode] = useState<GeneratorMode>("deployment");
   const [step, setStep] = useState<WizardStep>(1);
   const [file, setFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -22,11 +25,13 @@ export default function ZipGeneratorPage() {
   const [script, setScript] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templateWarning, setTemplateWarning] = useState<string | null>(null);
 
   const handleAnalyze = useCallback(async () => {
     if (!file) return;
     setAnalyzing(true);
     setError(null);
+    setTemplateWarning(null);
     try {
       const buf = await file.arrayBuffer();
       const result = await analyzeZip(buf);
@@ -35,13 +40,25 @@ export default function ZipGeneratorPage() {
         setAnalyzing(false);
         return;
       }
+      if (mode === "agent") {
+        const hasConfig = result.entries.some(
+          (e) =>
+            e.path === "config/openclaw.json" ||
+            e.path.endsWith("/config/openclaw.json"),
+        );
+        if (!hasConfig) {
+          setTemplateWarning(
+            "No config/openclaw.json found. This ZIP may not be a valid agent template.",
+          );
+        }
+      }
       setAnalysis(result);
       setStep(2);
     } catch {
       setError("Failed to parse ZIP file. It may be corrupted.");
     }
     setAnalyzing(false);
-  }, [file]);
+  }, [file, mode]);
 
   const handleSaveAsScript = useCallback(
     async (content: string, name: string) => {
@@ -50,7 +67,10 @@ export default function ZipGeneratorPage() {
         await createScriptApi({
           name: name.trim(),
           scriptType: "INSTALL",
-          description: `Generated from ${file?.name ?? "ZIP archive"}`,
+          description:
+            mode === "agent"
+              ? `Agent provisioning script from ${file?.name ?? "ZIP archive"}`
+              : `Generated from ${file?.name ?? "ZIP archive"}`,
           scriptContent: content,
         });
       } catch {
@@ -58,7 +78,17 @@ export default function ZipGeneratorPage() {
       }
       setSaving(false);
     },
-    [file],
+    [file, mode],
+  );
+
+  const handleModeChange = useCallback(
+    (newMode: GeneratorMode) => {
+      setMode(newMode);
+      if (step === 3) setStep(2);
+      setScript("");
+      setTemplateWarning(null);
+    },
+    [step],
   );
 
   return (
@@ -67,12 +97,49 @@ export default function ZipGeneratorPage() {
       <h2 className="mb-1 text-lg font-semibold tracking-tight text-canvas-fg">
         ZIP Generator
       </h2>
-      <p className="mb-6 text-xs text-canvas-muted">
-        Upload a ZIP archive and generate an interactive deployment script
+      <p className="mb-4 text-xs text-canvas-muted">
+        {mode === "deployment"
+          ? "Upload a ZIP archive and generate an interactive deployment script"
+          : "Upload an agent template ZIP and generate a self-contained provisioning script"}
       </p>
+
+      {/* Mode selector */}
+      <div className="mb-6 flex justify-center">
+        <div className="inline-flex rounded-lg border border-canvas-border bg-canvas-bg p-0.5">
+          <button
+            type="button"
+            onClick={() => handleModeChange("deployment")}
+            className={`rounded-md px-4 py-1.5 text-xs font-medium transition-colors ${
+              mode === "deployment"
+                ? "bg-canvas-fg text-canvas-bg"
+                : "text-canvas-muted hover:text-canvas-fg"
+            }`}
+          >
+            Deployment Script
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange("agent")}
+            className={`rounded-md px-4 py-1.5 text-xs font-medium transition-colors ${
+              mode === "agent"
+                ? "bg-canvas-fg text-canvas-bg"
+                : "text-canvas-muted hover:text-canvas-fg"
+            }`}
+          >
+            Agent Script
+          </button>
+        </div>
+      </div>
 
       {/* Step indicator */}
       <StepIndicator current={step} labels={STEP_LABELS} />
+
+      {/* Template warning */}
+      {templateWarning && (
+        <div className="mb-4 rounded-md border border-yellow-500/20 bg-yellow-500/5 px-4 py-2.5 text-sm text-yellow-600 dark:text-yellow-400">
+          {templateWarning}
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -87,26 +154,43 @@ export default function ZipGeneratorPage() {
           <UploadZone
             file={file}
             analyzing={analyzing}
-            onFileAccepted={(f) => { setFile(f); setError(null); }}
-            onClear={() => { setFile(null); setAnalysis(null); setError(null); }}
+            onFileAccepted={(f) => {
+              setFile(f);
+              setError(null);
+            }}
+            onClear={() => {
+              setFile(null);
+              setAnalysis(null);
+              setError(null);
+              setTemplateWarning(null);
+            }}
             onAnalyze={handleAnalyze}
           />
         )}
 
-        {step === 2 && analysis && (
-          <FileTreePreview analysis={analysis} />
-        )}
+        {step === 2 && analysis && <FileTreePreview analysis={analysis} />}
 
-        {step === 3 && analysis && (
-          <ScriptEditor
-            analysis={analysis}
-            zipFileName={file?.name ?? "archive.zip"}
-            script={script}
-            onScriptChange={setScript}
-            onSaveAsScript={handleSaveAsScript}
-            saving={saving}
-          />
-        )}
+        {step === 3 &&
+          analysis &&
+          (mode === "deployment" ? (
+            <ScriptEditor
+              analysis={analysis}
+              zipFileName={file?.name ?? "archive.zip"}
+              script={script}
+              onScriptChange={setScript}
+              onSaveAsScript={handleSaveAsScript}
+              saving={saving}
+            />
+          ) : (
+            <AgentScriptEditor
+              analysis={analysis}
+              zipFileName={file?.name ?? "archive.zip"}
+              script={script}
+              onScriptChange={setScript}
+              onSaveAsScript={handleSaveAsScript}
+              saving={saving}
+            />
+          ))}
       </div>
 
       {/* Navigation */}
