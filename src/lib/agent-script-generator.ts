@@ -12,6 +12,9 @@ export interface AgentScriptOptions {
   includePairing: boolean;
   includeCaddy: boolean;
   includeHealthCheck: boolean;
+  includeAtlassian: boolean;
+  includeBitbucket: boolean;
+  includeGitHub: boolean;
 }
 
 export const DEFAULT_AGENT_SCRIPT_OPTIONS: AgentScriptOptions = {
@@ -22,6 +25,9 @@ export const DEFAULT_AGENT_SCRIPT_OPTIONS: AgentScriptOptions = {
   includePairing: true,
   includeCaddy: true,
   includeHealthCheck: true,
+  includeAtlassian: true,
+  includeBitbucket: true,
+  includeGitHub: true,
 };
 
 /* ------------------------------------------------------------------ */
@@ -290,25 +296,51 @@ export function generateAgentScript(
   lines.push('    [ -z "$SLACK_BOT_TOKEN" ] && { step_fail "Required."; exit 1; }; step_ok "Slack bot"; echo ""');
   lines.push("fi");
   lines.push("");
-  lines.push('echo -ne "  ${PINK}\\u203a${NC} Atlassian API token ${DIM}(Jira+Confluence)${NC}: "; read ATLASSIAN_TOKEN');
-  lines.push('[ -z "$ATLASSIAN_TOKEN" ] && { step_fail "Required."; exit 1; }; step_ok "Atlassian"; echo ""');
-  lines.push("");
-  lines.push('echo -e "  ${DIM}Optional integrations (Enter to skip):${NC}"; echo ""');
-  lines.push("");
-  lines.push('echo -ne "  ${PINK}\\u203a${NC} Bitbucket workspace slug: "; read BITBUCKET_WORKSPACE');
-  lines.push('BITBUCKET_API_TOKEN=""');
-  lines.push('if [ -n "$BITBUCKET_WORKSPACE" ]; then');
-  lines.push('    echo -ne "  ${PINK}\\u203a${NC} Bitbucket API token ${DIM}(read-only)${NC}: "; read BITBUCKET_API_TOKEN');
-  lines.push('    [ -z "$BITBUCKET_API_TOKEN" ] && { step_warn "Skipped"; BITBUCKET_WORKSPACE=""; } || step_ok "Bitbucket"');
-  lines.push('else step_skip "Bitbucket skipped"; fi; echo ""');
-  lines.push("");
-  lines.push('echo -ne "  ${PINK}\\u203a${NC} GitHub token: "; read GITHUB_TOKEN');
-  lines.push('GITHUB_ORG=""');
-  lines.push('if [ -n "$GITHUB_TOKEN" ]; then');
-  lines.push('    echo -ne "  ${PINK}\\u203a${NC} GitHub org: "; read GITHUB_ORG');
-  lines.push('    [ -z "$GITHUB_ORG" ] && { step_warn "Skipped"; GITHUB_TOKEN=""; } || step_ok "GitHub"');
-  lines.push('else step_skip "GitHub skipped"; fi; echo ""');
-  lines.push("");
+
+  // Atlassian
+  if (options.includeAtlassian) {
+    lines.push('echo -ne "  ${PINK}\\u203a${NC} Atlassian API token ${DIM}(Jira+Confluence)${NC}: "; read ATLASSIAN_TOKEN');
+    lines.push('[ -z "$ATLASSIAN_TOKEN" ] && { step_fail "Required."; exit 1; }; step_ok "Atlassian"; echo ""');
+    lines.push("");
+  } else {
+    lines.push('ATLASSIAN_TOKEN=""');
+  }
+
+  // Optional integrations header (only if any optional integration is enabled)
+  if (options.includeBitbucket || options.includeGitHub) {
+    lines.push('echo -e "  ${DIM}Optional integrations (Enter to skip):${NC}"; echo ""');
+    lines.push("");
+  }
+
+  // Bitbucket
+  if (options.includeBitbucket) {
+    lines.push('echo -ne "  ${PINK}\\u203a${NC} Bitbucket workspace slug: "; read BITBUCKET_WORKSPACE');
+    lines.push('BITBUCKET_API_TOKEN=""');
+    lines.push('if [ -n "$BITBUCKET_WORKSPACE" ]; then');
+    lines.push('    echo -ne "  ${PINK}\\u203a${NC} Bitbucket API token ${DIM}(read-only)${NC}: "; read BITBUCKET_API_TOKEN');
+    lines.push('    [ -z "$BITBUCKET_API_TOKEN" ] && { step_warn "Skipped"; BITBUCKET_WORKSPACE=""; } || step_ok "Bitbucket"');
+    lines.push('else step_skip "Bitbucket skipped"; fi; echo ""');
+    lines.push("");
+  } else {
+    lines.push('BITBUCKET_WORKSPACE=""');
+    lines.push('BITBUCKET_API_TOKEN=""');
+  }
+
+  // GitHub
+  if (options.includeGitHub) {
+    lines.push('echo -ne "  ${PINK}\\u203a${NC} GitHub token: "; read GITHUB_TOKEN');
+    lines.push('GITHUB_ORG=""');
+    lines.push('if [ -n "$GITHUB_TOKEN" ]; then');
+    lines.push('    echo -ne "  ${PINK}\\u203a${NC} GitHub org: "; read GITHUB_ORG');
+    lines.push('    [ -z "$GITHUB_ORG" ] && { step_warn "Skipped"; GITHUB_TOKEN=""; } || step_ok "GitHub"');
+    lines.push('else step_skip "GitHub skipped"; fi; echo ""');
+    lines.push("");
+  } else {
+    lines.push('GITHUB_TOKEN=""');
+    lines.push('GITHUB_ORG=""');
+  }
+
+  // OpenRouter (always required)
   lines.push('echo -ne "  ${PINK}\\u203a${NC} OpenRouter API key: "; read OPENROUTER_API_KEY');
   lines.push('[ -z "$OPENROUTER_API_KEY" ] && { step_fail "OpenRouter API key is required."; exit 1; }; step_ok "OpenRouter"');
   lines.push('echo ""');
@@ -465,25 +497,40 @@ export function generateAgentScript(
   lines.push("# Generate docker-compose.yml");
   lines.push("STEP=$((STEP + 1))");
   lines.push('step_header $STEP $TOTAL_STEPS "Generating docker-compose.yml"');
+  // Build docker-compose environment block (conditional integrations)
+  const envBlock = (extra: string[]) => {
+    const env = [
+      "      HOME: /home/node",
+      "      TERM: xterm-256color",
+      "      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}",
+      ...extra,
+      "      GOG_KEYRING_BACKEND: file",
+      "      GOG_ACCOUNT: __EMAIL__",
+      "      GOG_KEYRING_PASSWORD: __GOG_PASSWORD__",
+    ];
+    if (options.includeAtlassian) {
+      env.push("      ATLASSIAN_URL: __ATLASSIAN_URL__");
+      env.push("      ATLASSIAN_EMAIL: __EMAIL__");
+      env.push("      ATLASSIAN_API_TOKEN: __ATLASSIAN_TOKEN__");
+    }
+    if (options.includeBitbucket) {
+      env.push("      BITBUCKET_WORKSPACE: __BITBUCKET_WORKSPACE__");
+      env.push("      BITBUCKET_API_TOKEN: __BITBUCKET_API_TOKEN__");
+    }
+    if (options.includeGitHub) {
+      env.push("      GITHUB_TOKEN: __GITHUB_TOKEN__");
+      env.push("      GITHUB_ORG: __GITHUB_ORG__");
+    }
+    env.push("      OPENROUTER_API_KEY: __OPENROUTER_API_KEY__");
+    return env;
+  };
+
   lines.push("cat > \"$AGENT_DIR/docker-compose.yml\" << 'DCEOF'");
   lines.push("services:");
   lines.push("  openclaw-gateway:");
   lines.push("    image: ${OPENCLAW_IMAGE:-openclaw:local}");
   lines.push("    environment:");
-  lines.push("      HOME: /home/node");
-  lines.push("      TERM: xterm-256color");
-  lines.push("      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}");
-  lines.push("      GOG_KEYRING_BACKEND: file");
-  lines.push("      GOG_ACCOUNT: __EMAIL__");
-  lines.push("      GOG_KEYRING_PASSWORD: __GOG_PASSWORD__");
-  lines.push("      ATLASSIAN_URL: __ATLASSIAN_URL__");
-  lines.push("      ATLASSIAN_EMAIL: __EMAIL__");
-  lines.push("      ATLASSIAN_API_TOKEN: __ATLASSIAN_TOKEN__");
-  lines.push("      BITBUCKET_WORKSPACE: __BITBUCKET_WORKSPACE__");
-  lines.push("      BITBUCKET_API_TOKEN: __BITBUCKET_API_TOKEN__");
-  lines.push("      GITHUB_TOKEN: __GITHUB_TOKEN__");
-  lines.push("      GITHUB_ORG: __GITHUB_ORG__");
-  lines.push("      OPENROUTER_API_KEY: __OPENROUTER_API_KEY__");
+  for (const l of envBlock([])) lines.push(l);
   lines.push("    volumes:");
   lines.push("      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw");
   lines.push("      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace");
@@ -507,21 +554,7 @@ export function generateAgentScript(
   lines.push("    cap_drop: [NET_RAW, NET_ADMIN]");
   lines.push("    security_opt: [no-new-privileges:true]");
   lines.push("    environment:");
-  lines.push("      HOME: /home/node");
-  lines.push("      TERM: xterm-256color");
-  lines.push("      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}");
-  lines.push("      BROWSER: echo");
-  lines.push("      GOG_KEYRING_BACKEND: file");
-  lines.push("      GOG_ACCOUNT: __EMAIL__");
-  lines.push("      GOG_KEYRING_PASSWORD: __GOG_PASSWORD__");
-  lines.push("      ATLASSIAN_URL: __ATLASSIAN_URL__");
-  lines.push("      ATLASSIAN_EMAIL: __EMAIL__");
-  lines.push("      ATLASSIAN_API_TOKEN: __ATLASSIAN_TOKEN__");
-  lines.push("      BITBUCKET_WORKSPACE: __BITBUCKET_WORKSPACE__");
-  lines.push("      BITBUCKET_API_TOKEN: __BITBUCKET_API_TOKEN__");
-  lines.push("      GITHUB_TOKEN: __GITHUB_TOKEN__");
-  lines.push("      GITHUB_ORG: __GITHUB_ORG__");
-  lines.push("      OPENROUTER_API_KEY: __OPENROUTER_API_KEY__");
+  for (const l of envBlock(["      BROWSER: echo"])) lines.push(l);
   lines.push("    volumes:");
   lines.push("      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw");
   lines.push("      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace");
@@ -536,18 +569,31 @@ export function generateAgentScript(
   lines.push("");
 
   // sed replacements for docker-compose placeholders
+  const sedPairs: string[] = [
+    '"__EMAIL__|$EMAIL"',
+    '"__GOG_PASSWORD__|$GOG_KEYRING_PASSWORD"',
+  ];
+  if (options.includeAtlassian) {
+    sedPairs.push('"__ATLASSIAN_URL__|$ATLASSIAN_URL"');
+    sedPairs.push('"__ATLASSIAN_TOKEN__|${ATLASSIAN_TOKEN:-}"');
+  }
+  if (options.includeBitbucket) {
+    sedPairs.push('"__BITBUCKET_WORKSPACE__|${BITBUCKET_WORKSPACE:-}"');
+    sedPairs.push('"__BITBUCKET_API_TOKEN__|${BITBUCKET_API_TOKEN:-}"');
+  }
+  if (options.includeGitHub) {
+    sedPairs.push('"__GITHUB_TOKEN__|${GITHUB_TOKEN:-}"');
+    sedPairs.push('"__GITHUB_ORG__|${GITHUB_ORG:-}"');
+  }
+  sedPairs.push('"__OPENROUTER_API_KEY__|$OPENROUTER_API_KEY"');
+  sedPairs.push('"__GOG_BINARY__|$GOG_BINARY"');
+  sedPairs.push('"__AGENT_DIR__|$AGENT_DIR"');
+
   lines.push("for placeholder in \\");
-  lines.push('    "__EMAIL__|$EMAIL" \\');
-  lines.push('    "__GOG_PASSWORD__|$GOG_KEYRING_PASSWORD" \\');
-  lines.push('    "__ATLASSIAN_URL__|$ATLASSIAN_URL" \\');
-  lines.push('    "__ATLASSIAN_TOKEN__|$ATLASSIAN_TOKEN" \\');
-  lines.push('    "__BITBUCKET_WORKSPACE__|${BITBUCKET_WORKSPACE:-}" \\');
-  lines.push('    "__BITBUCKET_API_TOKEN__|${BITBUCKET_API_TOKEN:-}" \\');
-  lines.push('    "__GITHUB_TOKEN__|${GITHUB_TOKEN:-}" \\');
-  lines.push('    "__GITHUB_ORG__|${GITHUB_ORG:-}" \\');
-  lines.push('    "__OPENROUTER_API_KEY__|$OPENROUTER_API_KEY" \\');
-  lines.push('    "__GOG_BINARY__|$GOG_BINARY" \\');
-  lines.push('    "__AGENT_DIR__|$AGENT_DIR"; do');
+  for (let i = 0; i < sedPairs.length; i++) {
+    const suffix = i < sedPairs.length - 1 ? " \\" : "; do";
+    lines.push("    " + sedPairs[i] + suffix);
+  }
   lines.push('    sed -i "s|${placeholder%%|*}|${placeholder#*|}|g" "$AGENT_DIR/docker-compose.yml"');
   lines.push("done");
   lines.push('step_ok "Done"');
@@ -661,8 +707,12 @@ export function generateAgentScript(
   }
 
   // Atlassian check
-  lines.push('AR=$(docker compose exec -T openclaw-gateway sh -c "curl -s -u \\"\\$ATLASSIAN_EMAIL:\\$ATLASSIAN_API_TOKEN\\" \\"\\$ATLASSIAN_URL/rest/api/3/myself\\"" 2>/dev/null)');
-  lines.push('echo "$AR" | grep -q "displayName" && { AN=$(echo "$AR" | python3 -c "import sys,json;print(json.load(sys.stdin)[\'displayName\'])" 2>/dev/null || echo "?"); step_ok "Atlassian: ${LTPINK}$AN${NC}"; } || step_warn "Atlassian: unverified"');
+  if (options.includeAtlassian) {
+    lines.push('AR=$(docker compose exec -T openclaw-gateway sh -c "curl -s -u \\"\\$ATLASSIAN_EMAIL:\\$ATLASSIAN_API_TOKEN\\" \\"\\$ATLASSIAN_URL/rest/api/3/myself\\"" 2>/dev/null)');
+    lines.push('echo "$AR" | grep -q "displayName" && { AN=$(echo "$AR" | python3 -c "import sys,json;print(json.load(sys.stdin)[\'displayName\'])" 2>/dev/null || echo "?"); step_ok "Atlassian: ${LTPINK}$AN${NC}"; } || step_warn "Atlassian: unverified"');
+  } else {
+    lines.push('step_skip "Atlassian: disabled"');
+  }
   lines.push("");
 
   // ══════════════════════════════════════════════════════════════════

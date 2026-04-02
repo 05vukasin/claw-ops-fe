@@ -34,6 +34,9 @@ export function AgentScriptEditor({
   const [includePairing, setIncludePairing] = useState(true);
   const [includeCaddy, setIncludeCaddy] = useState(true);
   const [includeHealthCheck, setIncludeHealthCheck] = useState(true);
+  const [includeAtlassian, setIncludeAtlassian] = useState(true);
+  const [includeBitbucket, setIncludeBitbucket] = useState(true);
+  const [includeGitHub, setIncludeGitHub] = useState(true);
 
   const [copied, setCopied] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -50,8 +53,11 @@ export function AgentScriptEditor({
       includePairing,
       includeCaddy,
       includeHealthCheck,
+      includeAtlassian,
+      includeBitbucket,
+      includeGitHub,
     }),
-    [domain, agentsDir, dockerImage, includeOAuth, includePairing, includeCaddy, includeHealthCheck],
+    [domain, agentsDir, dockerImage, includeOAuth, includePairing, includeCaddy, includeHealthCheck, includeAtlassian, includeBitbucket, includeGitHub],
   );
 
   useEffect(() => {
@@ -99,9 +105,18 @@ export function AgentScriptEditor({
           <OptionInput label="Docker image" value={dockerImage} onChange={setDockerImage} placeholder="openclaw:local" />
         </div>
 
-        {/* Toggles */}
-        <div className="flex flex-wrap gap-x-6 gap-y-2">
+        {/* Integrations */}
+        <div className="mb-2 mt-1 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Integrations</div>
+        <div className="mb-3 flex flex-wrap gap-x-6 gap-y-2">
+          <Toggle checked={includeAtlassian} onChange={setIncludeAtlassian} label="Atlassian (Jira + Confluence)" />
+          <Toggle checked={includeBitbucket} onChange={setIncludeBitbucket} label="Bitbucket" />
+          <Toggle checked={includeGitHub} onChange={setIncludeGitHub} label="GitHub" />
           <Toggle checked={includeOAuth} onChange={setIncludeOAuth} label="Google OAuth" />
+        </div>
+
+        {/* Provisioning */}
+        <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Provisioning</div>
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           <Toggle checked={includePairing} onChange={setIncludePairing} label="Pairing step" />
           <Toggle checked={includeCaddy} onChange={setIncludeCaddy} label="Caddy reverse proxy" />
           <Toggle checked={includeHealthCheck} onChange={setIncludeHealthCheck} label="Health check" />
