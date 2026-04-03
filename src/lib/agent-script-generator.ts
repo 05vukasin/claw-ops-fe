@@ -438,7 +438,7 @@ export function generateAgentScript(
   lines.push("import json");
   lines.push('with open("$AGENT_DIR/config/openclaw.json", "r") as f:');
   lines.push("    config = json.load(f)");
-  lines.push('config["gateway"]["auth"]["token"] = "$GATEWAY_TOKEN"');
+  lines.push('config.setdefault("gateway", {}).setdefault("auth", {"mode": "token"})["token"] = "$GATEWAY_TOKEN"');
   lines.push('if "channels" not in config: config["channels"] = {}');
   lines.push('if "$USE_TELEGRAM" == "true":');
   lines.push('    tg = config.get("channels", {}).get("telegram", {})');
