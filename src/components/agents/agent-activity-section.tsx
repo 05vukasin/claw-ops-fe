@@ -2,18 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FiChevronRight, FiClock, FiRefreshCw } from "react-icons/fi";
-import { executeCommandApi } from "@/lib/api";
+import { readFileApi, listFilesApi } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-type EventType = "message_in" | "reply_out" | "tool_use" | "error" | "system";
+type EventType = "user_message" | "assistant_reply" | "tool_use" | "cron" | "system";
 
 interface ActivityEvent {
   timestamp: string;
   type: EventType;
   summary: string;
+  channel?: string;
+  sessionKey?: string;
 }
 
 interface AgentActivitySectionProps {
@@ -25,82 +27,126 @@ interface AgentActivitySectionProps {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const ANSI_RE = /\x1B\[[0-9;]*[a-zA-Z]/g;
-const EXTRA_CODES_RE = /\[?[0-9;]*m/g;
-
-function stripAnsi(str: string): string {
-  return str.replace(ANSI_RE, "").replace(EXTRA_CODES_RE, "");
-}
-
-const TS_RE = /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/;
-
-const TYPE_PATTERNS: { type: EventType; re: RegExp }[] = [
-  { type: "error", re: /\b(error|failed|exception|crash|fatal|panic)\b/i },
-  { type: "tool_use", re: /\b(tool_use|calling tool|executing tool|tool call|tool_result)\b/i },
-  { type: "message_in", re: /\b(received|incoming|from user|new message|user message)\b/i },
-  { type: "reply_out", re: /\b(sending|reply|response sent|outgoing|assistant message|delivered)\b/i },
-  { type: "system", re: /\b(started|stopped|restart|connected|disconnect|shutdown|boot|init|ready)\b/i },
-];
-
-function classifyLine(line: string): EventType | null {
-  for (const { type, re } of TYPE_PATTERNS) {
-    if (re.test(line)) return type;
-  }
-  return null;
-}
-
-function parseLogs(raw: string): ActivityEvent[] {
-  const cleaned = stripAnsi(raw);
-  const lines = cleaned.split("\n").filter((l) => l.trim().length > 0);
-  const events: ActivityEvent[] = [];
-
-  for (const line of lines) {
-    const type = classifyLine(line);
-    if (!type) continue;
-
-    const tsMatch = line.match(TS_RE);
-    const timestamp = tsMatch ? tsMatch[1] : "";
-
-    // Build summary: take the relevant portion after timestamp
-    let summary = line;
-    if (tsMatch && tsMatch.index != null) {
-      summary = line.slice(tsMatch.index + tsMatch[1].length).trim();
-    }
-    // Trim leading separators
-    summary = summary.replace(/^[:\-|\s]+/, "").trim();
-    // Truncate long summaries
-    if (summary.length > 120) summary = summary.slice(0, 117) + "...";
-
-    events.push({ timestamp, type, summary });
-  }
-
-  return events.reverse().slice(0, 50);
-}
-
 function formatRelativeTime(ts: string): string {
   if (!ts) return "";
-  const date = new Date(ts.replace(" ", "T"));
+  const date = new Date(ts);
   if (Number.isNaN(date.getTime())) return ts;
   const diff = Date.now() - date.getTime();
+  if (diff < 0) return "just now";
   if (diff < 60_000) return "just now";
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+function formatAbsoluteTime(ts: string): string {
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return ts;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function extractUserText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  for (const block of content) {
+    if (block?.type === "text" && typeof block.text === "string") {
+      // Extract the actual user message from Slack/Telegram wrapper
+      const text: string = block.text;
+      // Pattern: "System: [...] Slack DM from ...: <actual message>\n..."
+      // The real message is usually the last line or after the metadata block
+      const lastLine = text.split("\n").filter((l: string) => l.trim()).pop() ?? text;
+      // If it starts with the Slack wrapper, extract just the user's words
+      const slackMatch = text.match(/(?:Slack|Telegram)\s+(?:DM|message|channel)\s+from\s+\S+:\s*(.+?)(?:\n|$)/i);
+      if (slackMatch) return slackMatch[1].trim();
+      // Otherwise return last meaningful line (skip metadata blocks)
+      if (lastLine.startsWith("```")) return text.split("\n")[0];
+      return lastLine.length > 200 ? lastLine.slice(0, 197) + "..." : lastLine;
+    }
+  }
+  return "";
+}
+
+function extractAssistantText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  for (const block of content) {
+    if (block?.type === "text" && typeof block.text === "string") {
+      let text: string = block.text;
+      // Remove reply markers like [[reply_to_current]]
+      text = text.replace(/\[\[.*?\]\]\s*/g, "").trim();
+      return text.length > 200 ? text.slice(0, 197) + "..." : text;
+    }
+    if (block?.type === "toolCall") {
+      return `Tool: ${block.name ?? "unknown"}`;
+    }
+  }
+  return "";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseJsonlMessages(raw: string, channel: string, sessionKey: string): ActivityEvent[] {
+  const events: ActivityEvent[] = [];
+  const lines = raw.split("\n").filter((l) => l.trim());
+
+  for (const line of lines) {
+    try {
+      const record = JSON.parse(line);
+      if (record.type !== "message") continue;
+
+      const msg = record.message;
+      if (!msg?.role) continue;
+      const ts = record.timestamp ?? "";
+
+      if (msg.role === "user") {
+        const text = extractUserText(msg.content);
+        if (!text) continue;
+        events.push({
+          timestamp: ts,
+          type: "user_message",
+          summary: text,
+          channel,
+          sessionKey,
+        });
+      } else if (msg.role === "assistant") {
+        const text = extractAssistantText(msg.content);
+        if (!text) continue;
+        // Check if it's a tool call
+        const hasToolCall = Array.isArray(msg.content) &&
+          msg.content.some((b: { type: string }) => b?.type === "toolCall");
+        events.push({
+          timestamp: ts,
+          type: hasToolCall ? "tool_use" : "assistant_reply",
+          summary: text,
+          channel,
+          sessionKey,
+        });
+      }
+    } catch {
+      // Skip malformed lines
+    }
+  }
+
+  return events;
+}
+
 const DOT_COLOR: Record<EventType, string> = {
-  message_in: "bg-green-400",
-  reply_out: "bg-blue-400",
+  user_message: "bg-green-400",
+  assistant_reply: "bg-blue-400",
   tool_use: "bg-purple-400",
-  error: "bg-red-400",
+  cron: "bg-yellow-400",
   system: "bg-gray-400",
 };
 
 const TYPE_LABEL: Record<EventType, string> = {
-  message_in: "Message",
-  reply_out: "Reply",
+  user_message: "User",
+  assistant_reply: "Reply",
   tool_use: "Tool",
-  error: "Error",
+  cron: "Cron",
   system: "System",
 };
 
@@ -118,22 +164,85 @@ export function AgentActivitySection({
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const loadedRef = useRef(false);
 
+  const sessionsPath = `/root/openclaw-agents/${agentName}/config/agents/main/sessions/`;
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await executeCommandApi(
+      // 1. Read sessions.json to find active sessions
+      const sessionsRaw = await readFileApi(
         serverId,
-        `docker logs --tail 200 ${agentName}-openclaw-gateway-1 2>&1`,
+        `${sessionsPath}sessions.json`,
       );
-      const raw = result.stdout || result.stderr || "";
-      setEvents(parseLogs(raw));
+      const sessions = JSON.parse(sessionsRaw);
+
+      // 2. Find JSONL files available
+      const files = await listFilesApi(serverId, sessionsPath);
+      const jsonlFiles = files
+        .filter((f) => f.name.endsWith(".jsonl") && !f.name.includes(".reset.") && !f.name.includes(".deleted."))
+        .map((f) => f.name);
+
+      // 3. Build a map of sessionId -> metadata from sessions.json
+      const sessionMeta: Record<string, { channel: string; key: string; updatedAt: number }> = {};
+      for (const [key, val] of Object.entries(sessions)) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const v = val as any;
+        if (v.sessionId) {
+          // Skip duplicate run keys (cron run references)
+          if (key.includes(":run:")) continue;
+          const channel = v.lastChannel || v.origin?.surface || "unknown";
+          const isCron = key.includes(":cron:");
+          sessionMeta[v.sessionId] = {
+            channel: isCron ? `cron (${key.split(":cron:")[1]?.split(":")[0] ?? "job"})` : channel,
+            key,
+            updatedAt: v.updatedAt ?? 0,
+          };
+        }
+      }
+
+      // 4. Read the most recent JSONL files (limit to avoid loading too much)
+      // Sort by matching updatedAt, take the 5 most recently active
+      const sessionIds = Object.keys(sessionMeta);
+      const sortedIds = sessionIds
+        .filter((id) => jsonlFiles.includes(`${id}.jsonl`))
+        .sort((a, b) => (sessionMeta[b]?.updatedAt ?? 0) - (sessionMeta[a]?.updatedAt ?? 0))
+        .slice(0, 5);
+
+      const allEvents: ActivityEvent[] = [];
+
+      const reads = await Promise.allSettled(
+        sortedIds.map((id) =>
+          readFileApi(serverId, `${sessionsPath}${id}.jsonl`),
+        ),
+      );
+
+      for (let i = 0; i < reads.length; i++) {
+        const res = reads[i];
+        const id = sortedIds[i];
+        const meta = sessionMeta[id];
+        if (res.status === "fulfilled") {
+          const parsed = parseJsonlMessages(res.value, meta?.channel ?? "unknown", meta?.key ?? id);
+          allEvents.push(...parsed);
+        }
+      }
+
+      // Sort all events by timestamp descending, take most recent 100
+      allEvents.sort((a, b) => {
+        const ta = new Date(a.timestamp).getTime() || 0;
+        const tb = new Date(b.timestamp).getTime() || 0;
+        return tb - ta;
+      });
+
+      setEvents(allEvents.slice(0, 100));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch activity");
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch activity",
+      );
       setEvents([]);
     }
     setLoading(false);
-  }, [serverId, agentName]);
+  }, [serverId, agentName, sessionsPath]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -163,12 +272,14 @@ export function AgentActivitySection({
         <div className="collapse-inner">
           <div className="border-t border-canvas-border px-5 py-4">
             {loading && events.length === 0 ? (
-              <p className="text-[11px] text-canvas-muted">Loading...</p>
+              <p className="text-[11px] text-canvas-muted">
+                Loading conversations...
+              </p>
             ) : error ? (
               <p className="text-[11px] text-red-500">{error}</p>
             ) : events.length === 0 ? (
               <p className="text-[11px] text-canvas-muted">
-                No recognizable activity in recent logs.
+                No conversation history found.
               </p>
             ) : (
               <div className="space-y-3">
@@ -192,11 +303,11 @@ export function AgentActivitySection({
                 </div>
 
                 {/* Timeline */}
-                <div className="max-h-72 space-y-1 overflow-y-auto">
+                <div className="max-h-80 space-y-0.5 overflow-y-auto">
                   {events.map((ev, i) => (
                     <div
                       key={i}
-                      className="flex items-start gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-canvas-surface-hover"
+                      className="flex items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-canvas-surface-hover"
                     >
                       <span
                         className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT_COLOR[ev.type]}`}
@@ -206,13 +317,21 @@ export function AgentActivitySection({
                           <span className="text-[10px] font-semibold uppercase tracking-wide text-canvas-muted">
                             {TYPE_LABEL[ev.type]}
                           </span>
+                          {ev.channel && (
+                            <span className="rounded bg-canvas-surface-hover px-1 py-0.5 text-[9px] text-canvas-muted">
+                              {ev.channel}
+                            </span>
+                          )}
                           {ev.timestamp && (
-                            <span className="text-[10px] text-canvas-muted">
+                            <span
+                              className="ml-auto shrink-0 text-[10px] text-canvas-muted"
+                              title={formatAbsoluteTime(ev.timestamp)}
+                            >
                               {formatRelativeTime(ev.timestamp)}
                             </span>
                           )}
                         </div>
-                        <p className="mt-0.5 truncate text-[11px] text-canvas-fg">
+                        <p className="mt-0.5 text-[11px] leading-snug text-canvas-fg">
                           {ev.summary}
                         </p>
                       </div>
