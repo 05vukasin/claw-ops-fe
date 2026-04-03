@@ -461,6 +461,21 @@ export function generateAgentScript(
   lines.push("fi");
   lines.push("");
 
+  // Regenerate exec-approvals.json socket token (each agent needs a unique one)
+  lines.push('if [ -f "$AGENT_DIR/config/exec-approvals.json" ]; then');
+  lines.push('EXEC_TOKEN=$(openssl rand -base64 24 | tr -d "/+=" | head -c 32)');
+  lines.push("python3 << EAEOF");
+  lines.push("import json");
+  lines.push('with open("$AGENT_DIR/config/exec-approvals.json", "r") as f:');
+  lines.push("    ea = json.load(f)");
+  lines.push('if "socket" in ea: ea["socket"]["token"] = "$EXEC_TOKEN"');
+  lines.push('with open("$AGENT_DIR/config/exec-approvals.json", "w") as f:');
+  lines.push("    json.dump(ea, f, indent=2)");
+  lines.push("EAEOF");
+  lines.push('step_ok "exec-approvals token regenerated"');
+  lines.push("fi");
+  lines.push("");
+
   // ── 5. USER.md ───────────────────────────────────────────────────
   lines.push("# Generate USER.md");
   lines.push("STEP=$((STEP + 1))");
@@ -601,6 +616,7 @@ export function generateAgentScript(
 
   // ── 8–9. Google OAuth (optional) ─────────────────────────────────
   if (options.includeGoogleOAuth) {
+    lines.push("SKIP_OAUTH=true");
     lines.push("# Google OAuth");
     lines.push('echo ""');
     lines.push('echo -e "  ${PINK}\\u258c${NC} ${BOLD}Google OAuth${NC}"');

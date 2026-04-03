@@ -17,7 +17,7 @@ type GeneratorMode = "deployment" | "agent";
 const STEP_LABELS = ["Upload", "Preview", "Generate"];
 
 export default function ZipGeneratorPage() {
-  const [mode, setMode] = useState<GeneratorMode>("deployment");
+  const [mode, setMode] = useState<GeneratorMode>("agent");
   const [step, setStep] = useState<WizardStep>(1);
   const [file, setFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
