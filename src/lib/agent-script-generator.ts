@@ -9,9 +9,17 @@ export interface AgentScriptOptions {
   defaultAgentsDir: string;
   dockerImage: string;
   includeGoogleOAuth: boolean;
+  gogGmail: boolean;
+  gogCalendar: boolean;
+  gogDrive: boolean;
+  gogDocs: boolean;
+  gogSheets: boolean;
   includePairing: boolean;
   includeCaddy: boolean;
   includeHealthCheck: boolean;
+  includeTelegram: boolean;
+  includeSlack: boolean;
+  includeWhatsApp: boolean;
   includeAtlassian: boolean;
   includeBitbucket: boolean;
   includeGitHub: boolean;
@@ -22,9 +30,17 @@ export const DEFAULT_AGENT_SCRIPT_OPTIONS: AgentScriptOptions = {
   defaultAgentsDir: "/root/openclaw-agents",
   dockerImage: "openclaw:local",
   includeGoogleOAuth: true,
+  gogGmail: true,
+  gogCalendar: true,
+  gogDrive: true,
+  gogDocs: true,
+  gogSheets: true,
   includePairing: true,
   includeCaddy: true,
   includeHealthCheck: true,
+  includeTelegram: true,
+  includeSlack: true,
+  includeWhatsApp: false,
   includeAtlassian: true,
   includeBitbucket: true,
   includeGitHub: true,
@@ -265,14 +281,23 @@ export function generateAgentScript(
   lines.push("# ============================================================================");
   lines.push("# STEP 2: MESSAGING CHANNEL");
   lines.push("# ============================================================================");
-  lines.push('echo -e "  ${PINK}\\u258c${NC} ${BOLD}Messaging Channel${NC}"');
+  lines.push('echo -e "  ${PINK}\\u258c${NC} ${BOLD}Messaging Channels${NC}"');
   lines.push('echo ""');
-  lines.push('echo -e "    ${TEAL}1${NC}  Telegram   ${TEAL}2${NC}  Slack   ${TEAL}3${NC}  Both"');
-  lines.push('echo ""');
-  lines.push('echo -ne "  ${PINK}\\u203a${NC} Select: "');
-  lines.push("read CH");
-  lines.push('USE_TELEGRAM=false; USE_SLACK=false; BOT_TOKEN=""; SLACK_APP_TOKEN=""; SLACK_BOT_TOKEN=""');
-  lines.push('case "$CH" in 1) USE_TELEGRAM=true;; 2) USE_SLACK=true;; 3) USE_TELEGRAM=true; USE_SLACK=true;; *) step_fail "Invalid."; exit 1;; esac');
+  lines.push('USE_TELEGRAM=false; USE_SLACK=false; USE_WHATSAPP=false');
+  lines.push('BOT_TOKEN=""; SLACK_APP_TOKEN=""; SLACK_BOT_TOKEN=""');
+  if (options.includeTelegram) {
+    lines.push('echo -ne "  ${PINK}\\u203a${NC} Telegram? ${DIM}(y/n)${NC}: "; read _ans');
+    lines.push('[[ "$_ans" =~ ^[Yy]$ ]] && USE_TELEGRAM=true');
+  }
+  if (options.includeSlack) {
+    lines.push('echo -ne "  ${PINK}\\u203a${NC} Slack? ${DIM}(y/n)${NC}: "; read _ans');
+    lines.push('[[ "$_ans" =~ ^[Yy]$ ]] && USE_SLACK=true');
+  }
+  if (options.includeWhatsApp) {
+    lines.push('echo -ne "  ${PINK}\\u203a${NC} WhatsApp? ${DIM}(y/n)${NC}: "; read _ans');
+    lines.push('[[ "$_ans" =~ ^[Yy]$ ]] && USE_WHATSAPP=true');
+  }
+  lines.push('[ "$USE_TELEGRAM" = false ] && [ "$USE_SLACK" = false ] && [ "$USE_WHATSAPP" = false ] && { step_fail "Select at least one channel."; exit 1; }');
   lines.push('echo ""');
   lines.push("");
 
@@ -357,7 +382,7 @@ export function generateAgentScript(
   lines.push('echo -e "  ${DIM}name${NC}         ${LTPINK}$FULL_NAME${NC}"');
   lines.push('echo -e "  ${DIM}email${NC}        ${LTPINK}$EMAIL${NC}"');
   lines.push('echo -e "  ${DIM}ports${NC}        ${LTPINK}$PORT / $BRIDGE_PORT${NC}"');
-  lines.push('echo -e "  ${DIM}channels${NC}     ${LTPINK}$([ "$USE_TELEGRAM" = true ] && echo -n "Telegram ")$([ "$USE_SLACK" = true ] && echo -n "Slack")${NC}"');
+  lines.push('echo -e "  ${DIM}channels${NC}     ${LTPINK}$([ "$USE_TELEGRAM" = true ] && echo -n "Telegram ")$([ "$USE_SLACK" = true ] && echo -n "Slack ")$([ "$USE_WHATSAPP" = true ] && echo -n "WhatsApp")${NC}"');
   lines.push('echo ""');
   lines.push('echo -ne "  ${PINK}\\u203a${NC} Proceed? ${DIM}(y/n)${NC}: "; read CONFIRM');
   lines.push('[[ ! "$CONFIRM" =~ ^[Yy]$ ]] && { echo -e "\\n  ${YELLOW}Aborted.${NC}"; exit 0; }');
@@ -438,7 +463,24 @@ export function generateAgentScript(
   lines.push("import json");
   lines.push('with open("$AGENT_DIR/config/openclaw.json", "r") as f:');
   lines.push("    config = json.load(f)");
-  lines.push('config.setdefault("gateway", {}).setdefault("auth", {"mode": "token"})["token"] = "$GATEWAY_TOKEN"');
+  lines.push("");
+  lines.push("# Gateway — ensure all required fields exist");
+  lines.push('gw = config.setdefault("gateway", {})');
+  lines.push('gw.setdefault("port", 18789)');
+  lines.push('gw.setdefault("mode", "local")');
+  lines.push('gw.setdefault("bind", "lan")');
+  lines.push('gw.setdefault("auth", {"mode": "token"})["token"] = "$GATEWAY_TOKEN"');
+  lines.push("");
+  lines.push("# ControlUI");
+  lines.push('ui = gw.setdefault("controlUi", {})');
+  lines.push('ui["allowedOrigins"] = ["https://$SUBDOMAIN"]');
+  lines.push('ui["dangerouslyDisableDeviceAuth"] = True');
+  lines.push('ui["allowInsecureAuth"] = True');
+  lines.push("");
+  lines.push("# Workspace path");
+  lines.push('config.setdefault("agents", {}).setdefault("defaults", {}).setdefault("workspace", "/home/node/.openclaw/workspace")');
+  lines.push("");
+  lines.push("# Channels");
   lines.push('if "channels" not in config: config["channels"] = {}');
   lines.push('if "$USE_TELEGRAM" == "true":');
   lines.push('    tg = config.get("channels", {}).get("telegram", {})');
@@ -448,10 +490,19 @@ export function generateAgentScript(
   lines.push('if "$USE_SLACK" == "true":');
   lines.push('    config["channels"]["slack"] = {"enabled":True,"mode":"socket","appToken":"$SLACK_APP_TOKEN","botToken":"$SLACK_BOT_TOKEN","dmPolicy":"pairing","streaming":"partial","nativeStreaming":True,"blockStreaming":True}');
   lines.push('else: config["channels"].pop("slack", None)');
-  lines.push('ui = config.setdefault("gateway",{}).setdefault("controlUi",{})');
-  lines.push('ui["allowedOrigins"] = ["https://$SUBDOMAIN"]');
-  lines.push('ui["dangerouslyDisableDeviceAuth"] = True');
-  lines.push('ui["allowInsecureAuth"] = True');
+  lines.push('if "$USE_WHATSAPP" == "true":');
+  lines.push('    config["channels"]["whatsapp"] = {"enabled": True}');
+  lines.push('else: config["channels"].pop("whatsapp", None)');
+  lines.push("");
+  lines.push("# Plugins — enable selected channel plugins");
+  lines.push('plugins = config.setdefault("plugins", {}).setdefault("entries", {})');
+  lines.push('if "$USE_TELEGRAM" == "true": plugins.setdefault("telegram", {})["enabled"] = True');
+  lines.push('else: plugins.pop("telegram", None)');
+  lines.push('if "$USE_SLACK" == "true": plugins.setdefault("slack", {})["enabled"] = True');
+  lines.push('else: plugins.pop("slack", None)');
+  lines.push('if "$USE_WHATSAPP" == "true": plugins.setdefault("whatsapp", {})["enabled"] = True');
+  lines.push('else: plugins.pop("whatsapp", None)');
+  lines.push("");
   lines.push('with open("$AGENT_DIR/config/openclaw.json", "w") as f:');
   lines.push("    json.dump(config, f, indent=2)");
   lines.push("PYEOF");
@@ -627,7 +678,15 @@ export function generateAgentScript(
     lines.push('    export GOG_KEYRING_BACKEND=file GOG_KEYRING_PASSWORD="$GOG_KEYRING_PASSWORD"');
     lines.push("    STEP=$((STEP + 1))");
     lines.push('    step_header $STEP $TOTAL_STEPS "Google OAuth"');
-    lines.push('    "$GOG_BINARY" auth add "$EMAIL" --services gmail,calendar,drive,docs,sheets --force-consent --manual');
+    // Build --services list from enabled toggles
+    const gogServices: string[] = [];
+    if (options.gogGmail) gogServices.push("gmail");
+    if (options.gogCalendar) gogServices.push("calendar");
+    if (options.gogDrive) gogServices.push("drive");
+    if (options.gogDocs) gogServices.push("docs");
+    if (options.gogSheets) gogServices.push("sheets");
+    const servicesFlag = gogServices.length > 0 ? gogServices.join(",") : "gmail,calendar,drive,docs,sheets";
+    lines.push('    "$GOG_BINARY" auth add "$EMAIL" --services ' + servicesFlag + ' --force-consent --manual');
     lines.push("    STEP=$((STEP + 1))");
     lines.push('    step_header $STEP $TOTAL_STEPS "Copying tokens"');
     lines.push('    cp "$GOG_HOST_CONFIG/credentials.json" "$AGENT_DIR/gogcli-config/" 2>/dev/null || true');
@@ -682,8 +741,9 @@ export function generateAgentScript(
     lines.push("# Health check");
     lines.push("STEP=$((STEP + 1))");
     lines.push('step_header $STEP $TOTAL_STEPS "Health check"');
+    lines.push("sleep 3");
     lines.push("HEALTHY=false");
-    lines.push("for i in $(seq 1 30); do");
+    lines.push("for i in $(seq 1 20); do");
     lines.push("    docker compose exec -T openclaw-gateway node -e \"fetch('http://127.0.0.1:18789/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\" 2>/dev/null && { HEALTHY=true; break; }");
     lines.push('    printf "\\r  ${PINK}\\u23f3${NC} %ss..." "$((i*2))"; sleep 2');
     lines.push("done");
@@ -714,6 +774,9 @@ export function generateAgentScript(
 
   // Slack check
   lines.push('[ "$USE_SLACK" = true ] && { SO=$(docker compose exec -T openclaw-gateway sh -c \'cat /tmp/openclaw/openclaw-*.log 2>/dev/null | grep -i "slack.*connected\\|slack.*socket" | tail -1\' 2>/dev/null || true); [ -n "$SO" ] && step_ok "Slack:     connected" || step_warn "Slack:     unverified"; }');
+
+  // WhatsApp check
+  lines.push('[ "$USE_WHATSAPP" = true ] && { WA=$(docker compose exec -T openclaw-gateway sh -c \'cat /tmp/openclaw/openclaw-*.log 2>/dev/null | grep -i "whatsapp.*connected\\|whatsapp.*ready" | tail -1\' 2>/dev/null || true); [ -n "$WA" ] && step_ok "WhatsApp:  connected" || step_warn "WhatsApp:  unverified"; }');
 
   // Google check
   if (options.includeGoogleOAuth) {
@@ -755,6 +818,12 @@ export function generateAgentScript(
     lines.push('    echo -e "  ${TEAL}Slack pairing${NC} \\u2014 have $FIRST_NAME DM the bot"');
     lines.push('    echo -ne "  ${PINK}\\u203a${NC} Code ${DIM}(Enter to skip)${NC}: "; read SPC');
     lines.push('    [ -n "$SPC" ] && { PR=$(docker compose exec -T openclaw-gateway node dist/index.js pairing approve slack "$SPC" 2>&1); echo "$PR" | grep -qi "approved\\|success\\|paired" && step_ok "Paired" || step_warn "$PR"; } || step_skip "Skipped"');
+    lines.push('    echo ""');
+    lines.push("fi");
+    lines.push('if [ "$USE_WHATSAPP" = true ]; then');
+    lines.push('    echo -e "  ${TEAL}WhatsApp pairing${NC} \\u2014 have $FIRST_NAME message the bot"');
+    lines.push('    echo -ne "  ${PINK}\\u203a${NC} Code ${DIM}(Enter to skip)${NC}: "; read WPC');
+    lines.push('    [ -n "$WPC" ] && { PR=$(docker compose exec -T openclaw-gateway node dist/index.js pairing approve whatsapp "$WPC" 2>&1); echo "$PR" | grep -qi "approved\\|success\\|paired" && step_ok "Paired" || step_warn "$PR"; } || step_skip "Skipped"');
     lines.push('    echo ""');
     lines.push("fi");
   }

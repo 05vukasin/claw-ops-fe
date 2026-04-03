@@ -31,9 +31,17 @@ export function AgentScriptEditor({
   const [agentsDir, setAgentsDir] = useState(DEFAULT_AGENT_SCRIPT_OPTIONS.defaultAgentsDir);
   const [dockerImage, setDockerImage] = useState(DEFAULT_AGENT_SCRIPT_OPTIONS.dockerImage);
   const [includeOAuth, setIncludeOAuth] = useState(true);
+  const [gogGmail, setGogGmail] = useState(true);
+  const [gogCalendar, setGogCalendar] = useState(true);
+  const [gogDrive, setGogDrive] = useState(true);
+  const [gogDocs, setGogDocs] = useState(true);
+  const [gogSheets, setGogSheets] = useState(true);
   const [includePairing, setIncludePairing] = useState(true);
   const [includeCaddy, setIncludeCaddy] = useState(true);
   const [includeHealthCheck, setIncludeHealthCheck] = useState(true);
+  const [includeTelegram, setIncludeTelegram] = useState(true);
+  const [includeSlack, setIncludeSlack] = useState(true);
+  const [includeWhatsApp, setIncludeWhatsApp] = useState(false);
   const [includeAtlassian, setIncludeAtlassian] = useState(true);
   const [includeBitbucket, setIncludeBitbucket] = useState(true);
   const [includeGitHub, setIncludeGitHub] = useState(true);
@@ -50,14 +58,22 @@ export function AgentScriptEditor({
       defaultAgentsDir: agentsDir,
       dockerImage,
       includeGoogleOAuth: includeOAuth,
+      gogGmail,
+      gogCalendar,
+      gogDrive,
+      gogDocs,
+      gogSheets,
       includePairing,
       includeCaddy,
       includeHealthCheck,
+      includeTelegram,
+      includeSlack,
+      includeWhatsApp,
       includeAtlassian,
       includeBitbucket,
       includeGitHub,
     }),
-    [domain, agentsDir, dockerImage, includeOAuth, includePairing, includeCaddy, includeHealthCheck, includeAtlassian, includeBitbucket, includeGitHub],
+    [domain, agentsDir, dockerImage, includeOAuth, gogGmail, gogCalendar, gogDrive, gogDocs, gogSheets, includePairing, includeCaddy, includeHealthCheck, includeTelegram, includeSlack, includeWhatsApp, includeAtlassian, includeBitbucket, includeGitHub],
   );
 
   useEffect(() => {
@@ -105,14 +121,36 @@ export function AgentScriptEditor({
           <OptionInput label="Docker image" value={dockerImage} onChange={setDockerImage} placeholder="openclaw:local" />
         </div>
 
+        {/* Channels */}
+        <div className="mb-2 mt-1 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Channels</div>
+        <div className="mb-3 flex flex-wrap gap-x-6 gap-y-2">
+          <Toggle checked={includeTelegram} onChange={setIncludeTelegram} label="Telegram" />
+          <Toggle checked={includeSlack} onChange={setIncludeSlack} label="Slack" />
+          <Toggle checked={includeWhatsApp} onChange={setIncludeWhatsApp} label="WhatsApp" />
+        </div>
+
         {/* Integrations */}
-        <div className="mb-2 mt-1 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Integrations</div>
+        <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Integrations</div>
         <div className="mb-3 flex flex-wrap gap-x-6 gap-y-2">
           <Toggle checked={includeAtlassian} onChange={setIncludeAtlassian} label="Atlassian (Jira + Confluence)" />
           <Toggle checked={includeBitbucket} onChange={setIncludeBitbucket} label="Bitbucket" />
           <Toggle checked={includeGitHub} onChange={setIncludeGitHub} label="GitHub" />
           <Toggle checked={includeOAuth} onChange={setIncludeOAuth} label="Google OAuth" />
         </div>
+
+        {/* Google OAuth services */}
+        {includeOAuth && (
+          <>
+            <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Google Services</div>
+            <div className="mb-3 flex flex-wrap gap-x-6 gap-y-2">
+              <Toggle checked={gogGmail} onChange={setGogGmail} label="Gmail" />
+              <Toggle checked={gogCalendar} onChange={setGogCalendar} label="Calendar" />
+              <Toggle checked={gogDrive} onChange={setGogDrive} label="Drive" />
+              <Toggle checked={gogDocs} onChange={setGogDocs} label="Docs" />
+              <Toggle checked={gogSheets} onChange={setGogSheets} label="Sheets" />
+            </div>
+          </>
+        )}
 
         {/* Provisioning */}
         <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Provisioning</div>
@@ -269,3 +307,4 @@ function OptionInput({
     </label>
   );
 }
+
