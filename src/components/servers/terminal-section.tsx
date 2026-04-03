@@ -150,29 +150,40 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       const ws = new WebSocket(`${wsBase}/ws/terminal?token=${encodeURIComponent(token)}&cols=${xtermRef.current?.cols ?? 120}&rows=${xtermRef.current?.rows ?? 40}`);
       wsRef.current = ws;
 
+      // Track last output time for settle detection
+      let lastOutputTime = Date.now();
+      let promptInjected = false;
+
       ws.onopen = () => {
         setStatus("connected");
         xtermRef.current?.focus();
-        // Inject directory tracking via OSC 7 — emits PWD after each command.
-        // Uses a short delay so the shell prompt renders first, then sends silently.
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
+        // Wait for shell output to settle (no output for 1s = MOTD done),
+        // then inject PROMPT_COMMAND silently and clear the screen.
+        const settleCheck = setInterval(() => {
+          if (promptInjected || ws.readyState !== WebSocket.OPEN) {
+            clearInterval(settleCheck);
+            return;
+          }
+          if (Date.now() - lastOutputTime > 1000) {
+            clearInterval(settleCheck);
+            promptInjected = true;
             ws.send(JSON.stringify({
               type: "INPUT",
-              data: " export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\\"\\$HOSTNAME\\\" \\\"\\$PWD\\\"\"\r",
+              data: " export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\\"\\$HOSTNAME\\\" \\\"\\$PWD\\\"\"\rclear\r",
             }));
+            // Flush any queued command after clear renders
+            setTimeout(() => {
+              if (pendingCmdRef.current && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "INPUT", data: pendingCmdRef.current }));
+                pendingCmdRef.current = null;
+              }
+            }, 500);
           }
-          // Flush any queued command after shell init
-          setTimeout(() => {
-            if (pendingCmdRef.current && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: "INPUT", data: pendingCmdRef.current }));
-              pendingCmdRef.current = null;
-            }
-          }, 300);
-        }, 500);
+        }, 200);
       };
 
       ws.onmessage = (event) => {
+        lastOutputTime = Date.now();
         const msg = JSON.parse(event.data) as WsMessage;
         if (msg.type === "OUTPUT") {
           xtermRef.current?.write(msg.data);
