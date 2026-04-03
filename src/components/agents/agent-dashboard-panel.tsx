@@ -2,17 +2,20 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  FiChevronRight,
   FiCpu,
   FiExternalLink,
   FiRefreshCw,
   FiX,
 } from "react-icons/fi";
-import { FaDatabase, FaScroll } from "react-icons/fa";
-import { TbCoins } from "react-icons/tb";
+import { AgentStatusSection } from "./agent-status-section";
+import { AgentActivitySection } from "./agent-activity-section";
+import { AgentServicesSection } from "./agent-services-section";
 import { AgentTokensSection } from "./agent-tokens-section";
-import { AgentLogsSection } from "./agent-logs-section";
+import { AgentModelSection } from "./agent-model-section";
+import { AgentCronSection } from "./agent-cron-section";
 import { AgentMemorySection } from "./agent-memory-section";
+import { AgentLogsSection } from "./agent-logs-section";
+import { AgentActionsSection } from "./agent-actions-section";
 import { Z_INDEX } from "@/lib/z-index";
 import { executeCommandApi, readFileApi, ApiError } from "@/lib/api";
 
@@ -50,20 +53,15 @@ interface PanelPos {
 const DEFAULT_POS: PanelPos = { x: 80, y: 80 };
 
 /* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
+/*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-function formatUptime(startedAt: string): string {
-  const ms = Date.now() - new Date(startedAt).getTime();
-  const hours = Math.floor(ms / 3600000);
-  const mins = Math.floor((ms % 3600000) / 60000);
-  if (hours >= 24) return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-  return `${hours}h ${mins}m`;
+interface ContainerState {
+  Status: string;
+  Running: boolean;
+  StartedAt: string;
+  RestartCount: number;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Props                                                              */
-/* ------------------------------------------------------------------ */
 
 interface AgentDashboardPanelProps {
   serverId: string;
@@ -103,13 +101,8 @@ export function AgentDashboardPanel({
   const panelWRef = useRef(panelW);
   panelWRef.current = panelW;
 
-  /* ---- sections ---- */
-  const [tokensExpanded, setTokensExpanded] = useState(false);
-  const [logsExpanded, setLogsExpanded] = useState(false);
-  const [memoryExpanded, setMemoryExpanded] = useState(false);
-
   /* ---- data state ---- */
-  const [containerStatus, setContainerStatus] = useState<"running" | "stopped" | "unknown">("unknown");
+  const [containerState, setContainerState] = useState<ContainerState | null>(null);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [config, setConfig] = useState<any>(null);
@@ -143,19 +136,16 @@ export function AgentDashboardPanel({
     // Parse container state
     if (containerResult.status === "fulfilled" && containerResult.value.exitCode === 0) {
       try {
-        const state = JSON.parse(containerResult.value.stdout.trim());
-        if (state.Running) {
-          setContainerStatus("running");
-          setStartedAt(state.StartedAt ?? null);
-        } else {
-          setContainerStatus("stopped");
-          setStartedAt(null);
-        }
+        const state: ContainerState = JSON.parse(containerResult.value.stdout.trim());
+        setContainerState(state);
+        setStartedAt(state.Running ? (state.StartedAt ?? null) : null);
       } catch {
-        setContainerStatus("unknown");
+        setContainerState(null);
+        setStartedAt(null);
       }
     } else {
-      setContainerStatus("unknown");
+      setContainerState(null);
+      setStartedAt(null);
     }
 
     // Parse config
@@ -252,7 +242,6 @@ export function AgentDashboardPanel({
         `cd /root/openclaw-agents/${agentName} && docker compose restart`,
         60,
       );
-      // Refresh data after restart
       dataLoadedRef.current = false;
       await fetchData();
     } catch (err) {
@@ -262,25 +251,12 @@ export function AgentDashboardPanel({
     setRestarting(false);
   }, [serverId, agentName, fetchData]);
 
-  /* ---- derived values from config ---- */
-  const modelRaw: string = config?.agents?.defaults?.model?.primary ?? "";
-  const modelName = modelRaw.includes("/") ? modelRaw.split("/").pop() : modelRaw || "--";
-
-  const hasSlack = !!(config?.channels?.slack);
-  const hasTelegram = !!(config?.plugins?.entries && Object.values(config.plugins.entries).some(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (entry: any) => entry?.type === "telegram" || entry?.name?.toLowerCase().includes("telegram"),
-  ));
-
-  const channelsDisplay = [
-    hasSlack ? "Slack \u2713" : null,
-    hasTelegram ? "Telegram \u2713" : null,
-  ].filter(Boolean).join(" / ") || "--";
-
-  const thinkingMode: string = config?.agents?.defaults?.thinkingDefault ?? "off";
-  const streaming: string = config?.channels?.slack?.streaming != null
-    ? String(config.channels.slack.streaming)
-    : "--";
+  /* ---- derived values for header ---- */
+  const containerStatus = containerState?.Running
+    ? "running"
+    : containerState
+      ? "stopped"
+      : "unknown";
 
   const dotColor =
     containerStatus === "running"
@@ -336,7 +312,6 @@ export function AgentDashboardPanel({
         data-drag-handle
         className="flex shrink-0 cursor-grab items-center gap-3 border-b border-canvas-border px-5 py-3.5 select-none active:cursor-grabbing"
       >
-        {/* Agent icon */}
         <div
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-canvas-border"
           data-drag-handle
@@ -397,152 +372,28 @@ export function AgentDashboardPanel({
 
       {/* ===== Panel body ===== */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {/* ── OVERVIEW (always visible, not collapsible) ── */}
-        <div className="border-b border-canvas-border px-5 py-4">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-            <InfoCell label="Model" value={modelName ?? "--"} />
-            <InfoCell label="Channels" value={channelsDisplay} />
-            <InfoCell label="Thinking" value={thinkingMode} />
-            <InfoCell label="Streaming" value={streaming} />
-            <InfoCell
-              label="Uptime"
-              value={
-                containerStatus === "running" && startedAt
-                  ? formatUptime(startedAt)
-                  : "--"
-              }
-            />
-          </div>
-        </div>
-
-        {/* ── TOKEN USAGE (collapsible) ── */}
-        <div className="border-b border-canvas-border">
-          <button
-            type="button"
-            onClick={() => setTokensExpanded((p) => !p)}
-            className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
-          >
-            <TbCoins size={13} className="text-canvas-muted" />
-            <span className="flex-1 text-xs font-medium text-canvas-muted">
-              Token Usage
-            </span>
-            <FiChevronRight
-              size={14}
-              className={`text-canvas-muted chevron-rotate ${tokensExpanded ? "open" : ""}`}
-            />
-          </button>
-          <div className={`animate-collapse ${tokensExpanded ? "open" : ""}`}>
-            <div className="collapse-inner">
-              <div className="border-t border-canvas-border px-5 py-4">
-                <AgentTokensSection serverId={serverId} agentName={agentName} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── LOGS (collapsible) ── */}
-        <div className="border-b border-canvas-border">
-          <button
-            type="button"
-            onClick={() => setLogsExpanded((p) => !p)}
-            className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
-          >
-            <FaScroll size={13} className="text-canvas-muted" />
-            <span className="flex-1 text-xs font-medium text-canvas-muted">
-              Logs
-            </span>
-            <FiChevronRight
-              size={14}
-              className={`text-canvas-muted chevron-rotate ${logsExpanded ? "open" : ""}`}
-            />
-          </button>
-          <div className={`animate-collapse ${logsExpanded ? "open" : ""}`}>
-            <div className="collapse-inner">
-              <div className="border-t border-canvas-border px-5 py-4">
-                <AgentLogsSection serverId={serverId} agentName={agentName} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── MEMORY (collapsible) ── */}
-        <div className="border-b border-canvas-border">
-          <button
-            type="button"
-            onClick={() => setMemoryExpanded((p) => !p)}
-            className="flex w-full items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-canvas-surface-hover"
-          >
-            <FaDatabase size={13} className="text-canvas-muted" />
-            <span className="flex-1 text-xs font-medium text-canvas-muted">
-              Memory
-            </span>
-            <FiChevronRight
-              size={14}
-              className={`text-canvas-muted chevron-rotate ${memoryExpanded ? "open" : ""}`}
-            />
-          </button>
-          <div className={`animate-collapse ${memoryExpanded ? "open" : ""}`}>
-            <div className="collapse-inner">
-              <div className="border-t border-canvas-border px-5 py-4">
-                <AgentMemorySection serverId={serverId} agentName={agentName} />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── QUICK ACTIONS ── */}
-        <div className="px-5 py-3">
-          <ActionBtn
-            onClick={handleRestart}
-            disabled={restarting}
-            icon={
-              <FiRefreshCw
-                size={13}
-                className={restarting ? "animate-spin" : ""}
-              />
-            }
-          >
-            {restarting ? "Restarting..." : "Restart Agent"}
-          </ActionBtn>
-        </div>
+        <AgentStatusSection
+          serverId={serverId}
+          agentName={agentName}
+          containerState={containerState}
+          startedAt={startedAt}
+          config={config}
+        />
+        <AgentActivitySection serverId={serverId} agentName={agentName} />
+        <AgentServicesSection serverId={serverId} agentName={agentName} config={config} />
+        <AgentTokensSection serverId={serverId} agentName={agentName} />
+        <AgentModelSection config={config} />
+        <AgentCronSection serverId={serverId} agentName={agentName} />
+        <AgentMemorySection serverId={serverId} agentName={agentName} />
+        <AgentLogsSection serverId={serverId} agentName={agentName} />
+        <AgentActionsSection
+          serverId={serverId}
+          agentName={agentName}
+          serverDomain={serverDomain}
+          restarting={restarting}
+          onRestart={handleRestart}
+        />
       </div>
     </div>
-  );
-}
-
-/* ── Sub-components ── */
-
-function InfoCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">
-        {label}
-      </p>
-      <p className="mt-0.5 truncate text-xs text-canvas-fg">{value}</p>
-    </div>
-  );
-}
-
-function ActionBtn({
-  children,
-  onClick,
-  disabled,
-  icon,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg disabled:opacity-50"
-    >
-      {icon}
-      {children}
-    </button>
   );
 }

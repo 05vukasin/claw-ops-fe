@@ -79,6 +79,8 @@ export function AgentMemorySection({ serverId, agentName }: AgentMemorySectionPr
     [serverId, selectedFile],
   );
 
+  const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+
   return (
     <div className="border-b border-canvas-border">
       <button
@@ -88,6 +90,11 @@ export function AgentMemorySection({ serverId, agentName }: AgentMemorySectionPr
       >
         <FiDatabase size={13} className="text-canvas-muted" />
         <span className="flex-1 text-xs font-medium text-canvas-muted">Memory</span>
+        {files.length > 0 && (
+          <span className="mr-1 rounded-full bg-canvas-surface-hover px-1.5 py-0.5 text-[9px] font-medium text-canvas-muted">
+            {files.length}
+          </span>
+        )}
         <FiChevronRight size={14} className={`text-canvas-muted chevron-rotate ${expanded ? "open" : ""}`} />
       </button>
 
@@ -100,8 +107,13 @@ export function AgentMemorySection({ serverId, agentName }: AgentMemorySectionPr
               <p className="text-[11px] text-red-500">{error}</p>
             ) : (
               <div className="space-y-3">
-                {/* Refresh button */}
-                <div className="flex items-center justify-end">
+                {/* Header: summary + refresh */}
+                <div className="flex items-center justify-between">
+                  {files.length > 0 && (
+                    <span className="text-[10px] text-canvas-muted">
+                      {files.length} file{files.length !== 1 ? "s" : ""}, {formatSize(totalSize)} total
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={loadFiles}

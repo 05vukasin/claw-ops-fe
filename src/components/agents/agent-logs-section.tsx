@@ -5,6 +5,12 @@ import { FiChevronRight, FiRefreshCw, FiTerminal } from "react-icons/fi";
 import { executeCommandApi } from "@/lib/api";
 
 /* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+type LogSource = "gateway" | "cli";
+
+/* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -27,9 +33,15 @@ export function AgentLogsSection({ serverId, agentName }: AgentLogsSectionProps)
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [source, setSource] = useState<LogSource>("gateway");
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
+
+  const containerName =
+    source === "gateway"
+      ? `${agentName}-openclaw-gateway-1`
+      : `${agentName}-openclaw-cli-1`;
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -37,7 +49,7 @@ export function AgentLogsSection({ serverId, agentName }: AgentLogsSectionProps)
     try {
       const result = await executeCommandApi(
         serverId,
-        `docker logs --tail 100 ${agentName}-openclaw-gateway-1 2>&1`,
+        `docker logs --tail 100 ${containerName} 2>&1`,
       );
       setLogs(stripAnsi(result.stdout || result.stderr || ""));
     } catch (err) {
@@ -45,7 +57,7 @@ export function AgentLogsSection({ serverId, agentName }: AgentLogsSectionProps)
       setLogs("");
     }
     setLoading(false);
-  }, [serverId, agentName]);
+  }, [serverId, containerName]);
 
   // Scroll to bottom when logs update
   useEffect(() => {
@@ -54,7 +66,7 @@ export function AgentLogsSection({ serverId, agentName }: AgentLogsSectionProps)
     }
   }, [logs]);
 
-  // Load on expand
+  // Load on expand or source change
   useEffect(() => {
     if (expanded) loadLogs();
   }, [expanded, loadLogs]);
@@ -98,6 +110,22 @@ export function AgentLogsSection({ serverId, agentName }: AgentLogsSectionProps)
       <div className={`animate-collapse ${expanded ? "open" : ""}`}>
         <div className="collapse-inner">
           <div className="border-t border-canvas-border px-5 py-4">
+            {/* Source tabs */}
+            <div className="mb-3 flex items-center gap-1 rounded-md border border-canvas-border p-0.5">
+              <TabBtn
+                active={source === "gateway"}
+                onClick={() => setSource("gateway")}
+              >
+                Gateway
+              </TabBtn>
+              <TabBtn
+                active={source === "cli"}
+                onClick={() => setSource("cli")}
+              >
+                CLI
+              </TabBtn>
+            </div>
+
             {loading && !logs ? (
               <p className="text-[11px] text-canvas-muted">Loading...</p>
             ) : error && !logs ? (
@@ -139,5 +167,31 @@ export function AgentLogsSection({ serverId, agentName }: AgentLogsSectionProps)
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── Sub-components ── */
+
+function TabBtn({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 rounded px-3 py-1 text-[11px] font-medium transition-colors ${
+        active
+          ? "bg-canvas-surface-hover text-canvas-fg"
+          : "text-canvas-muted hover:text-canvas-fg"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
