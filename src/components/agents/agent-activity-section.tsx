@@ -13,9 +13,9 @@ type EventType = "user_message" | "assistant_reply" | "tool_use" | "cron" | "sys
 interface ActivityEvent {
   timestamp: string;
   type: EventType;
-  summary: string;
   channel?: string;
   sessionKey?: string;
+  toolName?: string;
 }
 
 interface AgentActivitySectionProps {
@@ -50,36 +50,12 @@ function formatAbsoluteTime(ts: string): string {
   });
 }
 
-function extractUserText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+function extractToolName(content: unknown): string | null {
+  if (!Array.isArray(content)) return null;
   for (const block of content) {
-    if (block?.type === "text" && typeof block.text === "string") {
-      const text: string = block.text;
-      const slackMatch = text.match(/(?:Slack|Telegram)\s+(?:DM|message|channel)\s+from\s+\S+:\s*(.+?)(?:\n|$)/i);
-      if (slackMatch) return slackMatch[1].trim();
-      const lastLine = text.split("\n").filter((l: string) => l.trim()).pop() ?? text;
-      if (lastLine.startsWith("```")) return text.split("\n")[0];
-      return lastLine.length > 200 ? lastLine.slice(0, 197) + "..." : lastLine;
-    }
+    if (block?.type === "toolCall") return block.name ?? null;
   }
-  return "";
-}
-
-function extractAssistantText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  for (const block of content) {
-    if (block?.type === "text" && typeof block.text === "string") {
-      let text: string = block.text;
-      text = text.replace(/\[\[.*?\]\]\s*/g, "").trim();
-      return text.length > 200 ? text.slice(0, 197) + "..." : text;
-    }
-    if (block?.type === "toolCall") {
-      return `Tool: ${block.name ?? "unknown"}`;
-    }
-  }
-  return "";
+  return null;
 }
 
 function parseJsonlMessages(raw: string, channel: string, sessionKey: string): ActivityEvent[] {
@@ -96,18 +72,13 @@ function parseJsonlMessages(raw: string, channel: string, sessionKey: string): A
       const ts = record.timestamp ?? "";
 
       if (msg.role === "user") {
-        const text = extractUserText(msg.content);
-        if (!text) continue;
-        events.push({ timestamp: ts, type: "user_message", summary: text, channel, sessionKey });
+        events.push({ timestamp: ts, type: "user_message", channel, sessionKey });
       } else if (msg.role === "assistant") {
-        const text = extractAssistantText(msg.content);
-        if (!text) continue;
-        const hasToolCall = Array.isArray(msg.content) &&
-          msg.content.some((b: { type: string }) => b?.type === "toolCall");
+        const toolName = extractToolName(msg.content);
         events.push({
           timestamp: ts,
-          type: hasToolCall ? "tool_use" : "assistant_reply",
-          summary: text,
+          type: toolName ? "tool_use" : "assistant_reply",
+          toolName: toolName ?? undefined,
           channel,
           sessionKey,
         });
@@ -536,34 +507,32 @@ export function AgentActivitySection({
                   {events.slice(0, 100).map((ev, i) => (
                     <div
                       key={i}
-                      className="flex items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-canvas-surface-hover"
+                      className="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-canvas-surface-hover"
                     >
                       <span
-                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT_COLOR[ev.type]}`}
+                        className={`h-2 w-2 shrink-0 rounded-full ${DOT_COLOR[ev.type]}`}
                       />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-canvas-muted">
-                            {TYPE_LABEL[ev.type]}
-                          </span>
-                          {ev.channel && (
-                            <span className="rounded bg-canvas-surface-hover px-1 py-0.5 text-[9px] text-canvas-muted">
-                              {ev.channel}
-                            </span>
-                          )}
-                          {ev.timestamp && (
-                            <span
-                              className="ml-auto shrink-0 text-[10px] text-canvas-muted"
-                              title={formatAbsoluteTime(ev.timestamp)}
-                            >
-                              {formatRelativeTime(ev.timestamp)}
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-[11px] leading-snug text-canvas-fg">
-                          {ev.summary}
-                        </p>
-                      </div>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-canvas-muted">
+                        {TYPE_LABEL[ev.type]}
+                      </span>
+                      {ev.toolName && (
+                        <code className="rounded bg-canvas-surface-hover px-1 py-0.5 text-[9px] text-canvas-muted">
+                          {ev.toolName}
+                        </code>
+                      )}
+                      {ev.channel && (
+                        <span className="rounded bg-canvas-surface-hover px-1 py-0.5 text-[9px] text-canvas-muted">
+                          {ev.channel}
+                        </span>
+                      )}
+                      {ev.timestamp && (
+                        <span
+                          className="ml-auto shrink-0 text-[10px] text-canvas-muted"
+                          title={formatAbsoluteTime(ev.timestamp)}
+                        >
+                          {formatRelativeTime(ev.timestamp)}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
