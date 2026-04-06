@@ -70,6 +70,7 @@ interface AgentDashboardPanelProps {
   onClose: () => void;
   zIndex?: number;
   onFocus?: () => void;
+  onOpenConfig?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -83,6 +84,7 @@ export function AgentDashboardPanel({
   onClose,
   zIndex,
   onFocus,
+  onOpenConfig,
 }: AgentDashboardPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -392,6 +394,7 @@ export function AgentDashboardPanel({
           serverDomain={serverDomain}
           restarting={restarting}
           onRestart={handleRestart}
+          onOpenConfig={onOpenConfig}
         />
       </div>
     </div>

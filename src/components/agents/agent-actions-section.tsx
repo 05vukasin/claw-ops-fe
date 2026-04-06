@@ -6,6 +6,7 @@ import {
   FiExternalLink,
   FiEye,
   FiRefreshCw,
+  FiSettings,
   FiZap,
 } from "react-icons/fi";
 import { readFileApi } from "@/lib/api";
@@ -20,6 +21,7 @@ interface AgentActionsSectionProps {
   serverDomain?: string | null;
   restarting: boolean;
   onRestart: () => void;
+  onOpenConfig?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -32,6 +34,7 @@ export function AgentActionsSection({
   serverDomain,
   restarting,
   onRestart,
+  onOpenConfig,
 }: AgentActionsSectionProps) {
   const [expanded, setExpanded] = useState(false);
   const [configView, setConfigView] = useState(false);
@@ -105,6 +108,14 @@ export function AgentActionsSection({
                   <FiExternalLink size={12} />
                   Web UI
                 </a>
+              )}
+
+              {/* Configure */}
+              {onOpenConfig && (
+                <ActionBtn onClick={onOpenConfig}>
+                  <FiSettings size={12} />
+                  Configure
+                </ActionBtn>
               )}
 
               {/* View Config */}

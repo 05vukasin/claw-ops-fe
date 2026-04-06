@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ServerDashboardPanel, ServerModal } from "@/components/servers";
 import { AgentDashboardPanel } from "@/components/agents/agent-dashboard-panel";
+import { AgentConfigPanel } from "@/components/agents/agent-config-panel";
 import { FileEditorPanel } from "@/components/servers/file-editor-panel";
 import { useServers } from "@/lib/use-servers";
 import { Z_INDEX } from "@/lib/z-index";
@@ -180,7 +181,36 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     setFocusOrder((prev) => prev.filter((k) => k !== key));
   }, []);
 
-  if (openServers.length === 0 && openAgentEntries.length === 0 && openFiles.length === 0) return null;
+  /* ---- Open config panels ---- */
+  const [openConfigs, setOpenConfigs] = useState<
+    { key: string; serverId: string; agentName: string }[]
+  >([]);
+
+  const handleConfigOpen = useCallback(
+    (serverId: string, agentName: string) => {
+      const key = `config:${serverId}::${agentName}`;
+      setOpenConfigs((prev) =>
+        prev.some((e) => e.key === key)
+          ? prev
+          : [...prev, { key, serverId, agentName }],
+      );
+      handleFocus(key);
+    },
+    [handleFocus],
+  );
+
+  const handleConfigClose = useCallback((key: string) => {
+    setOpenConfigs((prev) => prev.filter((e) => e.key !== key));
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+  }, []);
+
+  if (
+    openServers.length === 0 &&
+    openAgentEntries.length === 0 &&
+    openFiles.length === 0 &&
+    openConfigs.length === 0
+  )
+    return null;
 
   return (
     <>
@@ -204,6 +234,18 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           agentName={entry.name}
           serverDomain={serverMap.get(entry.serverId)?.assignedDomain}
           onClose={() => handleAgentClose(entry.key)}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
+          onOpenConfig={() => handleConfigOpen(entry.serverId, entry.name)}
+        />
+      ))}
+
+      {openConfigs.map((entry) => (
+        <AgentConfigPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          agentName={entry.agentName}
+          onClose={() => handleConfigClose(entry.key)}
           zIndex={getZIndex(entry.key)}
           onFocus={() => handleFocus(entry.key)}
         />
