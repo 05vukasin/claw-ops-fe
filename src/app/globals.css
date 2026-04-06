@@ -258,10 +258,40 @@ html:not(.dark) {
   appearance: none;
 }
 
-/* xterm touch scrolling */
-.xterm-viewport {
-  -webkit-overflow-scrolling: touch;
+/* xterm touch scrolling — critical for mobile */
+.xterm .xterm-viewport {
+  -webkit-overflow-scrolling: touch !important;
   overscroll-behavior: contain;
+  touch-action: pan-y !important;
+  overflow-y: scroll !important;
+}
+
+/* Wider scrollbar on mobile for easier touch */
+@media (max-width: 767px) {
+  .xterm .xterm-viewport {
+    scrollbar-width: auto;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar {
+    width: 10px;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb:active {
+    background: rgba(255, 255, 255, 0.3);
+    background-clip: padding-box;
+  }
+}
+
+/* Allow touch to pass through xterm screen to viewport for scrolling */
+.xterm .xterm-screen {
+  touch-action: pan-y !important;
 }
 
 /* Hide scrollbar on horizontal-scroll toolbars */

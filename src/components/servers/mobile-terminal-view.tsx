@@ -43,26 +43,16 @@ export function MobileTerminalView({
   const xtermRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fitRef = useRef<any>(null);
-  // Track last known cols/rows to detect changes and send RESIZE
   const lastSizeRef = useRef({ cols: 0, rows: 0 });
 
   const [status, setStatus] = useState<TermStatus>("idle");
   const { viewportHeight, isKeyboardOpen } = useVisualViewport();
 
-  /* ── Lock body: prevent ALL scrolling/bouncing behind the overlay ── */
+  /* ── Lock body scroll (only prevent background page from scrolling) ── */
   useEffect(() => {
     const prev = document.body.style.cssText;
-    document.body.style.cssText = "overflow:hidden;position:fixed;width:100%;height:100%;touch-action:none;";
-    const block = (e: TouchEvent) => {
-      if (!(e.target as HTMLElement)?.closest(".xterm-viewport")) {
-        e.preventDefault();
-      }
-    };
-    document.addEventListener("touchmove", block, { passive: false });
-    return () => {
-      document.body.style.cssText = prev;
-      document.removeEventListener("touchmove", block);
-    };
+    document.body.style.cssText = "overflow:hidden;position:fixed;width:100%;height:100%;";
+    return () => { document.body.style.cssText = prev; };
   }, []);
 
   /* ── Send raw data to WebSocket ── */
@@ -72,6 +62,13 @@ export function MobileTerminalView({
     }
   }, []);
 
+  /* ── Re-focus xterm after button tap (keeps keyboard open) ── */
+  const sendAndRefocus = useCallback((data: string) => {
+    send(data);
+    // Re-focus xterm's hidden textarea so mobile keyboard stays open
+    setTimeout(() => xtermRef.current?.focus(), 10);
+  }, [send]);
+
   /* ── Fit terminal and send RESIZE to server if cols/rows changed ── */
   const fitAndResize = useCallback(() => {
     if (!fitRef.current || !xtermRef.current) return;
@@ -80,7 +77,6 @@ export function MobileTerminalView({
     const { cols, rows } = term;
     if (cols !== lastSizeRef.current.cols || rows !== lastSizeRef.current.rows) {
       lastSizeRef.current = { cols, rows };
-      // Tell server PTY about the new size
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "RESIZE", cols, rows }));
       }
@@ -102,12 +98,10 @@ export function MobileTerminalView({
 
         const term = new Terminal({
           ...TERMINAL_OPTIONS,
-          // Small font to fit ~80 cols on a mobile screen (~390px wide)
           fontSize: 9,
           lineHeight: 1.2,
           letterSpacing: 0,
-          scrollback: 5000,
-          convertEol: true,
+          scrollback: 10000,
         });
         const fit = new FitAddon();
         term.loadAddon(fit);
@@ -116,16 +110,13 @@ export function MobileTerminalView({
         xtermRef.current = term;
         fitRef.current = fit;
 
-        // Only load WebLinks addon (skip WebGL — causes rendering glitches on mobile)
+        // Only WebLinks (skip WebGL on mobile)
         import("@xterm/addon-web-links")
           .then(({ WebLinksAddon }) => { term.loadAddon(new WebLinksAddon()); })
           .catch(() => {});
 
         // Initial fit
-        requestAnimationFrame(() => {
-          fitAndResize();
-          term.scrollToBottom();
-        });
+        requestAnimationFrame(() => fitAndResize());
 
         // Ctrl+C: copy selected text, else send SIGINT
         term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -154,13 +145,12 @@ export function MobileTerminalView({
             .catch(() => {});
         });
 
-        // ResizeObserver for auto-fit + resize notification
+        // ResizeObserver
         const observer = new ResizeObserver(() => {
           requestAnimationFrame(() => fitAndResize());
         });
         observer.observe(containerRef.current!);
 
-        // Auto-connect
         connect();
       }).catch(() => {});
     }, 80);
@@ -181,12 +171,8 @@ export function MobileTerminalView({
 
   /* ── Refit when viewport changes (keyboard open/close) ── */
   useEffect(() => {
-    // Double rAF to ensure layout has settled after keyboard animation
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        fitAndResize();
-        if (isKeyboardOpen) xtermRef.current?.scrollToBottom();
-      });
+      requestAnimationFrame(() => fitAndResize());
     });
   }, [viewportHeight, isKeyboardOpen, fitAndResize]);
 
@@ -243,11 +229,8 @@ export function MobileTerminalView({
         const msg = JSON.parse(event.data) as WsMessage;
         if (msg.type === "OUTPUT") {
           xtermRef.current?.write(msg.data);
-          // Auto-scroll to bottom on new output
-          xtermRef.current?.scrollToBottom();
         } else if (msg.type === "ERROR") {
           xtermRef.current?.writeln(`\r\n\x1b[31m[ERROR] ${msg.data}\x1b[0m`);
-          xtermRef.current?.scrollToBottom();
         } else if (msg.type === "CLOSED") {
           xtermRef.current?.writeln("\r\n\x1b[90m--- Session ended ---\x1b[0m");
           setStatus("closed");
@@ -287,16 +270,16 @@ export function MobileTerminalView({
     <div
       ref={outerRef}
       className="fixed inset-0 bg-[#0d1117]"
-      style={{ zIndex: Z_INDEX.MODAL, touchAction: "none" }}
+      style={{ zIndex: Z_INDEX.MODAL }}
     >
       <div
         className="flex flex-col"
-        style={{ height: viewportHeight, overflow: "hidden" }}
+        style={{ height: viewportHeight, overflow: "hidden", touchAction: "none" }}
       >
         {/* ── Header ── */}
         <div
           className="flex shrink-0 items-center gap-2.5 border-b border-[#21262d] px-3 py-2"
-          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 8px)" }}
+          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 8px)", touchAction: "none" }}
         >
           <span className={`h-2 w-2 shrink-0 rounded-full ${statusDot}`} />
           <div className="min-w-0 flex-1">
@@ -324,37 +307,37 @@ export function MobileTerminalView({
         {/* ── Terminal ── */}
         <div
           ref={containerRef}
-          className="flex-1 min-h-0 overflow-hidden"
-          style={{ background: "#0d1117", touchAction: "pan-y" }}
+          className="flex-1 min-h-0"
+          style={{ background: "#0d1117" }}
           onClick={() => xtermRef.current?.focus()}
         />
 
         {/* ── Quick-action toolbar ── */}
         <div
-          className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[#21262d] bg-[#161b22] px-2 py-1.5 no-scrollbar"
+          className="mobile-toolbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[#21262d] bg-[#161b22] px-2 py-1.5 no-scrollbar"
           style={{
             paddingBottom: isKeyboardOpen ? "2px" : "max(env(safe-area-inset-bottom, 0px), 6px)",
             touchAction: "pan-x",
           }}
         >
-          <QBtn label="Tab" onClick={() => send("\t")} />
-          <QBtn label="⇧Tab" onClick={() => send("\x1b[Z")} />
+          <QBtn label="Tab" onTap={() => sendAndRefocus("\t")} />
+          <QBtn label="⇧Tab" onTap={() => sendAndRefocus("\x1b[Z")} />
           <Sep />
-          <QBtn label="↑" onClick={() => send("\x1b[A")} />
-          <QBtn label="↓" onClick={() => send("\x1b[B")} />
-          <QBtn label="←" onClick={() => send("\x1b[D")} />
-          <QBtn label="→" onClick={() => send("\x1b[C")} />
+          <QBtn label="↑" onTap={() => sendAndRefocus("\x1b[A")} />
+          <QBtn label="↓" onTap={() => sendAndRefocus("\x1b[B")} />
+          <QBtn label="←" onTap={() => sendAndRefocus("\x1b[D")} />
+          <QBtn label="→" onTap={() => sendAndRefocus("\x1b[C")} />
           <Sep />
-          <QBtn label="/" onClick={() => send("/")} />
-          <QBtn label="@" onClick={() => send("@")} />
-          <QBtn label="~" onClick={() => send("~")} />
-          <QBtn label="|" onClick={() => send("|")} />
-          <QBtn label="-" onClick={() => send("-")} />
+          <QBtn label="/" onTap={() => sendAndRefocus("/")} />
+          <QBtn label="@" onTap={() => sendAndRefocus("@")} />
+          <QBtn label="~" onTap={() => sendAndRefocus("~")} />
+          <QBtn label="|" onTap={() => sendAndRefocus("|")} />
+          <QBtn label="-" onTap={() => sendAndRefocus("-")} />
           <Sep />
-          <QBtn label="^C" onClick={() => send("\x03")} accent />
-          <QBtn label="^D" onClick={() => send("\x04")} />
-          <QBtn label="^L" onClick={() => send("\x0c")} />
-          <QBtn label="Esc" onClick={() => send("\x1b")} />
+          <QBtn label="^C" onTap={() => sendAndRefocus("\x03")} accent />
+          <QBtn label="^D" onTap={() => sendAndRefocus("\x04")} />
+          <QBtn label="^L" onTap={() => sendAndRefocus("\x0c")} />
+          <QBtn label="Esc" onTap={() => sendAndRefocus("\x1b")} />
         </div>
       </div>
     </div>
@@ -367,24 +350,21 @@ export function MobileTerminalView({
 
 function QBtn({
   label,
-  onClick,
+  onTap,
   accent,
 }: {
   label: string;
-  onClick: () => void;
+  onTap: () => void;
   accent?: boolean;
 }) {
   return (
     <button
       type="button"
-      onTouchStart={(e) => {
+      onPointerDown={(e) => {
+        // Prevent the button from stealing focus from xterm's hidden textarea
         e.preventDefault();
-        onClick();
+        onTap();
         navigator.vibrate?.(8);
-      }}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        onClick();
       }}
       className={`shrink-0 rounded px-2 py-1 font-mono text-[12px] font-medium select-none active:scale-95 transition-transform ${
         accent

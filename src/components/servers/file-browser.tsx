@@ -87,6 +87,8 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
 
   /* ---- drag-and-drop upload ---- */
   const [dragOver, setDragOver] = useState(false);
+  const [dragIsFolder, setDragIsFolder] = useState(false);
+  const dragCounterRef = useRef(0);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
 
   /* ---- context menu ---- */
@@ -133,22 +135,54 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
   }), [loadFiles]);
 
   /* ── Drag-and-drop upload handlers ── */
+  /** Check if any dragged item is a folder */
+  const checkForFolder = useCallback((items: DataTransferItemList): boolean => {
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i].webkitGetAsEntry?.();
+      if (entry?.isDirectory) return true;
+      // Fallback: folders have type "" and kind "file"
+      if (items[i].kind === "file" && items[i].type === "") return true;
+    }
+    return false;
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (dragCounterRef.current === 1) {
+      const isFolder = checkForFolder(e.dataTransfer.items);
+      setDragIsFolder(isFolder);
+      setDragOver(true);
+    }
+  }, [checkForFolder]);
+
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragOver(true);
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragOver(false);
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setDragOver(false);
+      setDragIsFolder(false);
+    }
   }, []);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const wasFolder = dragIsFolder;
+    dragCounterRef.current = 0;
     setDragOver(false);
+    setDragIsFolder(false);
+
+    // Block folder uploads
+    if (wasFolder) return;
 
     const droppedFiles = e.dataTransfer.files;
     if (!droppedFiles.length) return;
@@ -165,7 +199,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
     }
     setBusyMessage(null);
     loadFiles(currentPathRef.current);
-  }, [serverId, loadFiles]);
+  }, [serverId, loadFiles, dragIsFolder]);
 
   // Load on mount
   useEffect(() => {
@@ -278,40 +312,46 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
   const handleCtxExtract = useCallback(async () => {
     if (!ctxMenu || ctxMenu.file.directory) return;
     const file = ctxMenu.file;
-    const dir = file.path.substring(0, file.path.lastIndexOf("/")) || "/";
-    const escaped = file.path.replace(/'/g, "'\\''");
-    const escapedDir = dir.replace(/'/g, "'\\''");
+    // Resolve ~ so $HOME expands in the shell
+    let resolvedPath = file.path;
+    if (resolvedPath.startsWith("~")) resolvedPath = resolvedPath.replace("~", "$HOME");
+    const resolvedDir = resolvedPath.substring(0, resolvedPath.lastIndexOf("/")) || "/";
     const name = file.name.toLowerCase();
     setCtxMenu(null);
 
     let cmd: string;
     if (name.endsWith(".tar.gz") || name.endsWith(".tgz")) {
-      cmd = `tar -xzf '${escaped}' -C '${escapedDir}'`;
+      cmd = `tar -xzf "${resolvedPath}" -C "${resolvedDir}"`;
     } else if (name.endsWith(".tar.bz2")) {
-      cmd = `tar -xjf '${escaped}' -C '${escapedDir}'`;
+      cmd = `tar -xjf "${resolvedPath}" -C "${resolvedDir}"`;
     } else if (name.endsWith(".tar.xz")) {
-      cmd = `tar -xJf '${escaped}' -C '${escapedDir}'`;
+      cmd = `tar -xJf "${resolvedPath}" -C "${resolvedDir}"`;
     } else if (name.endsWith(".tar")) {
-      cmd = `tar -xf '${escaped}' -C '${escapedDir}'`;
+      cmd = `tar -xf "${resolvedPath}" -C "${resolvedDir}"`;
     } else if (name.endsWith(".zip")) {
-      cmd = `unzip -o '${escaped}' -d '${escapedDir}'`;
+      // Auto-install unzip if missing
+      cmd = `which unzip >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq unzip) >/dev/null 2>&1; unzip -o "${resolvedPath}" -d "${resolvedDir}"`;
     } else if (name.endsWith(".gz")) {
-      cmd = `gunzip -k '${escaped}'`;
+      cmd = `gunzip -k "${resolvedPath}"`;
     } else if (name.endsWith(".bz2")) {
-      cmd = `bunzip2 -k '${escaped}'`;
+      cmd = `bunzip2 -k "${resolvedPath}"`;
     } else if (name.endsWith(".xz")) {
-      cmd = `unxz -k '${escaped}'`;
+      cmd = `unxz -k "${resolvedPath}"`;
     } else if (name.endsWith(".7z")) {
-      cmd = `7z x '${escaped}' -o'${escapedDir}'`;
+      cmd = `7z x "${resolvedPath}" -o"${resolvedDir}"`;
     } else if (name.endsWith(".rar")) {
-      cmd = `unrar x '${escaped}' '${escapedDir}'`;
+      cmd = `unrar x "${resolvedPath}" "${resolvedDir}"`;
     } else {
       return;
     }
 
     setBusyMessage(`Extracting ${file.name}...`);
     try {
-      await executeCommandApi(serverId, cmd, 120);
+      const result = await executeCommandApi(serverId, cmd, 180);
+      if (result.exitCode !== 0) {
+        // eslint-disable-next-line no-console
+        console.error("Extract failed:", result.stderr);
+      }
       loadFiles(currentPathRef.current);
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -356,15 +396,24 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
     <div
       className={`relative ${height != null ? "flex flex-col overflow-hidden" : "border-b border-canvas-border"}`}
       style={height != null ? { height } : undefined}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Drop overlay */}
       {(dragOver || busyMessage) && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center bg-blue-500/10 border-2 border-dashed border-blue-500/40 rounded">
-          <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400">
-            {busyMessage ?? "Drop files to upload"}
+        <div className={`absolute inset-0 z-20 flex items-center justify-center border-2 border-dashed rounded ${
+          dragIsFolder
+            ? "bg-red-500/10 border-red-500/40"
+            : "bg-blue-500/10 border-blue-500/40"
+        }`}>
+          <span className={`text-[11px] font-medium ${
+            dragIsFolder
+              ? "text-red-500 dark:text-red-400"
+              : "text-blue-500 dark:text-blue-400"
+          }`}>
+            {busyMessage ?? (dragIsFolder ? "Cannot upload folders — zip it first" : "Drop files to upload")}
           </span>
         </div>
       )}
