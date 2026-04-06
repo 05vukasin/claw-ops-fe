@@ -549,7 +549,7 @@ export function ServerDashboardPanel({
                       setTermExpanded(true);
                       saveNum(panelKey(server.id, "term"), 1);
                       setTimeout(() => {
-                        termRef.current?.queueCommand("claude\r");
+                        termRef.current?.queueCommand("export PATH=\"$HOME/.local/bin:$PATH\" && claude\r");
                       }, 100);
                     }}
                     icon={<FiTerminal size={13} />}

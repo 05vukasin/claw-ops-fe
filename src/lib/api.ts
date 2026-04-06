@@ -1047,8 +1047,12 @@ export async function executeCommandApi(
 
 export async function checkClaudeCodeInstalledApi(serverId: string): Promise<boolean> {
   try {
-    const result = await executeCommandApi(serverId, "which claude", 10);
-    return result.exitCode === 0 && result.stdout.trim().length > 0;
+    const result = await executeCommandApi(
+      serverId,
+      'which claude 2>/dev/null || command -v claude 2>/dev/null || test -f /usr/local/bin/claude || test -f "$HOME/.local/bin/claude" || test -f "$HOME/.npm-global/bin/claude" || (npm list -g @anthropic-ai/claude-code 2>/dev/null | grep -q claude-code)',
+      10,
+    );
+    return result.exitCode === 0;
   } catch {
     return false;
   }
