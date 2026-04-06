@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  allowedDevOrigins: [
+    "192.168.56.1",
+    "172.25.50.205",
+    "172.25.32.1",
+  ],
   reactStrictMode: true,
   poweredByHeader: false,
   headers: async () => [

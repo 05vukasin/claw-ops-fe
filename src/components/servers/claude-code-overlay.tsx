@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { FiX } from "react-icons/fi";
 import { TerminalSection } from "./terminal-section";
+import { MobileTerminalView } from "./mobile-terminal-view";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import { Z_INDEX } from "@/lib/z-index";
 
 interface ClaudeCodeOverlayProps {
@@ -13,6 +15,8 @@ interface ClaudeCodeOverlayProps {
 }
 
 export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeOverlayProps) {
+  const isMobile = useIsMobile();
+
   /* Lock body scroll while overlay is open */
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -29,6 +33,20 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
+  /* ── Mobile: self-contained fullscreen terminal ── */
+  if (isMobile) {
+    return createPortal(
+      <MobileTerminalView
+        serverId={serverId}
+        serverName={serverName}
+        initialCommand="claude"
+        onClose={onClose}
+      />,
+      document.body,
+    );
+  }
+
+  /* ── Desktop: existing layout ── */
   return createPortal(
     <div
       className="fixed inset-0 flex flex-col bg-[#0d1117] animate-fade-slide-in"

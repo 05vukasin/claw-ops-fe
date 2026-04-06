@@ -249,3 +249,21 @@ html:not(.dark) {
   text-decoration-style: dotted;
   text-underline-offset: 2px;
 }
+
+/* ── Mobile terminal — iOS zoom prevention + touch scroll ── */
+
+.mobile-terminal-input {
+  font-size: 16px !important; /* iOS won't zoom if >= 16px */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* xterm touch scrolling */
+.xterm-viewport {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Hide scrollbar on horizontal-scroll toolbars */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

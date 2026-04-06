@@ -47,6 +47,17 @@ export const TERMINAL_OPTIONS: ITerminalOptions = {
   },
 };
 
+/** Mobile variant — read-only output, no keyboard capture */
+export const MOBILE_TERMINAL_OPTIONS: ITerminalOptions = {
+  ...TERMINAL_OPTIONS,
+  disableStdin: true,
+  cursorBlink: false,
+  cursorStyle: "underline",
+  fontSize: 12,
+  lineHeight: 1.3,
+  scrollback: 5000,
+};
+
 /**
  * Load optional addons (WebGL for performance, WebLinks for clickable URLs).
  * Call after term.open().
