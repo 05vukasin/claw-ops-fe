@@ -5,6 +5,7 @@ import {
   FiCpu,
   FiExternalLink,
   FiRefreshCw,
+  FiSettings,
   FiX,
 } from "react-icons/fi";
 import { AgentStatusSection } from "./agent-status-section";
@@ -337,6 +338,18 @@ export function AgentDashboardPanel({
           <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
           {statusLabel}
         </span>
+
+        {onOpenConfig && (
+          <button
+            type="button"
+            onClick={onOpenConfig}
+            aria-label="Configure"
+            className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
+          >
+            <FiSettings size={13} />
+            Configure
+          </button>
+        )}
 
         <button
           type="button"
