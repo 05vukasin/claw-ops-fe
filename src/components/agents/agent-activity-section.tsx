@@ -55,15 +55,10 @@ function extractUserText(content: unknown): string {
   if (!Array.isArray(content)) return "";
   for (const block of content) {
     if (block?.type === "text" && typeof block.text === "string") {
-      // Extract the actual user message from Slack/Telegram wrapper
       const text: string = block.text;
-      // Pattern: "System: [...] Slack DM from ...: <actual message>\n..."
-      // The real message is usually the last line or after the metadata block
-      const lastLine = text.split("\n").filter((l: string) => l.trim()).pop() ?? text;
-      // If it starts with the Slack wrapper, extract just the user's words
       const slackMatch = text.match(/(?:Slack|Telegram)\s+(?:DM|message|channel)\s+from\s+\S+:\s*(.+?)(?:\n|$)/i);
       if (slackMatch) return slackMatch[1].trim();
-      // Otherwise return last meaningful line (skip metadata blocks)
+      const lastLine = text.split("\n").filter((l: string) => l.trim()).pop() ?? text;
       if (lastLine.startsWith("```")) return text.split("\n")[0];
       return lastLine.length > 200 ? lastLine.slice(0, 197) + "..." : lastLine;
     }
@@ -77,7 +72,6 @@ function extractAssistantText(content: unknown): string {
   for (const block of content) {
     if (block?.type === "text" && typeof block.text === "string") {
       let text: string = block.text;
-      // Remove reply markers like [[reply_to_current]]
       text = text.replace(/\[\[.*?\]\]\s*/g, "").trim();
       return text.length > 200 ? text.slice(0, 197) + "..." : text;
     }
@@ -88,7 +82,6 @@ function extractAssistantText(content: unknown): string {
   return "";
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseJsonlMessages(raw: string, channel: string, sessionKey: string): ActivityEvent[] {
   const events: ActivityEvent[] = [];
   const lines = raw.split("\n").filter((l) => l.trim());
@@ -105,17 +98,10 @@ function parseJsonlMessages(raw: string, channel: string, sessionKey: string): A
       if (msg.role === "user") {
         const text = extractUserText(msg.content);
         if (!text) continue;
-        events.push({
-          timestamp: ts,
-          type: "user_message",
-          summary: text,
-          channel,
-          sessionKey,
-        });
+        events.push({ timestamp: ts, type: "user_message", summary: text, channel, sessionKey });
       } else if (msg.role === "assistant") {
         const text = extractAssistantText(msg.content);
         if (!text) continue;
-        // Check if it's a tool call
         const hasToolCall = Array.isArray(msg.content) &&
           msg.content.some((b: { type: string }) => b?.type === "toolCall");
         events.push({
@@ -149,6 +135,248 @@ const TYPE_LABEL: Record<EventType, string> = {
   cron: "Cron",
   system: "System",
 };
+
+/* ------------------------------------------------------------------ */
+/*  Chart constants                                                    */
+/* ------------------------------------------------------------------ */
+
+const CHART_RANGES = ["7d", "14d", "30d"] as const;
+type ChartRange = (typeof CHART_RANGES)[number];
+const RANGE_DAYS: Record<ChartRange, number> = { "7d": 7, "14d": 14, "30d": 30 };
+
+const CHART_COLORS = {
+  user_message: "#4ade80",   // green-400
+  assistant_reply: "#60a5fa", // blue-400
+  tool_use: "#c084fc",       // purple-400
+};
+const CHART_LABELS: { key: keyof typeof CHART_COLORS; label: string }[] = [
+  { key: "user_message", label: "User" },
+  { key: "assistant_reply", label: "Reply" },
+  { key: "tool_use", label: "Tool" },
+];
+
+interface DayBucket {
+  date: string; // "Apr 3"
+  user_message: number;
+  assistant_reply: number;
+  tool_use: number;
+}
+
+function bucketByDay(events: ActivityEvent[], days: number): DayBucket[] {
+  const now = new Date();
+  const buckets: DayBucket[] = [];
+
+  // Create empty buckets for each day
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    buckets.push({
+      date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      user_message: 0,
+      assistant_reply: 0,
+      tool_use: 0,
+    });
+  }
+
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - days);
+  cutoff.setHours(0, 0, 0, 0);
+
+  for (const ev of events) {
+    if (!ev.timestamp) continue;
+    const evDate = new Date(ev.timestamp);
+    if (Number.isNaN(evDate.getTime()) || evDate < cutoff) continue;
+
+    const diffDays = Math.floor((now.getTime() - evDate.getTime()) / 86_400_000);
+    const idx = days - 1 - diffDays;
+    if (idx >= 0 && idx < buckets.length) {
+      const key = ev.type as keyof typeof CHART_COLORS;
+      if (key in CHART_COLORS) {
+        buckets[idx][key]++;
+      }
+    }
+  }
+
+  return buckets;
+}
+
+/* ------------------------------------------------------------------ */
+/*  ActivityChart (canvas-based stacked bar chart)                     */
+/* ------------------------------------------------------------------ */
+
+function ActivityChart({ events }: { events: ActivityEvent[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [range, setRange] = useState<ChartRange>("7d");
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const days = RANGE_DAYS[range];
+    const buckets = bucketByDay(events, days);
+
+    // HiDPI scaling
+    const W = (canvas.width = canvas.offsetWidth * 2);
+    const H = (canvas.height = 140 * 2);
+    ctx.scale(2, 2);
+    const w = canvas.offsetWidth;
+    const h = 140;
+
+    const pad = { t: 12, r: 12, b: 28, l: 28 };
+    const chartW = w - pad.l - pad.r;
+    const chartH = h - pad.t - pad.b;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const isDark = document.documentElement.classList.contains("dark");
+
+    // Find max total per day for y-axis scaling
+    const maxTotal = Math.max(
+      1,
+      ...buckets.map((b) => b.user_message + b.assistant_reply + b.tool_use),
+    );
+
+    // Round up to nice number for grid
+    const gridMax = Math.ceil(maxTotal / 5) * 5 || 5;
+    const gridLines = 4;
+
+    // Draw horizontal grid lines + y-axis labels
+    ctx.strokeStyle = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
+    ctx.lineWidth = 0.5;
+    ctx.fillStyle = isDark ? "#8b8fa3" : "#9ca3af";
+    ctx.font = "9px system-ui, sans-serif";
+    ctx.textAlign = "right";
+
+    for (let i = 0; i <= gridLines; i++) {
+      const y = pad.t + (chartH * i) / gridLines;
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y);
+      ctx.lineTo(w - pad.r, y);
+      ctx.stroke();
+      const val = Math.round(gridMax - (gridMax * i) / gridLines);
+      ctx.fillText(String(val), pad.l - 4, y + 3);
+    }
+
+    // Bar dimensions
+    const barGap = days <= 7 ? 6 : days <= 14 ? 3 : 2;
+    const barW = Math.max(2, (chartW - barGap * (days - 1)) / days);
+
+    // Draw stacked bars
+    const stackOrder: (keyof typeof CHART_COLORS)[] = ["tool_use", "assistant_reply", "user_message"];
+
+    for (let i = 0; i < buckets.length; i++) {
+      const bucket = buckets[i];
+      const x = pad.l + i * (barW + barGap);
+      let yBottom = pad.t + chartH;
+
+      for (const key of stackOrder) {
+        const count = bucket[key];
+        if (count <= 0) continue;
+        const barH = (count / gridMax) * chartH;
+        const yTop = yBottom - barH;
+
+        ctx.fillStyle = CHART_COLORS[key];
+        // Rounded top corners for the topmost segment
+        const radius = Math.min(2, barW / 2);
+        roundedRect(ctx, x, yTop, barW, barH, radius);
+        ctx.fill();
+
+        yBottom = yTop;
+      }
+    }
+
+    // X-axis labels (show subset to avoid overlap)
+    ctx.fillStyle = isDark ? "#8b8fa3" : "#9ca3af";
+    ctx.font = "9px system-ui, sans-serif";
+    ctx.textAlign = "center";
+
+    const labelEvery = days <= 7 ? 1 : days <= 14 ? 2 : 5;
+    for (let i = 0; i < buckets.length; i++) {
+      if (i % labelEvery !== 0 && i !== buckets.length - 1) continue;
+      const x = pad.l + i * (barW + barGap) + barW / 2;
+      ctx.fillText(buckets[i].date, x, h - pad.b + 14);
+    }
+
+    // Legend
+    let legendX = pad.l;
+    for (const { key, label } of CHART_LABELS) {
+      ctx.fillStyle = CHART_COLORS[key];
+      ctx.fillRect(legendX, h - 8, 8, 3);
+      ctx.fillStyle = isDark ? "#8b8fa3" : "#9ca3af";
+      ctx.font = "9px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(label, legendX + 11, h - 4);
+      legendX += ctx.measureText(label).width + 22;
+    }
+  }, [events, range]);
+
+  useEffect(() => {
+    draw();
+  }, [draw]);
+
+  // Redraw on theme change
+  useEffect(() => {
+    const observer = new MutationObserver(() => draw());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, [draw]);
+
+  return (
+    <div className="rounded-md border border-canvas-border">
+      <div className="flex items-center gap-1 border-b border-canvas-border px-3 py-1.5">
+        {CHART_RANGES.map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => setRange(r)}
+            className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+              r === range
+                ? "bg-canvas-fg text-canvas-bg"
+                : "text-canvas-muted hover:text-canvas-fg"
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+        <span className="ml-auto text-[10px] text-canvas-muted">
+          Messages / day
+        </span>
+      </div>
+      <canvas
+        ref={canvasRef}
+        className="w-full"
+        style={{ height: 140 }}
+      />
+    </div>
+  );
+}
+
+/** Draw a rect with rounded top corners only */
+function roundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -189,7 +417,6 @@ export function AgentActivitySection({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const v = val as any;
         if (v.sessionId) {
-          // Skip duplicate run keys (cron run references)
           if (key.includes(":run:")) continue;
           const channel = v.lastChannel || v.origin?.surface || "unknown";
           const isCron = key.includes(":cron:");
@@ -202,7 +429,6 @@ export function AgentActivitySection({
       }
 
       // 4. Read the most recent JSONL files (limit to avoid loading too much)
-      // Sort by matching updatedAt, take the 5 most recently active
       const sessionIds = Object.keys(sessionMeta);
       const sortedIds = sessionIds
         .filter((id) => jsonlFiles.includes(`${id}.jsonl`))
@@ -227,14 +453,14 @@ export function AgentActivitySection({
         }
       }
 
-      // Sort all events by timestamp descending, take most recent 100
+      // Sort all events by timestamp descending
       allEvents.sort((a, b) => {
         const ta = new Date(a.timestamp).getTime() || 0;
         const tb = new Date(b.timestamp).getTime() || 0;
         return tb - ta;
       });
 
-      setEvents(allEvents.slice(0, 100));
+      setEvents(allEvents);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to fetch activity",
@@ -282,7 +508,7 @@ export function AgentActivitySection({
                 No conversation history found.
               </p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {/* Refresh */}
                 <div className="flex justify-end">
                   <button
@@ -302,9 +528,12 @@ export function AgentActivitySection({
                   </button>
                 </div>
 
+                {/* Chart */}
+                <ActivityChart events={events} />
+
                 {/* Timeline */}
-                <div className="max-h-80 space-y-0.5 overflow-y-auto">
-                  {events.map((ev, i) => (
+                <div className="max-h-72 space-y-0.5 overflow-y-auto">
+                  {events.slice(0, 100).map((ev, i) => (
                     <div
                       key={i}
                       className="flex items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-canvas-surface-hover"
