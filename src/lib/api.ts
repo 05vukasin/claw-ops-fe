@@ -1045,6 +1045,15 @@ export async function executeCommandApi(
   return res.json() as Promise<CommandResult>;
 }
 
+export async function checkClaudeCodeInstalledApi(serverId: string): Promise<boolean> {
+  try {
+    const result = await executeCommandApi(serverId, "which claude", 10);
+    return result.exitCode === 0 && result.stdout.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Escape a file path for safe use in single-quoted shell strings */
 function escapeShellPath(path: string): string {
   return path.replace(/'/g, "'\\''");

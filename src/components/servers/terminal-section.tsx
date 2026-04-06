@@ -21,9 +21,10 @@ export interface TerminalSectionHandle {
 interface TerminalSectionProps {
   serverId: string;
   onDirectoryChange?: (path: string) => void;
+  initialCommand?: string;
 }
 
-export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(function TerminalSection({ serverId, onDirectoryChange }, ref) {
+export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSectionProps>(function TerminalSection({ serverId, onDirectoryChange, initialCommand }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,6 +53,13 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
       }
     },
   }), []);
+
+  /* ── Queue initial command if provided ── */
+  useEffect(() => {
+    if (initialCommand && !pendingCmdRef.current) {
+      pendingCmdRef.current = initialCommand + "\r";
+    }
+  }, [initialCommand]);
 
   /* ── Initialize xterm.js ── */
   useEffect(() => {

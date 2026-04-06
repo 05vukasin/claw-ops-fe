@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { FiChevronDown, FiChevronRight } from "react-icons/fi";
+import { useEffect, useState } from "react";
+import { FiChevronDown, FiChevronRight, FiTerminal } from "react-icons/fi";
+import { checkClaudeCodeInstalledApi } from "@/lib/api";
 import type { Server, ServerHealth, MonitoringState } from "@/lib/api";
+import { ClaudeCodeOverlay } from "./claude-code-overlay";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -86,6 +88,17 @@ interface MobileServerCardProps {
 
 export function MobileServerCard({ server, health }: MobileServerCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [claudeInstalled, setClaudeInstalled] = useState<"unknown" | "checking" | "installed" | "not-installed">("unknown");
+  const [showClaudeCode, setShowClaudeCode] = useState(false);
+
+  useEffect(() => {
+    if (server.status !== "ONLINE") return;
+    let stale = false;
+    checkClaudeCodeInstalledApi(server.id)
+      .then((ok) => { if (!stale) setClaudeInstalled(ok ? "installed" : "not-installed"); })
+      .catch(() => { if (!stale) setClaudeInstalled("unknown"); });
+    return () => { stale = true; };
+  }, [server.id, server.status]);
 
   return (
     <div className="rounded-xl border border-canvas-border bg-canvas-bg shadow-sm transition-shadow hover:shadow-md">
@@ -183,6 +196,17 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
               {server.environment}
             </span>
           )}
+
+          {claudeInstalled === "installed" && (
+            <button
+              type="button"
+              onClick={() => setShowClaudeCode(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-canvas-border bg-canvas-surface-hover px-4 py-2.5 text-xs font-medium text-canvas-fg transition-colors hover:bg-canvas-border active:bg-canvas-border"
+            >
+              <FiTerminal size={14} />
+              Open Claude Code
+            </button>
+          )}
         </div>
       )}
 
@@ -191,6 +215,14 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
         <div className="border-t border-canvas-border px-4 py-2.5">
           <p className="text-[11px] text-canvas-muted">No health data available</p>
         </div>
+      )}
+
+      {showClaudeCode && (
+        <ClaudeCodeOverlay
+          serverId={server.id}
+          serverName={server.name}
+          onClose={() => setShowClaudeCode(false)}
+        />
       )}
     </div>
   );

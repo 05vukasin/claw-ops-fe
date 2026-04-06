@@ -26,6 +26,7 @@ import {
   fetchSslJobApi,
   retrySslJobApi,
   deleteServerApi,
+  checkClaudeCodeInstalledApi,
   ApiError,
   type Server,
   type SslCertificate,
@@ -124,6 +125,17 @@ export function ServerDashboardPanel({
   const [fileBrowserH, setFileBrowserH] = useState(200);
   const fileBrowserHRef = useRef(200);
   const [panelH, setPanelH] = useState<number | null>(null);
+
+  /* ---- Claude Code detection ---- */
+  const [claudeInstalled, setClaudeInstalled] = useState<"unknown" | "checking" | "installed" | "not-installed">("unknown");
+  useEffect(() => {
+    if (server.status !== "ONLINE") return;
+    let stale = false;
+    checkClaudeCodeInstalledApi(server.id)
+      .then((ok) => { if (!stale) setClaudeInstalled(ok ? "installed" : "not-installed"); })
+      .catch(() => { if (!stale) setClaudeInstalled("unknown"); });
+    return () => { stale = true; };
+  }, [server.id, server.status]);
 
   /* ---- test connection ---- */
   const [testState, setTestState] = useState<"idle" | "loading" | "ok" | "fail">("idle");
@@ -531,6 +543,20 @@ export function ServerDashboardPanel({
                 <ActionBtn onClick={() => onEdit(server)} icon={<FiEdit2 size={13} />}>
                   Edit
                 </ActionBtn>
+                {claudeInstalled === "installed" && (
+                  <ActionBtn
+                    onClick={() => {
+                      setTermExpanded(true);
+                      saveNum(panelKey(server.id, "term"), 1);
+                      setTimeout(() => {
+                        termRef.current?.queueCommand("claude\r");
+                      }, 100);
+                    }}
+                    icon={<FiTerminal size={13} />}
+                  >
+                    Claude Code
+                  </ActionBtn>
+                )}
               </div>
 
               {/* Test result */}

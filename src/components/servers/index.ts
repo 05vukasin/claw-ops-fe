@@ -10,3 +10,4 @@ export { FileBrowser } from "./file-browser";
 export { AgentNode } from "./agent-node";
 export { MobileServerCard } from "./mobile-server-card";
 export { MobileServerDashboard } from "./mobile-server-dashboard";
+export { ClaudeCodeOverlay } from "./claude-code-overlay";
