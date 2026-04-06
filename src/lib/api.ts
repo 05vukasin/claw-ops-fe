@@ -1122,3 +1122,69 @@ export async function uploadFileApi(
     throw new ApiError(res.status, err.message || "Upload failed");
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Persistent Terminal Sessions                                       */
+/* ------------------------------------------------------------------ */
+
+export interface PersistentSessionInfo {
+  sessionId: string;
+  createdAt: string;
+  lastActivityAt: string;
+  connected: boolean;
+}
+
+export async function createPersistentSessionApi(
+  serverId: string,
+  cols: number,
+  rows: number,
+): Promise<{ sessionId: string; token: string }> {
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/persistent-sessions?cols=${cols}&rows=${rows}`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to create persistent session" }));
+    throw new ApiError(res.status, err.message || "Failed to create persistent session");
+  }
+  return res.json() as Promise<{ sessionId: string; token: string }>;
+}
+
+export async function listPersistentSessionsApi(serverId: string): Promise<PersistentSessionInfo[]> {
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/persistent-sessions`,
+  );
+  if (!res.ok) {
+    throw new ApiError(res.status, "Failed to list persistent sessions");
+  }
+  return res.json() as Promise<PersistentSessionInfo[]>;
+}
+
+export async function getPersistentSessionTokenApi(
+  serverId: string,
+  sessionId: string,
+): Promise<string> {
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/persistent-sessions/${encodeURIComponent(sessionId)}/token`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to get reconnection token" }));
+    throw new ApiError(res.status, err.message || "Failed to get reconnection token");
+  }
+  const data = (await res.json()) as { token: string };
+  return data.token;
+}
+
+export async function killPersistentSessionApi(
+  serverId: string,
+  sessionId: string,
+): Promise<void> {
+  const res = await apiFetch(
+    `/api/v1/servers/${encodeURIComponent(serverId)}/persistent-sessions/${encodeURIComponent(sessionId)}/kill`,
+    { method: "POST" },
+  );
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, "Failed to kill persistent session");
+  }
+}

@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { FiX } from "react-icons/fi";
-import { TerminalSection } from "./terminal-section";
-import { MobileTerminalView } from "./mobile-terminal-view";
+import { PersistentTerminal } from "./persistent-terminal";
+import { MobilePersistentTerminal } from "./mobile-persistent-terminal";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { Z_INDEX } from "@/lib/z-index";
 
@@ -33,10 +33,10 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  /* ── Mobile: self-contained fullscreen terminal ── */
+  /* ── Mobile: self-contained fullscreen persistent terminal ── */
   if (isMobile) {
     return createPortal(
-      <MobileTerminalView
+      <MobilePersistentTerminal
         serverId={serverId}
         serverName={serverName}
         initialCommand="claude"
@@ -46,7 +46,7 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
     );
   }
 
-  /* ── Desktop: existing layout ── */
+  /* ── Desktop: persistent terminal overlay ── */
   return createPortal(
     <div
       className="fixed inset-0 flex flex-col bg-[#0d1117] animate-fade-slide-in"
@@ -62,7 +62,7 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
             Claude Code
           </p>
           <p className="truncate text-[11px] text-gray-500">
-            {serverName}
+            {serverName} — persistent session
           </p>
         </div>
         <button
@@ -74,12 +74,12 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
         </button>
       </div>
 
-      {/* Terminal fills remaining space */}
+      {/* Persistent terminal fills remaining space */}
       <div
         className="flex flex-1 flex-col min-h-0"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <TerminalSection serverId={serverId} initialCommand="claude" />
+        <PersistentTerminal serverId={serverId} initialCommand="claude" />
       </div>
     </div>,
     document.body,
