@@ -35,7 +35,7 @@ export function ConfigHeartbeatTab({ config, updateConfig }: Props) {
             type="text"
             value={hb.every ?? ""}
             onChange={(e) => setHb("every", e.target.value || undefined)}
-            placeholder="30m"
+            placeholder="60m"
             className={INPUT_BASE}
           />
         </Field>

@@ -1076,9 +1076,13 @@ export async function writeFileApi(
   filePath: string,
   content: string,
 ): Promise<void> {
-  const delimiter = "CLAWEOF_" + Date.now();
   const escaped = escapeShellPath(filePath);
-  const command = `cat <<'${delimiter}' > '${escaped}'\n${content}\n${delimiter}`;
+  const b64 = btoa(
+    new TextEncoder()
+      .encode(content)
+      .reduce((s, b) => s + String.fromCharCode(b), ""),
+  );
+  const command = `echo '${b64}' | base64 -d > '${escaped}'`;
   const result = await executeCommandApi(serverId, command, 30);
   if (result.exitCode !== 0) {
     throw new ApiError(500, result.stderr || `Failed to write ${filePath}`);
