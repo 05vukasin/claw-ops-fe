@@ -19,3 +19,9 @@ export type ClaudeStatus =
   | "connecting"
   | "idle"
   | "thinking";
+
+export interface ChatSession {
+  sessionId: string;
+  display: string;
+  timestamp: number;
+}

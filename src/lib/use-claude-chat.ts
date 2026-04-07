@@ -19,17 +19,25 @@ function stripAnsi(s: string): string {
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
 
-export function useClaudeChat(serverId: string | null) {
+export function useClaudeChat(
+  serverId: string | null,
+  resumeSessionId?: string | null,
+) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ClaudeStatus>("disconnected");
 
   const wsRef = useRef<WebSocket | null>(null);
   const bufferRef = useRef("");
-  const sessionIdRef = useRef<string | null>(null);
-  const turnCountRef = useRef(0);
+  const sessionIdRef = useRef<string | null>(resumeSessionId ?? null);
+  const turnCountRef = useRef(resumeSessionId ? 1 : 0);
   const currentAssistantRef = useRef<string | null>(null); // message id being streamed
   const shellReadyRef = useRef(false);
   const lastOutputTimeRef = useRef(0);
+
+  /* ── Pre-populate messages (for loading history) ── */
+  const setInitialMessages = useCallback((msgs: ChatMessage[]) => {
+    setMessages(msgs);
+  }, []);
 
   /* ── Append or update a message ── */
   const upsertAssistantText = useCallback((delta: string) => {
@@ -265,11 +273,13 @@ export function useClaudeChat(serverId: string | null) {
 
   /* ── Reconnect ── */
   const reconnect = useCallback(() => {
-    sessionIdRef.current = null;
-    turnCountRef.current = 0;
-    setMessages([]);
+    if (!resumeSessionId) {
+      sessionIdRef.current = null;
+      turnCountRef.current = 0;
+      setMessages([]);
+    }
     connect();
-  }, [connect]);
+  }, [connect, resumeSessionId]);
 
   /* ── Auto-connect on mount ── */
   useEffect(() => {
@@ -282,5 +292,5 @@ export function useClaudeChat(serverId: string | null) {
     };
   }, [serverId, connect]);
 
-  return { messages, status, sendMessage, reconnect };
+  return { messages, status, sendMessage, reconnect, setInitialMessages };
 }

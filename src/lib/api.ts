@@ -1188,3 +1188,96 @@ export async function killPersistentSessionApi(
     throw new ApiError(res.status, "Failed to kill persistent session");
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Chat session listing & history                                     */
+/* ------------------------------------------------------------------ */
+
+import type { ChatSession, ChatMessage } from "./types";
+
+export async function fetchChatSessionsApi(
+  serverId: string,
+): Promise<ChatSession[]> {
+  const script = `python3 -c "
+import json,os,glob
+sessions=[]
+for s in glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')):
+  if '/subagents/' in s: continue
+  sid=os.path.basename(s).replace('.jsonl','')
+  mtime=int(os.path.getmtime(s)*1000)
+  first_msg=''
+  with open(s) as f:
+    for line in f:
+      try:
+        d=json.loads(line)
+        if d.get('type')=='user' and 'message' in d:
+          c=d['message'].get('content','')
+          if isinstance(c,list):
+            c=' '.join(b.get('text','') for b in c if b.get('type')=='text')
+          c=c.strip()
+          if c and not c.startswith('/'):
+            first_msg=c[:100];break
+      except:pass
+  if first_msg:
+    sessions.append({'sessionId':sid,'display':first_msg,'timestamp':mtime})
+sessions.sort(key=lambda x:x['timestamp'],reverse=True)
+print(json.dumps(sessions[:50]))
+"`;
+  const result = await executeCommandApi(serverId, script, 15);
+  if (result.exitCode !== 0) return [];
+  try {
+    return JSON.parse(result.stdout) as ChatSession[];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchSessionMessagesApi(
+  serverId: string,
+  sessionId: string,
+): Promise<ChatMessage[]> {
+  const safeId = sessionId.replace(/[^a-f0-9-]/g, "");
+  const script = `python3 -c "
+import json,os,glob,sys
+sid='${safeId}'
+match=None
+for f in glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')):
+  if sid in f and '/subagents/' not in f:match=f;break
+if not match:print('[]');sys.exit(0)
+msgs=[]
+with open(match) as f:
+  for line in f:
+    try:
+      d=json.loads(line)
+      t=d.get('type')
+      if t=='user' and 'message' in d:
+        c=d['message'].get('content','')
+        if isinstance(c,list):
+          c=' '.join(b.get('text','') for b in c if b.get('type')=='text')
+        c=c.strip()
+        if c and not c.startswith('/'):
+          msgs.append({'role':'user','content':c,'ts':d.get('timestamp','')})
+      elif t=='assistant' and 'message' in d:
+        parts=d.get('message',{}).get('content',[])
+        txt=' '.join(p.get('text','') for p in parts if p.get('type')=='text').strip()
+        if txt:
+          msgs.append({'role':'assistant','content':txt,'ts':d.get('timestamp','')})
+    except:pass
+print(json.dumps(msgs))
+"`;
+  const result = await executeCommandApi(serverId, script, 30);
+  if (result.exitCode !== 0) return [];
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw = JSON.parse(result.stdout) as any[];
+    return raw.map((m) => ({
+      id: crypto.randomUUID(),
+      role: m.role as "user" | "assistant",
+      type: "text" as const,
+      content: m.content,
+      timestamp: typeof m.ts === "number" ? m.ts : new Date(m.ts).getTime() || Date.now(),
+    }));
+  } catch {
+    return [];
+  }
+}
