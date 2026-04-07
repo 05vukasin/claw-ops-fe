@@ -5,8 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Z_INDEX } from "@/lib/z-index";
 import { ServerNode } from "@/components/servers/server-node";
 import { AgentNode } from "@/components/servers/agent-node";
+import { GitHubNode } from "@/components/servers/github-node";
 import type { ServerWithUI } from "@/lib/use-servers";
 import type { AgentWithUI } from "@/lib/use-agents";
+import type { GitHubAccountWithUI } from "@/lib/use-github-accounts";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
@@ -40,11 +42,13 @@ function saveCamera(cam: Camera) {
 interface CanvasStageProps {
   servers: ServerWithUI[];
   agents?: AgentWithUI[];
+  githubAccounts?: GitHubAccountWithUI[];
   onMoveServer: (id: string, x: number, y: number) => void;
   onMoveAgent?: (serverId: string, name: string, offsetX: number, offsetY: number) => void;
+  onMoveGitHub?: (serverId: string, offsetX: number, offsetY: number) => void;
 }
 
-export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }: CanvasStageProps) {
+export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub }: CanvasStageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Multi-panel: read comma-separated servers param
@@ -99,6 +103,25 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
     [router, searchParams],
   );
 
+  const handleGitHubSelect = useCallback(
+    (serverId: string) => {
+      const key = `github::${serverId}`;
+      const ghParam = searchParams.get("github") ?? "";
+      const openGH = ghParam.split(",").filter(Boolean);
+      const updated = openGH.includes(key)
+        ? [...openGH.filter((x) => x !== key), key]
+        : [...openGH, key];
+      const sp = new URLSearchParams(searchParams);
+      sp.set("github", updated.join(","));
+      const serversVal = sp.get("servers");
+      if (!serversVal) sp.delete("servers");
+      const agentsVal = sp.get("agents");
+      if (!agentsVal) sp.delete("agents");
+      router.push(`/?${sp.toString()}`);
+    },
+    [router, searchParams],
+  );
+
   const handleFocus = useCallback(() => {}, []);
 
   // Server lookup for agent positioning
@@ -144,12 +167,33 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
     }
   }, []);
 
+  // GitHub connector lines
+  const githubLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
+
+  const handleGitHubSpringPos = useCallback((serverId: string, x: number, y: number) => {
+    const key = `github::${serverId}`;
+    const line = githubLineRefs.current.get(key);
+    if (line) {
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y2", String(y));
+    }
+  }, []);
+
   // Update connector x1/y1 when server positions change (live drag or stored)
   useEffect(() => {
     for (const a of agents) {
       const sp = livePos[a.serverId] ?? (() => { const s = serverMap.get(a.serverId); return s ? { x: s.x, y: s.y } : null; })();
       if (!sp) continue;
       const line = agentLineRefs.current.get(`${a.serverId}::${a.name}`);
+      if (line) {
+        line.setAttribute("x1", String(sp.x));
+        line.setAttribute("y1", String(sp.y));
+      }
+    }
+    for (const gh of githubAccounts) {
+      const sp = livePos[gh.serverId] ?? (() => { const s = serverMap.get(gh.serverId); return s ? { x: s.x, y: s.y } : null; })();
+      if (!sp) continue;
+      const line = githubLineRefs.current.get(`github::${gh.serverId}`);
       if (line) {
         line.setAttribute("x1", String(sp.x));
         line.setAttribute("y1", String(sp.y));
@@ -192,7 +236,7 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
     if (e.button !== PAN_BUTTON) return;
     const target = e.target as HTMLElement;
     // If the click hit a server node, don't pan
-    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]")) return;
+    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]") || target.closest("[data-github-node]")) return;
 
     panning.current = true;
     panStart.current = {
@@ -276,6 +320,26 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
               />
             );
           })}
+          {githubAccounts.map((gh) => {
+            const sp = getServerPos(gh.serverId);
+            if (!sp) return null;
+            const key = `github::${gh.serverId}`;
+            return (
+              <line
+                key={`line-${key}`}
+                ref={(el) => { if (el) githubLineRefs.current.set(key, el); else githubLineRefs.current.delete(key); }}
+                x1={sp.x}
+                y1={sp.y}
+                x2={sp.x + gh.offsetX}
+                y2={sp.y + gh.offsetY}
+                stroke="currentColor"
+                strokeOpacity={0.25}
+                strokeWidth={2.5}
+                strokeDasharray="0 8"
+                strokeLinecap="round"
+              />
+            );
+          })}
         </svg>
 
         {/* Server nodes (render first so agents stack on top) */}
@@ -306,6 +370,24 @@ export function CanvasStage({ servers, agents = [], onMoveServer, onMoveAgent }:
               onMoveEnd={onMoveAgent ?? (() => {})}
               onSpringPos={handleSpringPos}
               onSelect={handleAgentSelect}
+              zoom={camera.zoom}
+            />
+          );
+        })}
+
+        {/* GitHub nodes */}
+        {githubAccounts.map((gh) => {
+          const sp = getServerPos(gh.serverId);
+          if (!sp) return null;
+          return (
+            <GitHubNode
+              key={`github-${gh.serverId}`}
+              account={gh}
+              serverX={sp.x}
+              serverY={sp.y}
+              onMoveEnd={onMoveGitHub ?? (() => {})}
+              onSpringPos={handleGitHubSpringPos}
+              onSelect={handleGitHubSelect}
               zoom={camera.zoom}
             />
           );

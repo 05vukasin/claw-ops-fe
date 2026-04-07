@@ -6,6 +6,7 @@ import { ServerDashboardPanel, ServerModal } from "@/components/servers";
 import { AgentDashboardPanel } from "@/components/agents/agent-dashboard-panel";
 import { AgentConfigPanel } from "@/components/agents/agent-config-panel";
 import { FileEditorPanel } from "@/components/servers/file-editor-panel";
+import { GitHubDashboardPanel } from "@/components/servers/github-dashboard-panel";
 import { useServers } from "@/lib/use-servers";
 import { Z_INDEX } from "@/lib/z-index";
 import type { Server, SftpFile } from "@/lib/api";
@@ -87,6 +88,20 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     [openAgentKeys],
   );
 
+  // GitHub panels from URL
+  const openGitHubKeys = useMemo(() => {
+    const param = searchParams.get("github") ?? "";
+    return param.split(",").filter(Boolean);
+  }, [searchParams]);
+
+  const openGitHubEntries = useMemo(
+    () => openGitHubKeys.map((k) => ({
+      serverId: k.replace("github::", ""),
+      key: k,
+    })),
+    [openGitHubKeys],
+  );
+
   // Focus order — shared between server, agent, and file panels
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
 
@@ -118,14 +133,16 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   // Edit modal
   const [editServer, setEditServer] = useState<Server | null>(null);
 
-  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[]) => {
+  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[], githubKeys?: string[]) => {
     const sp = new URLSearchParams();
     if (serverIds.length > 0) sp.set("servers", serverIds.join(","));
     const agents = agentKeys ?? openAgentKeys;
     if (agents.length > 0) sp.set("agents", agents.join(","));
+    const gh = githubKeys ?? openGitHubKeys;
+    if (gh.length > 0) sp.set("github", gh.join(","));
     const qs = sp.toString();
     router.push(qs ? `/?${qs}` : "/");
-  }, [router, openAgentKeys]);
+  }, [router, openAgentKeys, openGitHubKeys]);
 
   const handleClose = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -137,6 +154,12 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     const remaining = openAgentKeys.filter((k) => k !== key);
     updateUrl(openIds, remaining);
   }, [openIds, openAgentKeys, updateUrl]);
+
+  const handleGitHubClose = useCallback((key: string) => {
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+    const remaining = openGitHubKeys.filter((k) => k !== key);
+    updateUrl(openIds, undefined, remaining);
+  }, [openIds, openGitHubKeys, updateUrl]);
 
   const handleDelete = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -207,6 +230,7 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   if (
     openServers.length === 0 &&
     openAgentEntries.length === 0 &&
+    openGitHubEntries.length === 0 &&
     openFiles.length === 0 &&
     openConfigs.length === 0
   )
@@ -237,6 +261,17 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           zIndex={getZIndex(entry.key)}
           onFocus={() => handleFocus(entry.key)}
           onOpenConfig={() => handleConfigOpen(entry.serverId, entry.name)}
+        />
+      ))}
+
+      {openGitHubEntries.map((entry) => (
+        <GitHubDashboardPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
+          onClose={() => handleGitHubClose(entry.key)}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
         />
       ))}
 

@@ -11,3 +11,5 @@ export { AgentNode } from "./agent-node";
 export { MobileServerCard } from "./mobile-server-card";
 export { MobileServerDashboard } from "./mobile-server-dashboard";
 export { ClaudeCodeOverlay } from "./claude-code-overlay";
+export { GitHubNode } from "./github-node";
+export { GitHubDashboardPanel } from "./github-dashboard-panel";
