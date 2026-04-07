@@ -96,9 +96,11 @@ const markdownComponents = {
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onPermissionRespond?: (id: string, allow: boolean) => void;
+  onQuestionRespond?: (id: string, answers: Record<string, string>) => void;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onPermissionRespond, onQuestionRespond }: MessageBubbleProps) {
   /* ── Error ── */
   if (message.type === "error") {
     return (
@@ -136,6 +138,16 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   /* ── Thinking block ── */
   if (message.type === "thinking") {
     return <ThinkingBlock message={message} />;
+  }
+
+  /* ── Permission request ── */
+  if (message.type === "permission_request") {
+    return <PermissionRequestBlock message={message} onRespond={onPermissionRespond} />;
+  }
+
+  /* ── Ask question ── */
+  if (message.type === "ask_question") {
+    return <AskQuestionBlock message={message} onRespond={onQuestionRespond} />;
   }
 
   /* ── Assistant text (with markdown) ── */
@@ -248,6 +260,170 @@ function ThinkingBlock({ message }: { message: ChatMessage }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Permission request (Allow / Deny buttons)                          */
+/* ------------------------------------------------------------------ */
+
+function PermissionRequestBlock({
+  message,
+  onRespond,
+}: {
+  message: ChatMessage;
+  onRespond?: (id: string, allow: boolean) => void;
+}) {
+  const resolved = message.permissionResolved;
+  const allowed = message.permissionAllowed;
+  const toolName = message.toolName ?? "Tool";
+  const { icon: Icon, label } = getToolDisplay(toolName);
+  const desc = message.content || getPermissionDescription(toolName, message.permissionInput);
+
+  return (
+    <div className="px-4 py-1.5">
+      <div className="rounded-lg border border-orange-500/30 bg-[#161b22] px-3.5 py-3">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-2">
+          <Icon size={14} className="shrink-0 text-orange-400" />
+          <span className="text-[12px] font-medium text-orange-300">
+            Permission required
+          </span>
+        </div>
+
+        {/* Tool info */}
+        <p className="text-[13px] text-[#e6edf3] mb-1">
+          <span className="font-medium">{label}</span>
+        </p>
+        {desc && (
+          <p className="font-mono text-[11px] text-gray-400 mb-3 line-clamp-3 break-all">
+            {desc}
+          </p>
+        )}
+
+        {/* Buttons or resolved state */}
+        {resolved ? (
+          <div className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] font-medium ${
+            allowed ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+          }`}>
+            {allowed ? <FiCheck size={12} /> : <FiX size={12} />}
+            {allowed ? "Allowed" : "Denied"}
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onRespond?.(message.permissionId!, true)}
+              className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-[13px] font-medium text-white active:bg-green-700"
+            >
+              Allow
+            </button>
+            <button
+              type="button"
+              onClick={() => onRespond?.(message.permissionId!, false)}
+              className="flex-1 rounded-lg bg-[#21262d] px-3 py-2 text-[13px] font-medium text-gray-300 active:bg-[#30363d]"
+            >
+              Deny
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getPermissionDescription(toolName: string, input?: Record<string, unknown>): string {
+  if (!input) return "";
+  if (toolName === "Bash" && input.command) return String(input.command).slice(0, 200);
+  if (["Read", "Write", "Edit"].includes(toolName) && input.file_path) return String(input.file_path);
+  if (toolName === "Grep" && input.pattern) return `pattern: ${input.pattern}`;
+  return JSON.stringify(input).slice(0, 200);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Ask question (tappable option buttons)                             */
+/* ------------------------------------------------------------------ */
+
+function AskQuestionBlock({
+  message,
+  onRespond,
+}: {
+  message: ChatMessage;
+  onRespond?: (id: string, answers: Record<string, string>) => void;
+}) {
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+  const questions = message.askQuestions ?? [];
+  const resolved = message.askResolved;
+
+  const handleSelect = (question: string, label: string) => {
+    setSelectedAnswers((prev) => ({ ...prev, [question]: label }));
+  };
+
+  const handleSubmit = () => {
+    if (Object.keys(selectedAnswers).length === questions.length) {
+      onRespond?.(message.askId!, selectedAnswers);
+    }
+  };
+
+  if (questions.length === 0) return null;
+
+  return (
+    <div className="px-4 py-1.5">
+      <div className="rounded-lg border border-blue-500/30 bg-[#161b22] px-3.5 py-3">
+        {questions.map((q) => (
+          <div key={q.question} className="mb-3 last:mb-0">
+            <p className="text-[13px] font-medium text-[#e6edf3] mb-2">
+              {q.question}
+            </p>
+            <div className="space-y-1.5">
+              {q.options.map((opt) => {
+                const isSelected = selectedAnswers[q.question] === opt.label;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => !resolved && handleSelect(q.question, opt.label)}
+                    disabled={!!resolved}
+                    className={`flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors ${
+                      isSelected
+                        ? "border-blue-500 bg-blue-500/10"
+                        : "border-[#30363d] bg-[#0d1117] active:bg-[#1c2128]"
+                    } ${resolved ? "opacity-60" : ""}`}
+                  >
+                    <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
+                      isSelected ? "border-blue-500 bg-blue-500" : "border-gray-600"
+                    }`} />
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-medium text-[#e6edf3]">{opt.label}</p>
+                      {opt.description && (
+                        <p className="text-[11px] text-gray-500">{opt.description}</p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {!resolved && Object.keys(selectedAnswers).length === questions.length && (
+          <button
+            type="button"
+            onClick={handleSubmit}
+            className="mt-2 w-full rounded-lg bg-[#1f6feb] px-3 py-2 text-[13px] font-medium text-white active:opacity-80"
+          >
+            Submit
+          </button>
+        )}
+
+        {resolved && (
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-gray-500">
+            <FiCheck size={12} />
+            <span>Answered</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

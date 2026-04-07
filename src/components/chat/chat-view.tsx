@@ -17,7 +17,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ serverId, serverName, resumeSessionId, onBack }: ChatViewProps) {
-  const { messages, status, activeTool, sendMessage, reconnect, setInitialMessages } = useClaudeChat(
+  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     resumeSessionId,
   );
@@ -108,7 +108,12 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
           </div>
         )}
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            onPermissionRespond={respondPermission}
+            onQuestionRespond={respondQuestion}
+          />
         ))}
       </div>
 

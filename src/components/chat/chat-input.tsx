@@ -51,7 +51,7 @@ export function ChatInput({ status, onSend }: ChatInputProps) {
     el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
   }, []);
 
-  const isBusy = status === "thinking" || status === "tool_running";
+  const isBusy = status === "thinking" || status === "tool_running" || status === "awaiting_permission" || status === "awaiting_input";
 
   return (
     <div

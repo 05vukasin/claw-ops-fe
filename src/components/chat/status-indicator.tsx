@@ -14,6 +14,8 @@ const DOT_CLASS: Record<ClaudeStatus, string> = {
   idle: "bg-green-500",
   thinking: "bg-purple-400 animate-pulse",
   tool_running: "bg-purple-400 animate-pulse",
+  awaiting_permission: "bg-orange-400 animate-pulse",
+  awaiting_input: "bg-blue-400 animate-pulse",
 };
 
 const LABEL: Record<ClaudeStatus, string> = {
@@ -22,6 +24,8 @@ const LABEL: Record<ClaudeStatus, string> = {
   idle: "Ready",
   thinking: "Thinking...",
   tool_running: "Running tool...",
+  awaiting_permission: "Needs approval",
+  awaiting_input: "Needs your input",
 };
 
 export function StatusIndicator({ status, activeTool, onReconnect }: StatusIndicatorProps) {

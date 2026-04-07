@@ -29,20 +29,20 @@ export function useClaudeChat(
 
   const wsRef = useRef<WebSocket | null>(null);
   const bufferRef = useRef("");
+  const bridgeReadyRef = useRef(false);
   const sessionIdRef = useRef<string | null>(resumeSessionId ?? null);
-  const turnCountRef = useRef(resumeSessionId ? 1 : 0);
   const currentAssistantRef = useRef<string | null>(null);
-  const activeToolRef = useRef<ActiveToolInfo | null>(null);
   const currentThinkingRef = useRef<string | null>(null);
   const shellReadyRef = useRef(false);
   const lastOutputTimeRef = useRef(0);
+  const toolInputAccum = useRef("");
 
   /* ── Pre-populate messages (for loading history) ── */
   const setInitialMessages = useCallback((msgs: ChatMessage[]) => {
     setMessages(msgs);
   }, []);
 
-  /* ── Append or update a message ── */
+  /* ── Append or update streaming assistant text ── */
   const upsertAssistantText = useCallback((delta: string) => {
     setMessages((prev) => {
       const existing = prev.find((m) => m.id === currentAssistantRef.current);
@@ -62,165 +62,168 @@ export function useClaudeChat(
     });
   }, []);
 
-  /* ── Process a single parsed JSON event ── */
-  const handleEvent = useCallback(
+  /* ── Process a bridge protocol event ── */
+  const handleBridgeEvent = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (evt: any) => {
-      // System init
-      if (evt.type === "system" && evt.subtype === "init") {
+      // Bridge ready
+      if (evt.type === "ready") {
+        bridgeReadyRef.current = true;
         setStatus("idle");
         return;
       }
 
-      // ── Stream events ──
-      if (evt.type === "stream_event") {
-        const event = evt.event;
-        if (!event) return;
-
-        // Content block start — tool_use or thinking
-        if (event.type === "content_block_start") {
-          const block = event.content_block;
-          if (block?.type === "tool_use") {
-            const tool: ActiveToolInfo = { name: block.name, callId: block.id };
-            activeToolRef.current = tool;
-            setActiveTool(tool);
-            setStatus("tool_running");
-            // Finalize any in-progress assistant text
-            currentAssistantRef.current = null;
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: crypto.randomUUID(),
-                role: "assistant",
-                type: "tool_use",
-                toolName: block.name,
-                toolCallId: block.id,
-                toolInput: "",
-                content: "",
-                timestamp: Date.now(),
-              },
-            ]);
-            return;
-          }
-          if (block?.type === "thinking") {
-            const id = crypto.randomUUID();
-            currentThinkingRef.current = id;
-            setStatus("thinking");
-            setMessages((prev) => [
-              ...prev,
-              { id, role: "assistant", type: "thinking", content: "", timestamp: Date.now() },
-            ]);
-            return;
-          }
-          return;
-        }
-
-        // Content block delta
-        if (event.type === "content_block_delta") {
-          const delta = event.delta;
-          if (!delta) return;
-
-          // Text streaming
-          if (delta.type === "text_delta") {
-            setStatus("thinking");
-            upsertAssistantText(delta.text);
-            return;
-          }
-
-          // Tool input JSON streaming
-          if (delta.type === "input_json_delta") {
-            setMessages((prev) => {
-              // Find the latest tool_use message and append to its toolInput
-              for (let i = prev.length - 1; i >= 0; i--) {
-                if (prev[i].type === "tool_use") {
-                  const updated = [...prev];
-                  updated[i] = { ...updated[i], toolInput: (updated[i].toolInput ?? "") + delta.partial_json };
-                  return updated;
-                }
-              }
-              return prev;
-            });
-            return;
-          }
-
-          // Thinking delta
-          if (delta.type === "thinking_delta") {
-            const thinkingId = currentThinkingRef.current;
-            if (thinkingId) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === thinkingId ? { ...m, content: m.content + delta.thinking } : m,
-                ),
-              );
-            }
-            return;
-          }
-
-          return;
-        }
-
-        // Content block stop
-        if (event.type === "content_block_stop") {
-          if (activeToolRef.current) {
-            activeToolRef.current = null;
-            setActiveTool(null);
-          }
-          if (currentThinkingRef.current) {
-            currentThinkingRef.current = null;
-          }
-          return;
-        }
-
+      // Session init
+      if (evt.type === "session_init") {
+        sessionIdRef.current = evt.sessionId;
         return;
       }
 
-      // ── Tool results (user events) ──
-      if (evt.type === "user" && evt.message?.content) {
-        const content = evt.message.content;
-        if (Array.isArray(content)) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          for (const item of content as any[]) {
-            if (item.type === "tool_result") {
-              const resultText = typeof item.content === "string"
-                ? item.content
-                : Array.isArray(item.content)
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  ? item.content.map((c: any) => c.text ?? "").join("")
-                  : "";
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: crypto.randomUUID(),
-                  role: "system",
-                  type: "tool_result",
-                  content: resultText,
-                  toolCallId: item.tool_use_id,
-                  isError: item.is_error ?? false,
-                  timestamp: Date.now(),
-                },
-              ]);
-            }
-          }
-        }
+      // Status updates from bridge
+      if (evt.type === "status") {
+        if (evt.status === "awaiting_permission") setStatus("awaiting_permission");
+        else if (evt.status === "awaiting_input") setStatus("awaiting_input");
+        else if (evt.status === "thinking") setStatus("thinking");
+        else if (evt.status === "tool_running") setStatus("tool_running");
         return;
       }
 
-      // Full assistant message (arrives after streaming completes)
-      if (evt.type === "assistant" && evt.message?.content) {
-        if (currentAssistantRef.current) return;
-        const text = evt.message.content
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .filter((c: any) => c.type === "text")
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .map((c: any) => c.text)
-          .join("");
-        if (text) {
+      // Text delta — streaming assistant text
+      if (evt.type === "text_delta") {
+        setStatus("thinking");
+        upsertAssistantText(evt.text);
+        return;
+      }
+
+      // Thinking delta
+      if (evt.type === "thinking_delta") {
+        setStatus("thinking");
+        const thinkingId = currentThinkingRef.current;
+        if (thinkingId) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === thinkingId ? { ...m, content: m.content + evt.text } : m,
+            ),
+          );
+        } else {
           const id = crypto.randomUUID();
+          currentThinkingRef.current = id;
           setMessages((prev) => [
             ...prev,
-            { id, role: "assistant", type: "text", content: text, timestamp: Date.now() },
+            { id, role: "assistant", type: "thinking", content: evt.text, timestamp: Date.now() },
           ]);
         }
+        return;
+      }
+
+      // Tool use start
+      if (evt.type === "tool_use_start") {
+        currentAssistantRef.current = null; // finalize any streaming text
+        currentThinkingRef.current = null;
+        toolInputAccum.current = "";
+        const tool: ActiveToolInfo = { name: evt.name, callId: evt.id };
+        setActiveTool(tool);
+        setStatus("tool_running");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            type: "tool_use",
+            toolName: evt.name,
+            toolCallId: evt.id,
+            toolInput: "",
+            content: "",
+            timestamp: Date.now(),
+          },
+        ]);
+        return;
+      }
+
+      // Tool input delta
+      if (evt.type === "tool_input_delta") {
+        toolInputAccum.current += evt.json;
+        return;
+      }
+
+      // Tool use complete (full input available)
+      if (evt.type === "tool_use_complete") {
+        const input = JSON.stringify(evt.input);
+        setMessages((prev) => {
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].type === "tool_use" && prev[i].toolCallId === evt.id) {
+              const updated = [...prev];
+              updated[i] = { ...updated[i], toolInput: input };
+              return updated;
+            }
+          }
+          return prev;
+        });
+        toolInputAccum.current = "";
+        return;
+      }
+
+      // Content block stop
+      if (evt.type === "content_block_stop") {
+        setActiveTool(null);
+        return;
+      }
+
+      // Tool result
+      if (evt.type === "tool_result") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "system",
+            type: "tool_result",
+            content: evt.content || "",
+            toolCallId: evt.id,
+            isError: evt.isError ?? false,
+            timestamp: Date.now(),
+          },
+        ]);
+        return;
+      }
+
+      // Permission request
+      if (evt.type === "permission_request") {
+        currentAssistantRef.current = null;
+        setStatus("awaiting_permission");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "system",
+            type: "permission_request",
+            content: evt.description || "",
+            toolName: evt.toolName,
+            permissionId: evt.id,
+            permissionInput: evt.input,
+            permissionResolved: false,
+            timestamp: Date.now(),
+          },
+        ]);
+        return;
+      }
+
+      // Ask question
+      if (evt.type === "ask_question") {
+        currentAssistantRef.current = null;
+        setStatus("awaiting_input");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "system",
+            type: "ask_question",
+            content: "",
+            askId: evt.id,
+            askQuestions: evt.questions,
+            askResolved: false,
+            timestamp: Date.now(),
+          },
+        ]);
         return;
       }
 
@@ -228,22 +231,36 @@ export function useClaudeChat(
       if (evt.type === "result") {
         currentAssistantRef.current = null;
         currentThinkingRef.current = null;
-        activeToolRef.current = null;
         setActiveTool(null);
         setStatus("idle");
-        if (evt.is_error || evt.subtype === "error") {
-          const errText = evt.result || evt.error || "An error occurred";
+        sessionIdRef.current = evt.sessionId || sessionIdRef.current;
+        if (evt.isError) {
           setMessages((prev) => [
             ...prev,
             {
               id: crypto.randomUUID(),
               role: "system",
               type: "error",
-              content: String(errText),
+              content: evt.text || "An error occurred",
               timestamp: Date.now(),
             },
           ]);
         }
+        return;
+      }
+
+      // Error
+      if (evt.type === "error") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "system",
+            type: "error",
+            content: evt.message || "Bridge error",
+            timestamp: Date.now(),
+          },
+        ]);
         return;
       }
     },
@@ -266,21 +283,20 @@ export function useClaudeChat(
         try {
           const parsed = JSON.parse(trimmed);
           if (parsed && typeof parsed.type === "string") {
-            handleEvent(parsed);
+            handleBridgeEvent(parsed);
           }
         } catch {
           // Not valid JSON — shell noise, discard
         }
       }
 
-      // Try to parse the remaining buffer if it looks like a complete JSON object
-      // (catches the last line when it arrives without a trailing newline)
+      // Try to parse remaining buffer if it looks complete
       const remaining = bufferRef.current.trim();
       if (remaining.startsWith("{") && remaining.endsWith("}")) {
         try {
           const parsed = JSON.parse(remaining);
           if (parsed && typeof parsed.type === "string") {
-            handleEvent(parsed);
+            handleBridgeEvent(parsed);
             bufferRef.current = "";
           }
         } catch {
@@ -288,16 +304,32 @@ export function useClaudeChat(
         }
       }
     },
-    [handleEvent],
+    [handleBridgeEvent],
   );
 
-  /* ── Connect to WebSocket ── */
+  /* ── Send raw JSON to bridge via WebSocket ── */
+  const sendToBridge = useCallback((obj: Record<string, unknown>) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const json = JSON.stringify(obj);
+      wsRef.current.send(JSON.stringify({ type: "INPUT", data: json + "\n" }));
+    }
+  }, []);
+
+  /* ── Launch the bridge script on the server ── */
+  const launchBridge = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const cmd = `cd ~ && node ~/.local/share/claw-ops/chat-bridge.mjs 2>/dev/null`;
+    wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd + "\r" }));
+  }, []);
+
+  /* ── Connect to WebSocket and launch bridge ── */
   const connect = useCallback(async () => {
     if (!serverId) return;
 
     wsRef.current?.close();
     wsRef.current = null;
     bufferRef.current = "";
+    bridgeReadyRef.current = false;
     shellReadyRef.current = false;
     lastOutputTimeRef.current = 0;
     setStatus("connecting");
@@ -311,10 +343,11 @@ export function useClaudeChat(
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // Wait for shell, then launch bridge
         const fallback = setTimeout(() => {
           if (!shellReadyRef.current) {
             shellReadyRef.current = true;
-            setStatus("idle");
+            launchBridge();
           }
         }, 3000);
 
@@ -333,7 +366,7 @@ export function useClaudeChat(
             clearInterval(check);
             clearTimeout(fallback);
             shellReadyRef.current = true;
-            setStatus("idle");
+            launchBridge();
           }
         }, 200);
       };
@@ -343,13 +376,11 @@ export function useClaudeChat(
           const msg = JSON.parse(event.data) as { type: string; data: string };
           if (msg.type === "OUTPUT") {
             processOutput(msg.data);
-          } else if (msg.type === "ERROR") {
-            setStatus("disconnected");
-          } else if (msg.type === "CLOSED") {
+          } else if (msg.type === "ERROR" || msg.type === "CLOSED") {
             setStatus("disconnected");
           }
         } catch {
-          // ignore malformed ws messages
+          // ignore
         }
       };
 
@@ -367,7 +398,7 @@ export function useClaudeChat(
     } catch {
       setStatus("disconnected");
     }
-  }, [serverId, processOutput]);
+  }, [serverId, processOutput, launchBridge]);
 
   /* ── Send a user message ── */
   const sendMessage = useCallback(
@@ -376,6 +407,7 @@ export function useClaudeChat(
       if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
       if (status !== "idle") return;
 
+      // Add user message to state
       setMessages((prev) => [
         ...prev,
         {
@@ -387,39 +419,72 @@ export function useClaudeChat(
         },
       ]);
 
+      // Reset streaming state
       currentAssistantRef.current = null;
       currentThinkingRef.current = null;
-      activeToolRef.current = null;
       setActiveTool(null);
       bufferRef.current = "";
       setStatus("thinking");
 
-      const b64 = btoa(unescape(encodeURIComponent(trimmed)));
-
-      let cmd: string;
-      if (turnCountRef.current === 0) {
-        if (!sessionIdRef.current) {
-          sessionIdRef.current = crypto.randomUUID();
-        }
-        cmd = `echo '${b64}' | base64 -d | claude -p --output-format stream-json --verbose --include-partial-messages --session-id ${sessionIdRef.current} 2>/dev/null`;
-      } else {
-        cmd = `echo '${b64}' | base64 -d | claude -p --output-format stream-json --verbose --include-partial-messages --resume ${sessionIdRef.current} 2>/dev/null`;
-      }
-
-      turnCountRef.current++;
-
-      wsRef.current.send(
-        JSON.stringify({ type: "INPUT", data: cmd + "\r" }),
-      );
+      // Send to bridge
+      sendToBridge({
+        type: "message",
+        text: trimmed,
+        sessionId: resumeSessionId || undefined,
+      });
     },
-    [status],
+    [status, sendToBridge, resumeSessionId],
+  );
+
+  /* ── Respond to permission request ── */
+  const respondPermission = useCallback(
+    (permissionId: string, allow: boolean, message?: string) => {
+      sendToBridge({
+        type: "permission_response",
+        id: permissionId,
+        allow,
+        message: message || undefined,
+      });
+
+      // Update the permission message in state to show resolved
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.permissionId === permissionId
+            ? { ...m, permissionResolved: true, permissionAllowed: allow }
+            : m,
+        ),
+      );
+
+      setStatus("tool_running");
+    },
+    [sendToBridge],
+  );
+
+  /* ── Respond to ask question ── */
+  const respondQuestion = useCallback(
+    (askId: string, answers: Record<string, string>) => {
+      sendToBridge({
+        type: "ask_response",
+        id: askId,
+        answers,
+      });
+
+      // Mark as resolved
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.askId === askId ? { ...m, askResolved: true } : m,
+        ),
+      );
+
+      setStatus("thinking");
+    },
+    [sendToBridge],
   );
 
   /* ── Reconnect ── */
   const reconnect = useCallback(() => {
     if (!resumeSessionId) {
       sessionIdRef.current = null;
-      turnCountRef.current = 0;
       setMessages([]);
     }
     connect();
@@ -436,5 +501,14 @@ export function useClaudeChat(
     };
   }, [serverId, connect]);
 
-  return { messages, status, activeTool, sendMessage, reconnect, setInitialMessages };
+  return {
+    messages,
+    status,
+    activeTool,
+    sendMessage,
+    respondPermission,
+    respondQuestion,
+    reconnect,
+    setInitialMessages,
+  };
 }
