@@ -116,25 +116,23 @@ export function MobilePersistentTerminal({
 
         if (!isNew) return;
 
-        const check = setInterval(() => {
-          if (injected || ws.readyState !== WebSocket.OPEN) { clearInterval(check); return; }
+        const settleCheck = setInterval(() => {
+          if (injected || ws.readyState !== WebSocket.OPEN) { clearInterval(settleCheck); return; }
           if (Date.now() - lastOutputTime > 1000) {
-            clearInterval(check);
+            clearInterval(settleCheck);
             injected = true;
-            ws.send(JSON.stringify({
-              type: "INPUT",
-              data: " export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\\"\\$HOSTNAME\\\" \\\"\\$PWD\\\"\"\rclear\r",
-            }));
             if (initialCommand && !initialCommandSentRef.current) {
+              // Atomic: PROMPT_COMMAND + clear + initial command in one send — no race
               initialCommandSentRef.current = true;
-              setTimeout(() => {
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({
-                    type: "INPUT",
-                    data: `export PATH="$HOME/.local/bin:$PATH" && ${initialCommand}\r`,
-                  }));
-                }
-              }, 500);
+              ws.send(JSON.stringify({
+                type: "INPUT",
+                data: ` export PROMPT_COMMAND="\${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\"\\$HOSTNAME\\" \\"\\$PWD\\""\rclear\rexport PATH="$HOME/.local/bin:$PATH" && ${initialCommand}\r`,
+              }));
+            } else {
+              ws.send(JSON.stringify({
+                type: "INPUT",
+                data: " export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\\"\\$HOSTNAME\\\" \\\"\\$PWD\\\"\"\rclear\r",
+              }));
             }
           }
         }, 200);
@@ -258,9 +256,9 @@ export function MobilePersistentTerminal({
 
         const term = new Terminal({
           ...TERMINAL_OPTIONS,
-          fontSize: 9,
-          lineHeight: 1.2,
-          letterSpacing: 0,
+          fontSize: 11,
+          lineHeight: 1.25,
+          letterSpacing: 0.2,
           scrollback: 10000,
         });
         const fit = new FitAddon();
@@ -274,7 +272,9 @@ export function MobilePersistentTerminal({
           .then(({ WebLinksAddon }) => { term.loadAddon(new WebLinksAddon()); })
           .catch(() => {});
 
-        requestAnimationFrame(() => fitAndResize());
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => fitAndResize());
+        });
 
         term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
           if (e.type === "keydown" && e.ctrlKey && e.key === "c" && term.hasSelection()) {

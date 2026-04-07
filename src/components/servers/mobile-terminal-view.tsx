@@ -99,9 +99,9 @@ export function MobileTerminalView({
 
         const term = new Terminal({
           ...TERMINAL_OPTIONS,
-          fontSize: 9,
-          lineHeight: 1.2,
-          letterSpacing: 0,
+          fontSize: 11,
+          lineHeight: 1.25,
+          letterSpacing: 0.2,
           scrollback: 10000,
         });
         const fit = new FitAddon();
@@ -221,24 +221,22 @@ export function MobileTerminalView({
         setStatus("connected");
         xtermRef.current?.focus();
 
-        const check = setInterval(() => {
-          if (injected || ws.readyState !== WebSocket.OPEN) { clearInterval(check); return; }
+        const settleCheck = setInterval(() => {
+          if (injected || ws.readyState !== WebSocket.OPEN) { clearInterval(settleCheck); return; }
           if (Date.now() - lastOutputTime > 1000) {
-            clearInterval(check);
+            clearInterval(settleCheck);
             injected = true;
-            ws.send(JSON.stringify({
-              type: "INPUT",
-              data: " export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\\"\\$HOSTNAME\\\" \\\"\\$PWD\\\"\"\rclear\r",
-            }));
             if (initialCommand) {
-              setTimeout(() => {
-                if (ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({
-                    type: "INPUT",
-                    data: `export PATH="$HOME/.local/bin:$PATH" && ${initialCommand}\r`,
-                  }));
-                }
-              }, 500);
+              // Atomic: PROMPT_COMMAND + clear + initial command in one send — no race
+              ws.send(JSON.stringify({
+                type: "INPUT",
+                data: ` export PROMPT_COMMAND="\${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\"\\$HOSTNAME\\" \\"\\$PWD\\""\rclear\rexport PATH="$HOME/.local/bin:$PATH" && ${initialCommand}\r`,
+              }));
+            } else {
+              ws.send(JSON.stringify({
+                type: "INPUT",
+                data: " export PROMPT_COMMAND=\"${PROMPT_COMMAND:+$PROMPT_COMMAND;}printf '\\033]7;file://%s%s\\033\\\\' \\\"\\$HOSTNAME\\\" \\\"\\$PWD\\\"\"\rclear\r",
+              }));
             }
           }
         }, 200);
