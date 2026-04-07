@@ -92,7 +92,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto py-3"
+        className="flex-1 overflow-y-auto overflow-x-hidden py-3"
       >
         {loadingHistory && (
           <div className="flex items-center justify-center py-8">

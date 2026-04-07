@@ -141,7 +141,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   /* ── Assistant text (with markdown) ── */
   return (
     <div className="flex justify-start px-4 py-1.5">
-      <div className="max-w-[90%]">
+      <div className="min-w-0 max-w-[90%]">
         {message.content ? (
           <Markdown components={markdownComponents}>{message.content}</Markdown>
         ) : (
