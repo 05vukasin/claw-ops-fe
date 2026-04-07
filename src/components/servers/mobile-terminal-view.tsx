@@ -99,7 +99,7 @@ export function MobileTerminalView({
 
         const term = new Terminal({
           ...TERMINAL_OPTIONS,
-          fontSize: 11,
+          fontSize: 10,
           lineHeight: 1.25,
           letterSpacing: 0.2,
           scrollback: 10000,

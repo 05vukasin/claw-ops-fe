@@ -256,7 +256,7 @@ export function MobilePersistentTerminal({
 
         const term = new Terminal({
           ...TERMINAL_OPTIONS,
-          fontSize: 11,
+          fontSize: 10,
           lineHeight: 1.25,
           letterSpacing: 0.2,
           scrollback: 10000,
@@ -271,10 +271,6 @@ export function MobilePersistentTerminal({
         import("@xterm/addon-web-links")
           .then(({ WebLinksAddon }) => { term.loadAddon(new WebLinksAddon()); })
           .catch(() => {});
-
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => fitAndResize());
-        });
 
         term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
           if (e.type === "keydown" && e.ctrlKey && e.key === "c" && term.hasSelection()) {
@@ -310,7 +306,13 @@ export function MobilePersistentTerminal({
         });
         obs.observe(containerRef.current!);
 
-        discoverAndConnect();
+        // Fit FIRST so cols/rows are correct, THEN connect with accurate dimensions
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            fitAndResize();
+            discoverAndConnect();
+          });
+        });
       }).catch(() => {});
     }, 350);
 
