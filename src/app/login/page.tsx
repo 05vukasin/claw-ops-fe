@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { loginApi, meApi, refreshTokenApi, ApiError } from "@/lib/api";
+import { loginApi, meApi, refreshTokenApi, ApiError, type AuthUser } from "@/lib/api";
 import {
   setAuth,
   getStoredAuth,
   isAuthenticated,
   updateStoredRefreshToken,
+  getUser,
 } from "@/lib/auth";
 import { setAccessToken } from "@/lib/apiClient";
 
@@ -33,7 +34,8 @@ export default function LoginPage() {
     if (!mounted) return;
 
     if (isAuthenticated()) {
-      router.replace("/");
+      const dest = getUser()?.role === "USER" ? "/chat" : "/";
+      router.replace(dest);
       return;
     }
 
@@ -45,7 +47,8 @@ export default function LoginPage() {
       .then(async ({ accessToken, refreshToken }) => {
         setAccessToken(accessToken);
         updateStoredRefreshToken(refreshToken);
-        router.replace("/");
+        const dest = stored.user?.role === "USER" ? "/chat" : "/";
+        router.replace(dest);
       })
       .catch(() => {
         // Refresh token expired or invalid — fall through to the sign-in form.
@@ -74,7 +77,7 @@ export default function LoginPage() {
         // Fetch user profile from /me endpoint
         const user = await meApi();
         setAuth(user, refreshToken);
-        router.replace("/");
+        router.replace(user.role === "USER" ? "/chat" : "/");
       } catch (err) {
         setError(
           err instanceof ApiError

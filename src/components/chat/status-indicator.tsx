@@ -1,0 +1,40 @@
+"use client";
+
+import type { ClaudeStatus } from "@/lib/types";
+
+interface StatusIndicatorProps {
+  status: ClaudeStatus;
+  onReconnect: () => void;
+}
+
+const DOT_CLASS: Record<ClaudeStatus, string> = {
+  disconnected: "bg-red-500",
+  connecting: "bg-yellow-400 animate-pulse",
+  idle: "bg-green-500",
+  thinking: "bg-purple-400 animate-pulse",
+};
+
+const LABEL: Record<ClaudeStatus, string> = {
+  disconnected: "Disconnected",
+  connecting: "Connecting...",
+  idle: "Ready",
+  thinking: "Thinking...",
+};
+
+export function StatusIndicator({ status, onReconnect }: StatusIndicatorProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`h-2 w-2 shrink-0 rounded-full ${DOT_CLASS[status]}`} />
+      <span className="text-[11px] text-gray-400">{LABEL[status]}</span>
+      {status === "disconnected" && (
+        <button
+          type="button"
+          onClick={onReconnect}
+          className="rounded-md bg-[#21262d] px-2 py-0.5 text-[11px] font-medium text-gray-300 active:bg-[#30363d]"
+        >
+          Reconnect
+        </button>
+      )}
+    </div>
+  );
+}
