@@ -272,6 +272,21 @@ export function useClaudeChat(
           // Not valid JSON — shell noise, discard
         }
       }
+
+      // Try to parse the remaining buffer if it looks like a complete JSON object
+      // (catches the last line when it arrives without a trailing newline)
+      const remaining = bufferRef.current.trim();
+      if (remaining.startsWith("{") && remaining.endsWith("}")) {
+        try {
+          const parsed = JSON.parse(remaining);
+          if (parsed && typeof parsed.type === "string") {
+            handleEvent(parsed);
+            bufferRef.current = "";
+          }
+        } catch {
+          // Incomplete JSON, keep in buffer
+        }
+      }
     },
     [handleEvent],
   );
