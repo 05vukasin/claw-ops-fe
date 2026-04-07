@@ -246,6 +246,7 @@ export function MobilePersistentTerminal({
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
+    let obs: ResizeObserver | null = null;
 
     const timer = setTimeout(() => {
       if (cancelled || !containerRef.current) return;
@@ -299,18 +300,24 @@ export function MobilePersistentTerminal({
             .catch(() => {});
         });
 
-        const observer = new ResizeObserver(() => {
-          requestAnimationFrame(() => fitAndResize());
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        obs = new ResizeObserver(() => {
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            if (!containerRef.current || containerRef.current.offsetWidth === 0) return;
+            requestAnimationFrame(() => fitAndResize());
+          }, 100);
         });
-        observer.observe(containerRef.current!);
+        obs.observe(containerRef.current!);
 
         discoverAndConnect();
       }).catch(() => {});
-    }, 80);
+    }, 350);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      obs?.disconnect();
       xtermRef.current?.dispose();
       xtermRef.current = null;
       fitRef.current = null;

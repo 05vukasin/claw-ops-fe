@@ -87,6 +87,7 @@ export function MobileTerminalView({
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
+    let obs: ResizeObserver | null = null;
 
     const timer = setTimeout(() => {
       if (cancelled || !containerRef.current) return;
@@ -157,11 +158,16 @@ export function MobileTerminalView({
             .catch(() => {});
         });
 
-        // ResizeObserver
-        const observer = new ResizeObserver(() => {
-          requestAnimationFrame(() => fitAndResize());
+        // ResizeObserver (debounced to avoid animation interference)
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        obs = new ResizeObserver(() => {
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            if (!containerRef.current || containerRef.current.offsetWidth === 0) return;
+            requestAnimationFrame(() => fitAndResize());
+          }, 100);
         });
-        observer.observe(containerRef.current!);
+        obs.observe(containerRef.current!);
       }).catch((err) => {
         // eslint-disable-next-line no-console
         console.error("[MobileTerminal] Failed to load xterm.js:", err);
@@ -171,6 +177,7 @@ export function MobileTerminalView({
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      obs?.disconnect();
       xtermRef.current?.dispose();
       xtermRef.current = null;
       fitRef.current = null;

@@ -63,30 +63,59 @@ export const MOBILE_TERMINAL_OPTIONS: ITerminalOptions = {
  * Call after term.open().
  *
  * WebGL can silently fail on some GPUs/drivers leaving a black screen.
- * On failure, we dispose the addon so xterm falls back to the canvas renderer.
+ * On failure or context loss, we dispose the addon and force a canvas re-render.
+ * A global context counter prevents exhaustion when many terminals are open.
  */
+
+let activeWebglCount = 0;
+const MAX_WEBGL_CONTEXTS = 6; // Well under browser's ~16 limit
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function loadWebgl(term: any, allowRetry: boolean) {
+  if (term._core?._isDisposed) return;
+  if (activeWebglCount >= MAX_WEBGL_CONTEXTS) return; // Stay on canvas
+
+  import("@xterm/addon-webgl")
+    .then(({ WebglAddon }) => {
+      if (term._core?._isDisposed) return;
+      if (activeWebglCount >= MAX_WEBGL_CONTEXTS) return;
+
+      let counted = false; // Prevent double-decrement
+      const decrement = () => {
+        if (counted) { counted = false; activeWebglCount = Math.max(0, activeWebglCount - 1); }
+      };
+
+      const addon = new WebglAddon();
+      addon.onContextLoss(() => {
+        decrement();
+        try { addon.dispose(); } catch { /* already gone */ }
+        // Force canvas renderer to repaint all rows
+        try { term.refresh(0, term.rows - 1); } catch { /* noop */ }
+        // One retry — context loss is often transient
+        if (allowRetry) {
+          setTimeout(() => loadWebgl(term, false), 500);
+        }
+      });
+
+      try {
+        term.loadAddon(addon);
+        activeWebglCount++;
+        counted = true;
+        // Decrement when terminal is disposed (normal cleanup, no context loss)
+        term.onDispose?.(() => decrement());
+      } catch {
+        try { addon.dispose(); } catch { /* noop */ }
+        try { term.refresh(0, term.rows - 1); } catch { /* noop */ }
+      }
+    })
+    .catch(() => { /* canvas renderer is fine */ });
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function loadTerminalAddons(term: any) {
   // WebGL renderer — GPU accelerated, perf boost on large output.
   // Delayed 300ms so canvas renderer handles initial output first.
-  // If WebGL fails, canvas keeps working seamlessly.
-  setTimeout(() => {
-    if (term._core?._isDisposed) return;
-    import("@xterm/addon-webgl")
-      .then(({ WebglAddon }) => {
-        if (term._core?._isDisposed) return;
-        const addon = new WebglAddon();
-        addon.onContextLoss(() => {
-          try { addon.dispose(); } catch { /* already gone */ }
-        });
-        try {
-          term.loadAddon(addon);
-        } catch {
-          try { addon.dispose(); } catch { /* noop */ }
-        }
-      })
-      .catch(() => { /* canvas renderer is fine */ });
-  }, 300);
+  setTimeout(() => loadWebgl(term, true), 300);
 
   // Clickable URLs
   import("@xterm/addon-web-links")

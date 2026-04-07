@@ -461,6 +461,7 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
+    let obs: ResizeObserver | null = null;
 
     const initTimer = setTimeout(() => {
       if (cancelled || !containerRef.current) return;
@@ -505,8 +506,15 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
             .catch(() => {});
         });
 
-        const observer = new ResizeObserver(() => { fit.fit(); });
-        observer.observe(containerRef.current!);
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        obs = new ResizeObserver(() => {
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            if (!containerRef.current || containerRef.current.offsetWidth === 0) return;
+            requestAnimationFrame(() => fit.fit());
+          }, 100);
+        });
+        obs.observe(containerRef.current!);
 
         // Small delay to let the backend job initialize before requesting terminal token
         const connectWs = async (retries = 3): Promise<void> => {
@@ -569,6 +577,7 @@ function TerminalPopup({ jobId, label, onStop, onClose }: TerminalPopupProps) {
     return () => {
       cancelled = true;
       clearTimeout(initTimer);
+      obs?.disconnect();
       wsRef.current?.close();
       wsRef.current = null;
       xtermRef.current?.dispose();

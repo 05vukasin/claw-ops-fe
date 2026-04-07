@@ -65,6 +65,7 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
   useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
+    let obs: ResizeObserver | null = null;
 
     const initTimer = setTimeout(() => {
       if (cancelled || !containerRef.current) return;
@@ -127,20 +128,28 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
             .catch(() => {});
         });
 
-        // Keep terminal sized to container
-        const observer = new ResizeObserver(() => { requestAnimationFrame(() => fit.fit()); });
-        observer.observe(containerRef.current!);
+        // Keep terminal sized to container (debounced to skip animation frames)
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        obs = new ResizeObserver(() => {
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            if (!containerRef.current || containerRef.current.offsetWidth === 0) return;
+            requestAnimationFrame(() => fit.fit());
+          }, 100);
+        });
+        obs.observe(containerRef.current!);
 
         term.writeln("\x1b[90mTerminal ready. Click Connect to start.\x1b[0m");
       }).catch((err) => {
         // eslint-disable-next-line no-console
         console.error("[TerminalSection] Failed to load xterm.js:", err);
       });
-    }, 50);
+    }, 350);
 
     return () => {
       cancelled = true;
       clearTimeout(initTimer);
+      obs?.disconnect();
       xtermRef.current?.dispose();
       xtermRef.current = null;
       fitRef.current = null;

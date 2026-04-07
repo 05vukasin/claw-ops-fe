@@ -695,9 +695,9 @@ export function ServerDashboardPanel({
 
           {/* Files + Terminal content */}
           {termExpanded && (
-            <div className="flex flex-1 flex-col min-h-0 animate-fade-slide-in">
-              {/* File browser — fixed height, resizable */}
-              <div style={{ height: fileBrowserH, flexShrink: 0 }} className="overflow-hidden">
+            <div className="flex flex-1 flex-col min-h-0">
+              {/* File browser — fixed height, resizable, animates in with slide */}
+              <div style={{ height: fileBrowserH, flexShrink: 0 }} className="overflow-hidden animate-fade-slide-in">
                 <FileBrowser
                   ref={fileBrowserRef}
                   serverId={server.id}
@@ -714,8 +714,8 @@ export function ServerDashboardPanel({
                 onPointerDown={handleSplitResizeStart}
               />
 
-              {/* Terminal — fills remaining space */}
-              <div className="flex flex-1 flex-col min-h-0">
+              {/* Terminal — opacity-only fade, no transform (safe for xterm canvas) */}
+              <div className="flex flex-1 flex-col min-h-0 animate-[fadeIn_200ms_ease-out_300ms_both]">
                 <TerminalSection
                   ref={termRef}
                   serverId={server.id}
