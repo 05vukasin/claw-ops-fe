@@ -67,10 +67,16 @@ export function PersistentTerminal({
         const fit = new FitAddon();
         term.loadAddon(fit);
         term.open(containerRef.current!);
-        fit.fit();
 
         xtermRef.current = term;
         fitRef.current = fit;
+
+        // Fit after the browser has painted so container has dimensions
+        requestAnimationFrame(() => {
+          fit.fit();
+          // Second fit as safety — some browsers need two frames
+          requestAnimationFrame(() => fit.fit());
+        });
 
         loadTerminalAddons(term);
 
@@ -104,13 +110,9 @@ export function PersistentTerminal({
 
         // Keep terminal sized to container
         const observer = new ResizeObserver(() => {
-          fit.fit();
+          requestAnimationFrame(() => fit.fit());
         });
         observer.observe(containerRef.current!);
-
-        setTimeout(() => {
-          if (!cancelled) fit.fit();
-        }, 100);
 
         // Terminal is ready — discover or create session
         discoverAndConnect();

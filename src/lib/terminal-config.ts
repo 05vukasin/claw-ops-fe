@@ -61,19 +61,39 @@ export const MOBILE_TERMINAL_OPTIONS: ITerminalOptions = {
 /**
  * Load optional addons (WebGL for performance, WebLinks for clickable URLs).
  * Call after term.open().
+ *
+ * WebGL can silently fail on some GPUs/drivers leaving a black screen.
+ * On failure, we dispose the addon so xterm falls back to the canvas renderer.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function loadTerminalAddons(term: any) {
-  // WebGL renderer — GPU accelerated, massive perf boost on large output
-  import("@xterm/addon-webgl")
-    .then(({ WebglAddon }) => {
-      try { term.loadAddon(new WebglAddon()); } catch { /* canvas fallback */ }
-    })
-    .catch(() => {});
+  // WebGL renderer — GPU accelerated, massive perf boost on large output.
+  // Wrapped in requestAnimationFrame so the canvas renderer has one frame to
+  // initialise first — this makes fallback seamless if WebGL fails.
+  requestAnimationFrame(() => {
+    import("@xterm/addon-webgl")
+      .then(({ WebglAddon }) => {
+        if (term._core?._isDisposed) return; // terminal already destroyed
+        const addon = new WebglAddon();
+        // If the WebGL context is lost (GPU crash, driver reset) dispose the
+        // addon so xterm switches back to the canvas renderer automatically.
+        addon.onContextLoss(() => {
+          try { addon.dispose(); } catch { /* already gone */ }
+        });
+        try {
+          term.loadAddon(addon);
+        } catch {
+          // WebGL context creation failed — dispose and let canvas renderer work
+          try { addon.dispose(); } catch { /* noop */ }
+        }
+      })
+      .catch(() => { /* WebGL addon not available, canvas renderer is fine */ });
+  });
 
   // Clickable URLs
   import("@xterm/addon-web-links")
     .then(({ WebLinksAddon }) => {
+      if (term._core?._isDisposed) return;
       term.loadAddon(new WebLinksAddon());
     })
     .catch(() => {});

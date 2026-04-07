@@ -79,10 +79,15 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         const fit = new FitAddon();
         term.loadAddon(fit);
         term.open(containerRef.current!);
-        fit.fit();
 
         xtermRef.current = term;
         fitRef.current = fit;
+
+        // Fit after browser paint so container has dimensions
+        requestAnimationFrame(() => {
+          fit.fit();
+          requestAnimationFrame(() => fit.fit());
+        });
 
         // Track current directory via OSC 7 escape sequences
         term.parser.registerOscHandler(7, (data: string) => {
