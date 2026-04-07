@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSessionTokenApi } from "@/lib/api";
 import { getApiOrigin } from "@/lib/apiClient";
-import type { ChatMessage, ClaudeStatus } from "@/lib/types";
+import type { ChatMessage, ClaudeStatus, ActiveToolInfo } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
 /*  ANSI escape code stripper                                          */
@@ -25,12 +25,15 @@ export function useClaudeChat(
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ClaudeStatus>("disconnected");
+  const [activeTool, setActiveTool] = useState<ActiveToolInfo | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const bufferRef = useRef("");
   const sessionIdRef = useRef<string | null>(resumeSessionId ?? null);
   const turnCountRef = useRef(resumeSessionId ? 1 : 0);
-  const currentAssistantRef = useRef<string | null>(null); // message id being streamed
+  const currentAssistantRef = useRef<string | null>(null);
+  const activeToolRef = useRef<ActiveToolInfo | null>(null);
+  const currentThinkingRef = useRef<string | null>(null);
   const shellReadyRef = useRef(false);
   const lastOutputTimeRef = useRef(0);
 
@@ -50,7 +53,6 @@ export function useClaudeChat(
             : m,
         );
       }
-      // Create new assistant message
       const id = crypto.randomUUID();
       currentAssistantRef.current = id;
       return [
@@ -64,29 +66,148 @@ export function useClaudeChat(
   const handleEvent = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (evt: any) => {
+      // System init
       if (evt.type === "system" && evt.subtype === "init") {
         setStatus("idle");
         return;
       }
 
-      // Streaming delta (with --include-partial-messages)
-      if (
-        evt.type === "stream_event" &&
-        evt.event?.type === "content_block_delta" &&
-        evt.event?.delta?.type === "text_delta"
-      ) {
-        setStatus("thinking");
-        upsertAssistantText(evt.event.delta.text);
+      // ── Stream events ──
+      if (evt.type === "stream_event") {
+        const event = evt.event;
+        if (!event) return;
+
+        // Content block start — tool_use or thinking
+        if (event.type === "content_block_start") {
+          const block = event.content_block;
+          if (block?.type === "tool_use") {
+            const tool: ActiveToolInfo = { name: block.name, callId: block.id };
+            activeToolRef.current = tool;
+            setActiveTool(tool);
+            setStatus("tool_running");
+            // Finalize any in-progress assistant text
+            currentAssistantRef.current = null;
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                type: "tool_use",
+                toolName: block.name,
+                toolCallId: block.id,
+                toolInput: "",
+                content: "",
+                timestamp: Date.now(),
+              },
+            ]);
+            return;
+          }
+          if (block?.type === "thinking") {
+            const id = crypto.randomUUID();
+            currentThinkingRef.current = id;
+            setStatus("thinking");
+            setMessages((prev) => [
+              ...prev,
+              { id, role: "assistant", type: "thinking", content: "", timestamp: Date.now() },
+            ]);
+            return;
+          }
+          return;
+        }
+
+        // Content block delta
+        if (event.type === "content_block_delta") {
+          const delta = event.delta;
+          if (!delta) return;
+
+          // Text streaming
+          if (delta.type === "text_delta") {
+            setStatus("thinking");
+            upsertAssistantText(delta.text);
+            return;
+          }
+
+          // Tool input JSON streaming
+          if (delta.type === "input_json_delta") {
+            setMessages((prev) => {
+              // Find the latest tool_use message and append to its toolInput
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].type === "tool_use") {
+                  const updated = [...prev];
+                  updated[i] = { ...updated[i], toolInput: (updated[i].toolInput ?? "") + delta.partial_json };
+                  return updated;
+                }
+              }
+              return prev;
+            });
+            return;
+          }
+
+          // Thinking delta
+          if (delta.type === "thinking_delta") {
+            const thinkingId = currentThinkingRef.current;
+            if (thinkingId) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === thinkingId ? { ...m, content: m.content + delta.thinking } : m,
+                ),
+              );
+            }
+            return;
+          }
+
+          return;
+        }
+
+        // Content block stop
+        if (event.type === "content_block_stop") {
+          if (activeToolRef.current) {
+            activeToolRef.current = null;
+            setActiveTool(null);
+          }
+          if (currentThinkingRef.current) {
+            currentThinkingRef.current = null;
+          }
+          return;
+        }
+
+        return;
+      }
+
+      // ── Tool results (user events) ──
+      if (evt.type === "user" && evt.message?.content) {
+        const content = evt.message.content;
+        if (Array.isArray(content)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (const item of content as any[]) {
+            if (item.type === "tool_result") {
+              const resultText = typeof item.content === "string"
+                ? item.content
+                : Array.isArray(item.content)
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  ? item.content.map((c: any) => c.text ?? "").join("")
+                  : "";
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: crypto.randomUUID(),
+                  role: "system",
+                  type: "tool_result",
+                  content: resultText,
+                  toolCallId: item.tool_use_id,
+                  isError: item.is_error ?? false,
+                  timestamp: Date.now(),
+                },
+              ]);
+            }
+          }
+        }
         return;
       }
 
       // Full assistant message (arrives after streaming completes)
       if (evt.type === "assistant" && evt.message?.content) {
-        // If we already have streaming content, this is the finalized version — skip
-        // (the streamed deltas already built the full text)
         if (currentAssistantRef.current) return;
-
-        // Fallback: no streaming deltas were received, use full message
         const text = evt.message.content
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .filter((c: any) => c.type === "text")
@@ -106,6 +227,9 @@ export function useClaudeChat(
       // Result — turn complete
       if (evt.type === "result") {
         currentAssistantRef.current = null;
+        currentThinkingRef.current = null;
+        activeToolRef.current = null;
+        setActiveTool(null);
         setStatus("idle");
         if (evt.is_error || evt.subtype === "error") {
           const errText = evt.result || evt.error || "An error occurred";
@@ -134,7 +258,6 @@ export function useClaudeChat(
       bufferRef.current += cleaned;
 
       const lines = bufferRef.current.split("\n");
-      // Keep the last (possibly incomplete) line in the buffer
       bufferRef.current = lines.pop() ?? "";
 
       for (const line of lines) {
@@ -173,7 +296,6 @@ export function useClaudeChat(
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Wait for shell to become ready (idle-detection + fallback timeout)
         const fallback = setTimeout(() => {
           if (!shellReadyRef.current) {
             shellReadyRef.current = true;
@@ -239,7 +361,6 @@ export function useClaudeChat(
       if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
       if (status !== "idle") return;
 
-      // Add user message to state
       setMessages((prev) => [
         ...prev,
         {
@@ -251,24 +372,22 @@ export function useClaudeChat(
         },
       ]);
 
-      // Reset streaming state
       currentAssistantRef.current = null;
+      currentThinkingRef.current = null;
+      activeToolRef.current = null;
+      setActiveTool(null);
       bufferRef.current = "";
       setStatus("thinking");
 
-      // Build the claude command
-      // Base64 encode the message to avoid shell escaping issues
       const b64 = btoa(unescape(encodeURIComponent(trimmed)));
 
       let cmd: string;
       if (turnCountRef.current === 0) {
-        // First turn — create session
         if (!sessionIdRef.current) {
           sessionIdRef.current = crypto.randomUUID();
         }
         cmd = `echo '${b64}' | base64 -d | claude -p --output-format stream-json --verbose --include-partial-messages --session-id ${sessionIdRef.current} 2>/dev/null`;
       } else {
-        // Subsequent turns — resume session
         cmd = `echo '${b64}' | base64 -d | claude -p --output-format stream-json --verbose --include-partial-messages --resume ${sessionIdRef.current} 2>/dev/null`;
       }
 
@@ -302,5 +421,5 @@ export function useClaudeChat(
     };
   }, [serverId, connect]);
 
-  return { messages, status, sendMessage, reconnect, setInitialMessages };
+  return { messages, status, activeTool, sendMessage, reconnect, setInitialMessages };
 }

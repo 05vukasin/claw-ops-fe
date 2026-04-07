@@ -8,9 +8,12 @@ export type ServerStatus = "ONLINE" | "OFFLINE" | "UNKNOWN" | "ERROR";
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
-  type: "text" | "tool_use" | "error";
+  type: "text" | "tool_use" | "tool_result" | "thinking" | "error";
   content: string;
   toolName?: string;
+  toolCallId?: string;
+  toolInput?: string;
+  isError?: boolean;
   timestamp: number;
 }
 
@@ -18,7 +21,13 @@ export type ClaudeStatus =
   | "disconnected"
   | "connecting"
   | "idle"
-  | "thinking";
+  | "thinking"
+  | "tool_running";
+
+export interface ActiveToolInfo {
+  name: string;
+  callId: string;
+}
 
 export interface ChatSession {
   sessionId: string;

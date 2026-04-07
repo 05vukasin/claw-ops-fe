@@ -1,9 +1,10 @@
 "use client";
 
-import type { ClaudeStatus } from "@/lib/types";
+import type { ClaudeStatus, ActiveToolInfo } from "@/lib/types";
 
 interface StatusIndicatorProps {
   status: ClaudeStatus;
+  activeTool?: ActiveToolInfo | null;
   onReconnect: () => void;
 }
 
@@ -12,6 +13,7 @@ const DOT_CLASS: Record<ClaudeStatus, string> = {
   connecting: "bg-yellow-400 animate-pulse",
   idle: "bg-green-500",
   thinking: "bg-purple-400 animate-pulse",
+  tool_running: "bg-purple-400 animate-pulse",
 };
 
 const LABEL: Record<ClaudeStatus, string> = {
@@ -19,13 +21,18 @@ const LABEL: Record<ClaudeStatus, string> = {
   connecting: "Connecting...",
   idle: "Ready",
   thinking: "Thinking...",
+  tool_running: "Running tool...",
 };
 
-export function StatusIndicator({ status, onReconnect }: StatusIndicatorProps) {
+export function StatusIndicator({ status, activeTool, onReconnect }: StatusIndicatorProps) {
+  const label = status === "tool_running" && activeTool
+    ? `Running ${activeTool.name}...`
+    : LABEL[status];
+
   return (
     <div className="flex items-center gap-2">
       <span className={`h-2 w-2 shrink-0 rounded-full ${DOT_CLASS[status]}`} />
-      <span className="text-[11px] text-gray-400">{LABEL[status]}</span>
+      <span className="text-[11px] text-gray-400">{label}</span>
       {status === "disconnected" && (
         <button
           type="button"

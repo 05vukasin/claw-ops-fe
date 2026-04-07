@@ -17,7 +17,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ serverId, serverName, resumeSessionId, onBack }: ChatViewProps) {
-  const { messages, status, sendMessage, reconnect, setInitialMessages } = useClaudeChat(
+  const { messages, status, activeTool, sendMessage, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     resumeSessionId,
   );
@@ -85,7 +85,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
           </p>
           <p className="truncate text-[11px] text-gray-500">{serverName}</p>
         </div>
-        <StatusIndicator status={status} onReconnect={reconnect} />
+        <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
       </div>
 
       {/* ── Messages ── */}
