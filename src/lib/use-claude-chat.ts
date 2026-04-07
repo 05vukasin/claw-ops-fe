@@ -173,18 +173,28 @@ export function useClaudeChat(
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Wait for shell to become ready (same idle-detection as MobileTerminalView)
+        // Wait for shell to become ready (idle-detection + fallback timeout)
+        const fallback = setTimeout(() => {
+          if (!shellReadyRef.current) {
+            shellReadyRef.current = true;
+            setStatus("idle");
+          }
+        }, 3000);
+
         const check = setInterval(() => {
           if (!wsRef.current || ws.readyState !== WebSocket.OPEN) {
             clearInterval(check);
+            clearTimeout(fallback);
             return;
           }
           if (shellReadyRef.current) {
             clearInterval(check);
+            clearTimeout(fallback);
             return;
           }
           if (lastOutputTimeRef.current > 0 && Date.now() - lastOutputTimeRef.current > 1000) {
             clearInterval(check);
+            clearTimeout(fallback);
             shellReadyRef.current = true;
             setStatus("idle");
           }
