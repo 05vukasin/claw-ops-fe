@@ -1058,6 +1058,15 @@ export async function checkClaudeCodeInstalledApi(serverId: string): Promise<boo
   }
 }
 
+export async function checkDeployScriptApi(serverId: string): Promise<boolean> {
+  try {
+    const result = await executeCommandApi(serverId, "test -f /root/deploy/deploy.sh", 5);
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Escape a file path for safe use in single-quoted shell strings */
 function escapeShellPath(path: string): string {
   return path.replace(/'/g, "'\\''");

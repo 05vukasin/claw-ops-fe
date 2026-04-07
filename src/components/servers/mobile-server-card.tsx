@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FiChevronDown, FiChevronRight, FiTerminal } from "react-icons/fi";
-import { checkClaudeCodeInstalledApi } from "@/lib/api";
+import { FiChevronDown, FiChevronRight, FiPlay, FiTerminal } from "react-icons/fi";
+import { checkClaudeCodeInstalledApi, checkDeployScriptApi } from "@/lib/api";
 import type { Server, ServerHealth, MonitoringState } from "@/lib/api";
 import { ClaudeCodeOverlay } from "./claude-code-overlay";
+import { DeployPopup } from "./deploy-popup";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -90,6 +91,8 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [claudeInstalled, setClaudeInstalled] = useState<"unknown" | "checking" | "installed" | "not-installed">("unknown");
   const [showClaudeCode, setShowClaudeCode] = useState(false);
+  const [deployAvailable, setDeployAvailable] = useState(false);
+  const [showDeploy, setShowDeploy] = useState(false);
 
   useEffect(() => {
     if (server.status !== "ONLINE") return;
@@ -97,6 +100,9 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
     checkClaudeCodeInstalledApi(server.id)
       .then((ok) => { if (!stale) setClaudeInstalled(ok ? "installed" : "not-installed"); })
       .catch(() => { if (!stale) setClaudeInstalled("unknown"); });
+    checkDeployScriptApi(server.id)
+      .then((ok) => { if (!stale) setDeployAvailable(ok); })
+      .catch(() => { if (!stale) setDeployAvailable(false); });
     return () => { stale = true; };
   }, [server.id, server.status]);
 
@@ -207,6 +213,17 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
               Open Claude Code
             </button>
           )}
+
+          {deployAvailable && (
+            <button
+              type="button"
+              onClick={() => setShowDeploy(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/20 active:bg-blue-500/20"
+            >
+              <FiPlay size={14} />
+              Deploy
+            </button>
+          )}
         </div>
       )}
 
@@ -223,6 +240,10 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
           serverName={server.name}
           onClose={() => setShowClaudeCode(false)}
         />
+      )}
+
+      {showDeploy && (
+        <DeployPopup serverId={server.id} onClose={() => setShowDeploy(false)} />
       )}
     </div>
   );

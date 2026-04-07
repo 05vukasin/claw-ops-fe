@@ -11,11 +11,13 @@ import {
   FiEdit2,
   FiRefreshCw,
   FiWifi,
+  FiPlay,
 } from "react-icons/fi";
 import { TerminalSection, type TerminalSectionHandle } from "./terminal-section";
 import { HealthSection } from "./health-section";
 import { ScriptsSection } from "./scripts-section";
 import { FileBrowser, type FileBrowserHandle } from "./file-browser";
+import { DeployPopup } from "./deploy-popup";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
@@ -27,6 +29,7 @@ import {
   retrySslJobApi,
   deleteServerApi,
   checkClaudeCodeInstalledApi,
+  checkDeployScriptApi,
   ApiError,
   type Server,
   type SslCertificate,
@@ -134,6 +137,18 @@ export function ServerDashboardPanel({
     checkClaudeCodeInstalledApi(server.id)
       .then((ok) => { if (!stale) setClaudeInstalled(ok ? "installed" : "not-installed"); })
       .catch(() => { if (!stale) setClaudeInstalled("unknown"); });
+    return () => { stale = true; };
+  }, [server.id, server.status]);
+
+  /* ---- Deploy script detection ---- */
+  const [deployAvailable, setDeployAvailable] = useState(false);
+  const [showDeploy, setShowDeploy] = useState(false);
+  useEffect(() => {
+    if (server.status !== "ONLINE") return;
+    let stale = false;
+    checkDeployScriptApi(server.id)
+      .then((ok) => { if (!stale) setDeployAvailable(ok); })
+      .catch(() => { if (!stale) setDeployAvailable(false); });
     return () => { stale = true; };
   }, [server.id, server.status]);
 
@@ -557,6 +572,11 @@ export function ServerDashboardPanel({
                     Claude Code
                   </ActionBtn>
                 )}
+                {deployAvailable && (
+                  <ActionBtn onClick={() => setShowDeploy(true)} icon={<FiPlay size={13} />}>
+                    Deploy
+                  </ActionBtn>
+                )}
               </div>
 
               {/* Test result */}
@@ -727,6 +747,9 @@ export function ServerDashboardPanel({
         </div>
       </div>
 
+      {showDeploy && (
+        <DeployPopup serverId={server.id} onClose={() => setShowDeploy(false)} />
+      )}
     </div>
   );
 }
