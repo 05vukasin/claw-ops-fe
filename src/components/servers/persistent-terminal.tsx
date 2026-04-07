@@ -71,11 +71,17 @@ export function PersistentTerminal({
         xtermRef.current = term;
         fitRef.current = fit;
 
-        // Fit after the browser has painted so container has dimensions
+        // Show immediate feedback so user knows xterm loaded
+        term.writeln("\x1b[90mInitializing terminal...\x1b[0m");
+
+        // Fit after browser paint, then connect with correct dimensions
         requestAnimationFrame(() => {
           fit.fit();
-          // Second fit as safety — some browsers need two frames
-          requestAnimationFrame(() => fit.fit());
+          requestAnimationFrame(() => {
+            fit.fit();
+            // Only connect after fit — cols/rows are now correct
+            if (!cancelled) discoverAndConnect();
+          });
         });
 
         loadTerminalAddons(term);
@@ -113,10 +119,22 @@ export function PersistentTerminal({
           requestAnimationFrame(() => fit.fit());
         });
         observer.observe(containerRef.current!);
-
-        // Terminal is ready — discover or create session
-        discoverAndConnect();
-      }).catch(() => {});
+      }).catch((err) => {
+        // xterm.js chunk failed to load — retry once after 2s
+        // eslint-disable-next-line no-console
+        console.error("[PersistentTerminal] Failed to load xterm.js:", err);
+        if (!cancelled && containerRef.current) {
+          setTimeout(() => {
+            if (!cancelled) {
+              // eslint-disable-next-line no-console
+              console.info("[PersistentTerminal] Retrying xterm.js load...");
+              Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")])
+                .then(() => { if (!cancelled) window.location.reload(); })
+                .catch(() => {});
+            }
+          }, 2000);
+        }
+      });
     }, 50);
 
     return () => {

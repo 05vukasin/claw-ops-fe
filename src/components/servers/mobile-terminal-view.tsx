@@ -110,13 +110,25 @@ export function MobileTerminalView({
         xtermRef.current = term;
         fitRef.current = fit;
 
+        // Show immediate feedback
+        term.writeln("\x1b[90mInitializing terminal...\x1b[0m");
+
         // Only WebLinks (skip WebGL on mobile)
         import("@xterm/addon-web-links")
-          .then(({ WebLinksAddon }) => { term.loadAddon(new WebLinksAddon()); })
+          .then(({ WebLinksAddon }) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            if (!(term as any)._core?._isDisposed) term.loadAddon(new WebLinksAddon());
+          })
           .catch(() => {});
 
-        // Initial fit
-        requestAnimationFrame(() => fitAndResize());
+        // Fit then connect with correct dimensions
+        requestAnimationFrame(() => {
+          fitAndResize();
+          requestAnimationFrame(() => {
+            fitAndResize();
+            if (!cancelled) connect();
+          });
+        });
 
         // Ctrl+C: copy selected text, else send SIGINT
         term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -150,9 +162,10 @@ export function MobileTerminalView({
           requestAnimationFrame(() => fitAndResize());
         });
         observer.observe(containerRef.current!);
-
-        connect();
-      }).catch(() => {});
+      }).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[MobileTerminal] Failed to load xterm.js:", err);
+      });
     }, 80);
 
     return () => {

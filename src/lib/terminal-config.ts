@@ -67,28 +67,26 @@ export const MOBILE_TERMINAL_OPTIONS: ITerminalOptions = {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function loadTerminalAddons(term: any) {
-  // WebGL renderer — GPU accelerated, massive perf boost on large output.
-  // Wrapped in requestAnimationFrame so the canvas renderer has one frame to
-  // initialise first — this makes fallback seamless if WebGL fails.
-  requestAnimationFrame(() => {
+  // WebGL renderer — GPU accelerated, perf boost on large output.
+  // Delayed 300ms so canvas renderer handles initial output first.
+  // If WebGL fails, canvas keeps working seamlessly.
+  setTimeout(() => {
+    if (term._core?._isDisposed) return;
     import("@xterm/addon-webgl")
       .then(({ WebglAddon }) => {
-        if (term._core?._isDisposed) return; // terminal already destroyed
+        if (term._core?._isDisposed) return;
         const addon = new WebglAddon();
-        // If the WebGL context is lost (GPU crash, driver reset) dispose the
-        // addon so xterm switches back to the canvas renderer automatically.
         addon.onContextLoss(() => {
           try { addon.dispose(); } catch { /* already gone */ }
         });
         try {
           term.loadAddon(addon);
         } catch {
-          // WebGL context creation failed — dispose and let canvas renderer work
           try { addon.dispose(); } catch { /* noop */ }
         }
       })
-      .catch(() => { /* WebGL addon not available, canvas renderer is fine */ });
-  });
+      .catch(() => { /* canvas renderer is fine */ });
+  }, 300);
 
   // Clickable URLs
   import("@xterm/addon-web-links")

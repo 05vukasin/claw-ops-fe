@@ -40,7 +40,13 @@
       "Bash(ls e:/Reputeo/claw-ops-fe/.env*)",
       "Read(//e/Reputeo/claw-ops-fe/src/components/**)",
       "Bash(grep -n \"readFileApi\\\\|FileBrowser\" /e/Reputeo/claw-ops-fe/src/components/servers/*.tsx)",
-      "Bash(ipconfig)"
+      "Bash(ipconfig)",
+      "Bash(ls -la /e/Reputeo/claw-ops-fe/.next*)",
+      "Bash(npx tsc:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(node ./node_modules/.bin/tsc --noEmit)",
+      "Bash(npx --yes tsc --noEmit)",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)"
     ],
     "additionalDirectories": [
       "\\tmp"

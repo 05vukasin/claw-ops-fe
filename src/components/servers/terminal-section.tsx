@@ -128,12 +128,14 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         });
 
         // Keep terminal sized to container
-        const observer = new ResizeObserver(() => { fit.fit(); });
+        const observer = new ResizeObserver(() => { requestAnimationFrame(() => fit.fit()); });
         observer.observe(containerRef.current!);
 
         term.writeln("\x1b[90mTerminal ready. Click Connect to start.\x1b[0m");
-        setTimeout(() => { if (!cancelled) fit.fit(); }, 100);
-      }).catch(() => {});
+      }).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("[TerminalSection] Failed to load xterm.js:", err);
+      });
     }, 50);
 
     return () => {
