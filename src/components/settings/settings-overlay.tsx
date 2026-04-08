@@ -87,6 +87,7 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
   const [device, setDevice] = useState<NotificationDevice | null>(null);
   const [deviceLoading, setDeviceLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [notifError, setNotifError] = useState<string | null>(null);
 
   /* ── Change password state ── */
   const [showPwForm, setShowPwForm] = useState(false);
@@ -111,6 +112,36 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
 
   useEffect(() => { loadDevice(); }, [loadDevice]);
 
+  /* ── Self-heal: re-register push SW if device exists but SW was lost ── */
+  useEffect(() => {
+    if (!device?.notificationsEnabled || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+
+    navigator.serviceWorker.getRegistrations().then(async (registrations) => {
+      const hasPushSw = registrations.some((r) => {
+        const sw = r.active || r.installing || r.waiting;
+        return sw?.scriptURL.endsWith("push-sw.js");
+      });
+      if (hasPushSw) return;
+
+      try {
+        const vapid = await getVapidKeyApi();
+        if (vapid && "PushManager" in window) {
+          const swReg = await navigator.serviceWorker.register("/push-sw.js");
+          const sub = await swReg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapid.publicKey),
+          });
+          const keys = sub.toJSON().keys;
+          if (keys) {
+            await subscribePushApi({ endpoint: sub.endpoint, keyAuth: keys.auth!, keyP256dh: keys.p256dh! });
+          }
+        }
+      } catch (err) {
+        console.warn("[notifications] Could not re-register push SW:", err);
+      }
+    });
+  }, [device]);
+
   /* ── Escape to close ── */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -128,6 +159,7 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
   /* ── Enable notifications ── */
   const handleEnable = useCallback(async () => {
     setBusy(true);
+    setNotifError(null);
     try {
       if (typeof Notification !== "undefined" && Notification.permission !== "granted") {
         const result = await Notification.requestPermission();
@@ -151,13 +183,19 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
               await subscribePushApi({ endpoint: sub.endpoint, keyAuth: keys.auth!, keyP256dh: keys.p256dh! });
             }
           }
-        } catch { /* push not available */ }
+        } catch (err) {
+          console.error("[notifications] Push setup failed:", err);
+          setNotifError("Push notifications could not be set up. You may still receive in-app notifications.");
+        }
         await registerNotificationDeviceApi({ deviceName: getDeviceName(), platform: getPlatformName(), pushEndpoint, pushKeyAuth, pushKeyP256dh });
       } else if (!device.notificationsEnabled) {
         await toggleDeviceNotificationsApi(device.id, true);
       }
       await loadDevice();
-    } catch { /* silent */ }
+    } catch (err) {
+      console.error("[notifications] Enable failed:", err);
+      setNotifError(err instanceof ApiError ? err.message : "Failed to enable notifications. Please try again.");
+    }
     setBusy(false);
   }, [device, loadDevice]);
 
@@ -277,6 +315,12 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
               {permState === "denied" && (
                 <p className="rounded-lg bg-red-500/5 px-4 py-2.5 text-[11px] text-red-500 dark:text-red-400">
                   Notifications are blocked. Click the lock icon in your browser&apos;s address bar and allow notifications, then refresh.
+                </p>
+              )}
+
+              {notifError && (
+                <p className="rounded-lg bg-orange-500/5 px-4 py-2.5 text-[11px] text-orange-600 dark:text-orange-400">
+                  {notifError}
                 </p>
               )}
             </div>

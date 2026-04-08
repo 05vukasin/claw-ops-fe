@@ -1516,7 +1516,8 @@ export async function sendNotificationToUserApi(
 
 export async function getVapidKeyApi(): Promise<{ publicKey: string } | null> {
   const res = await apiFetch("/api/v1/notifications/vapid-key");
-  if (!res.ok) return null;
+  if (res.status === 404) return null; // No provider configured
+  if (!res.ok) throw new ApiError(res.status, "Failed to fetch VAPID key");
   return res.json() as Promise<{ publicKey: string }>;
 }
 
