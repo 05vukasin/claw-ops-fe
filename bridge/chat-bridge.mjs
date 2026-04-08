@@ -23,9 +23,10 @@ let requestCounter = 0;
 let currentSessionId = null;
 let isProcessing = false;
 const messageQueue = [];
-let pendingEvents = []; // Events that might not have been received by frontend
+let pendingEvents = []; accumulatedText = ""; // Events that might not have been received by frontend
 const sessionAllowedTools = new Set(); // Tools auto-approved for this session
 let currentPermissionMode = "default"; // default | plan | acceptEdits | bypassPermissions
+let accumulatedText = ""; // Accumulated text from text_delta events for poll re-emission
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -142,6 +143,7 @@ async function handleUserMessage(text, resumeSessionId) {
 
         // Text delta
         if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+          accumulatedText += event.delta.text;
           emit({ type: "text_delta", text: event.delta.text });
           continue;
         }
@@ -232,7 +234,7 @@ async function handleUserMessage(text, resumeSessionId) {
       // Result — turn complete
       if (message.type === "result") {
         currentSessionId = message.session_id;
-        pendingEvents = []; // Clear — turn is done
+        pendingEvents = []; accumulatedText = ""; // Clear — turn is done
         emit({
           type: "result",
           text: message.result || "",
@@ -244,7 +246,7 @@ async function handleUserMessage(text, resumeSessionId) {
       }
     }
   } catch (err) {
-    pendingEvents = [];
+    pendingEvents = []; accumulatedText = "";
     emit({ type: "error", message: err.message || "Unknown error" });
   }
 
@@ -278,8 +280,12 @@ rl.on("line", (line) => {
 
   // Poll — re-emit any pending events the frontend might have missed
   if (msg.type === "poll") {
+    // Re-emit accumulated text as a full snapshot
+    if (accumulatedText) {
+      const line = JSON.stringify({ type: "text_snapshot", text: accumulatedText }) + "\n";
+      writeSync(1, line);
+    }
     if (pendingEvents.length > 0) {
-      log(`POLL: re-emitting ${pendingEvents.length} pending events`);
       for (const evt of pendingEvents) {
         const line = JSON.stringify(evt) + "\n";
         writeSync(1, line);
@@ -290,7 +296,7 @@ rl.on("line", (line) => {
 
   // Permission or question response
   if (msg.type === "permission_response" || msg.type === "ask_response") {
-    pendingEvents = []; // Clear pending — frontend is caught up
+    pendingEvents = []; accumulatedText = ""; // Clear pending — frontend is caught up
     const resolver = pendingRequests.get(msg.id);
     if (resolver) {
       resolver(msg);

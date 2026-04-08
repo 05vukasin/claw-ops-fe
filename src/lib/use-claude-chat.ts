@@ -96,6 +96,30 @@ export function useClaudeChat(
         return;
       }
 
+      // Text snapshot — full text from poll (replaces current assistant message)
+      if (evt.type === "text_snapshot") {
+        setMessages((prev) => {
+          const existing = prev.find((m) => m.id === currentAssistantRef.current);
+          if (existing) {
+            // Only update if snapshot has more content (don't regress)
+            if (evt.text.length > existing.content.length) {
+              return prev.map((m) =>
+                m.id === currentAssistantRef.current ? { ...m, content: evt.text } : m,
+              );
+            }
+            return prev;
+          }
+          // Create new message from snapshot
+          const id = crypto.randomUUID();
+          currentAssistantRef.current = id;
+          return [
+            ...prev,
+            { id, role: "assistant", type: "text", content: evt.text, timestamp: Date.now() },
+          ];
+        });
+        return;
+      }
+
       // Thinking delta
       if (evt.type === "thinking_delta") {
         setStatus("thinking");
