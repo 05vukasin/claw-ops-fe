@@ -248,10 +248,8 @@ export function ClaudeDashboardPanel({ serverId, serverName, onClose, zIndex, on
           data-drag-handle
           className="flex shrink-0 cursor-grab items-center gap-3 border-b border-canvas-border px-5 py-3.5 select-none active:cursor-grabbing"
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#E87B35]" data-drag-handle>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L14.09 8.26L20 9.27L15.55 13.97L16.91 20L12 16.9L7.09 20L8.45 13.97L4 9.27L9.91 8.26L12 2Z" fill="white" stroke="white" strokeWidth="0.5" strokeLinejoin="round" />
-            </svg>
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#C15F3C]" data-drag-handle>
+            <img src="/images/claude.png" alt="Claude" width={14} height={14} className="pointer-events-none" draggable={false} />
           </div>
           <div className="min-w-0 flex-1" data-drag-handle>
             <p className="truncate text-sm font-semibold leading-tight text-canvas-fg" data-drag-handle>Claude Code</p>
