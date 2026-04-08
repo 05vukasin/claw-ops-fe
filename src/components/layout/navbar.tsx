@@ -4,9 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { Z_INDEX } from "@/lib/z-index";
-import { clearAuth, getStoredAuth, getUser } from "@/lib/auth";
-import { clearAccessToken } from "@/lib/apiClient";
-import { logoutApi } from "@/lib/api";
+import { getUser } from "@/lib/auth";
 import type { AuthUser } from "@/lib/api";
 
 const emptySubscribe = () => () => {};
@@ -84,17 +82,6 @@ export function Navbar({ open, onClose }: NavbarProps) {
     },
     [router, onClose],
   );
-
-  const handleLogout = useCallback(async () => {
-    const stored = getStoredAuth();
-    if (stored?.refreshToken) {
-      await logoutApi(stored.refreshToken);
-    }
-    clearAccessToken();
-    clearAuth();
-    onClose();
-    router.replace("/login");
-  }, [router, onClose]);
 
   if (!mounted) return null;
 
@@ -193,28 +180,6 @@ export function Navbar({ open, onClose }: NavbarProps) {
               <span className="ml-2.5">Settings</span>
             </button>
 
-            {/* Logout */}
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="flex w-full items-center rounded-md px-3 py-2 text-sm text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
-            >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              <span className="ml-2.5">Log out</span>
-            </button>
           </div>
 
           {/* User info */}
