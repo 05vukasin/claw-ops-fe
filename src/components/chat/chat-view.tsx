@@ -20,7 +20,6 @@ const MODE_OPTIONS = [
   { value: "default", label: "Default", description: "Ask before edits and commands" },
   { value: "acceptEdits", label: "Accept Edits", description: "Auto-approve file edits" },
   { value: "plan", label: "Plan Mode", description: "Plan only, no changes" },
-  { value: "bypassPermissions", label: "Allow All", description: "Auto-approve everything" },
 ];
 
 interface ChatViewProps {
