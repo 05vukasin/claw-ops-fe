@@ -437,15 +437,15 @@ export function useClaudeChat(
 
   /* ── Respond to permission request ── */
   const respondPermission = useCallback(
-    (permissionId: string, allow: boolean, message?: string) => {
+    (permissionId: string, allow: boolean, allowSession?: boolean, message?: string) => {
       sendToBridge({
         type: "permission_response",
         id: permissionId,
         allow,
+        allowSession: allowSession || false,
         message: message || undefined,
       });
 
-      // Update the permission message in state to show resolved
       setMessages((prev) =>
         prev.map((m) =>
           m.permissionId === permissionId
@@ -455,6 +455,14 @@ export function useClaudeChat(
       );
 
       setStatus("tool_running");
+    },
+    [sendToBridge],
+  );
+
+  /* ── Set permission mode ── */
+  const setPermissionMode = useCallback(
+    (mode: string) => {
+      sendToBridge({ type: "set_mode", mode });
     },
     [sendToBridge],
   );
@@ -516,6 +524,7 @@ export function useClaudeChat(
     sendMessage,
     respondPermission,
     respondQuestion,
+    setPermissionMode,
     reconnect,
     setInitialMessages,
   };

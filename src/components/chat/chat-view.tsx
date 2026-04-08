@@ -1,13 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FiArrowLeft } from "react-icons/fi";
+import { FiArrowLeft, FiShield, FiChevronDown } from "react-icons/fi";
 import { useClaudeChat } from "@/lib/use-claude-chat";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { fetchSessionMessagesApi } from "@/lib/api";
 import { StatusIndicator } from "./status-indicator";
 import { MessageBubble } from "./message-bubble";
 import { ChatInput } from "./chat-input";
+
+const MODE_LABELS: Record<string, string> = {
+  default: "Default",
+  acceptEdits: "Accept Edits",
+  plan: "Plan Mode",
+  bypassPermissions: "Allow All",
+};
+
+const MODE_OPTIONS = [
+  { value: "default", label: "Default", description: "Ask before edits and commands" },
+  { value: "acceptEdits", label: "Accept Edits", description: "Auto-approve file edits" },
+  { value: "plan", label: "Plan Mode", description: "Plan only, no changes" },
+  { value: "bypassPermissions", label: "Allow All", description: "Auto-approve everything" },
+];
 
 interface ChatViewProps {
   serverId: string;
@@ -17,7 +31,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ serverId, serverName, resumeSessionId, onBack }: ChatViewProps) {
-  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, reconnect, setInitialMessages } = useClaudeChat(
+  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     resumeSessionId,
   );
@@ -25,6 +39,8 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const [loadingHistory, setLoadingHistory] = useState(!!resumeSessionId);
+  const [permissionMode, setMode] = useState<string>("default");
+  const [showModeMenu, setShowModeMenu] = useState(false);
 
   /* ── Load message history when resuming a session ── */
   useEffect(() => {
@@ -86,6 +102,42 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
           <p className="truncate text-[11px] text-gray-500">{serverName}</p>
         </div>
         <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
+      </div>
+
+      {/* ── Mode switcher ── */}
+      <div className="relative flex shrink-0 items-center border-b border-[#21262d] px-3 py-1.5">
+        <button
+          type="button"
+          onClick={() => setShowModeMenu((v) => !v)}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-gray-400 active:bg-white/5"
+        >
+          <FiShield size={11} />
+          <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
+          <FiChevronDown size={10} />
+        </button>
+        {showModeMenu && (
+          <div className="absolute left-3 top-full z-50 mt-1 rounded-lg border border-[#21262d] bg-[#161b22] py-1 shadow-lg">
+            {MODE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  setMode(opt.value);
+                  setPermissionMode(opt.value);
+                  setShowModeMenu(false);
+                }}
+                className={`flex w-full items-start gap-2 px-3 py-2 text-left active:bg-white/5 ${
+                  permissionMode === opt.value ? "bg-white/5" : ""
+                }`}
+              >
+                <div>
+                  <p className="text-[12px] font-medium text-[#e6edf3]">{opt.label}</p>
+                  <p className="text-[10px] text-gray-500">{opt.description}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Messages ── */}

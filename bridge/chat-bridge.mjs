@@ -24,6 +24,8 @@ let currentSessionId = null;
 let isProcessing = false;
 const messageQueue = [];
 let pendingEvents = []; // Events that might not have been received by frontend
+const sessionAllowedTools = new Set(); // Tools auto-approved for this session
+let currentPermissionMode = "default"; // default | plan | acceptEdits | bypassPermissions
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -88,6 +90,12 @@ async function handleUserMessage(text, resumeSessionId) {
         };
       }
 
+      // Auto-approve if tool was allowed for this session
+      if (sessionAllowedTools.has(toolName)) {
+        log(`AUTO-ALLOW: ${toolName} (session-allowed)`);
+        return { behavior: "allow", updatedInput: input };
+      }
+
       // Permission request for other tools
       const id = `req-${++requestCounter}`;
       const description = getToolDescription(toolName, input);
@@ -97,11 +105,16 @@ async function handleUserMessage(text, resumeSessionId) {
       emit({ type: "status", status: "tool_running" });
 
       if (response.allow) {
+        // If "allow all this session", remember the tool
+        if (response.allowSession) {
+          sessionAllowedTools.add(toolName);
+          log(`SESSION-ALLOW: ${toolName} added to session allowlist`);
+        }
         return { behavior: "allow", updatedInput: input };
       }
       return { behavior: "deny", message: response.message || "User denied this action" };
     },
-    permissionMode: "default",
+    permissionMode: currentPermissionMode,
   };
 
   // Build the prompt — for resume, pass session ID
@@ -281,6 +294,14 @@ rl.on("line", (line) => {
       resolver(msg);
       pendingRequests.delete(msg.id);
     }
+    return;
+  }
+
+  // Mode change
+  if (msg.type === "set_mode") {
+    currentPermissionMode = msg.mode || "default";
+    log(`MODE: changed to ${currentPermissionMode}`);
+    emit({ type: "mode_changed", mode: currentPermissionMode });
     return;
   }
 

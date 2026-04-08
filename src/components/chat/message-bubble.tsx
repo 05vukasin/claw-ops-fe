@@ -119,7 +119,7 @@ const markdownComponents = {
 
 interface MessageBubbleProps {
   message: ChatMessage;
-  onPermissionRespond?: (id: string, allow: boolean) => void;
+  onPermissionRespond?: (id: string, allow: boolean, allowSession?: boolean) => void;
   onQuestionRespond?: (id: string, answers: Record<string, string>) => void;
 }
 
@@ -342,7 +342,7 @@ function PermissionRequestBlock({
   onRespond,
 }: {
   message: ChatMessage;
-  onRespond?: (id: string, allow: boolean) => void;
+  onRespond?: (id: string, allow: boolean, allowSession?: boolean) => void;
 }) {
   const resolved = message.permissionResolved;
   const allowed = message.permissionAllowed;
@@ -380,20 +380,29 @@ function PermissionRequestBlock({
             {allowed ? "Allowed" : "Denied"}
           </div>
         ) : (
-          <div className="flex gap-2">
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onRespond?.(message.permissionId!, true)}
+                className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-[13px] font-medium text-white active:bg-green-700"
+              >
+                Allow
+              </button>
+              <button
+                type="button"
+                onClick={() => onRespond?.(message.permissionId!, false)}
+                className="flex-1 rounded-lg bg-[#21262d] px-3 py-2 text-[13px] font-medium text-gray-300 active:bg-[#30363d]"
+              >
+                Deny
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => onRespond?.(message.permissionId!, true)}
-              className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-[13px] font-medium text-white active:bg-green-700"
+              onClick={() => onRespond?.(message.permissionId!, true, true)}
+              className="w-full rounded-lg border border-green-600/30 bg-green-600/10 px-3 py-2 text-[12px] font-medium text-green-400 active:bg-green-600/20"
             >
-              Allow
-            </button>
-            <button
-              type="button"
-              onClick={() => onRespond?.(message.permissionId!, false)}
-              className="flex-1 rounded-lg bg-[#21262d] px-3 py-2 text-[13px] font-medium text-gray-300 active:bg-[#30363d]"
-            >
-              Deny
+              Allow all {toolName} this session
             </button>
           </div>
         )}
