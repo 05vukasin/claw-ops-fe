@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   FiTerminal,
   FiFile,
@@ -51,6 +52,14 @@ function extractToolDescription(toolName?: string, toolInput?: string): string {
 /*  Markdown components for assistant messages                         */
 /* ------------------------------------------------------------------ */
 
+/* ── Detect Unicode box-drawing content ── */
+const BOX_CHARS = /[┌┐└┘├┤┬┴┼─│═║╔╗╚╝╠╣╦╩╬]/;
+
+function hasBoxDrawing(text: string): boolean {
+  return BOX_CHARS.test(text);
+}
+
+/* ── Markdown components ── */
 const markdownComponents = {
   p: ({ children }: { children?: React.ReactNode }) => (
     <p className="my-1 text-[14px] leading-relaxed text-[#e6edf3]">{children}</p>
@@ -87,6 +96,20 @@ const markdownComponents = {
   ),
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
     <a href={href} className="text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>
+  ),
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="my-2 overflow-x-auto rounded-md border border-[#21262d]">
+      <table className="w-full text-[12px] text-[#e6edf3]">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => (
+    <thead className="border-b border-[#21262d] bg-[#161b22]">{children}</thead>
+  ),
+  th: ({ children }: { children?: React.ReactNode }) => (
+    <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400">{children}</th>
+  ),
+  td: ({ children }: { children?: React.ReactNode }) => (
+    <td className="border-t border-[#21262d] px-3 py-1.5">{children}</td>
   ),
 };
 
@@ -155,12 +178,58 @@ export function MessageBubble({ message, onPermissionRespond, onQuestionRespond 
     <div className="flex justify-start px-4 py-1.5">
       <div className="min-w-0 max-w-[90%]">
         {message.content ? (
-          <Markdown components={markdownComponents}>{message.content}</Markdown>
+          <AssistantTextContent content={message.content} />
         ) : (
           <span className="inline-block h-4 w-0.5 animate-pulse bg-gray-400" />
         )}
       </div>
     </div>
+  );
+}
+
+/* ── Assistant text with mixed content support ── */
+function AssistantTextContent({ content }: { content: string }) {
+  if (!hasBoxDrawing(content)) {
+    return (
+      <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {content}
+      </Markdown>
+    );
+  }
+
+  // Split into segments: box-drawing blocks vs regular text
+  const lines = content.split("\n");
+  const segments: Array<{ type: "text" | "box"; content: string }> = [];
+  let current: { type: "text" | "box"; lines: string[] } | null = null;
+
+  for (const line of lines) {
+    const isBox = BOX_CHARS.test(line);
+    const type = isBox ? "box" : "text";
+    if (!current || current.type !== type) {
+      if (current) segments.push({ type: current.type, content: current.lines.join("\n") });
+      current = { type, lines: [line] };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  if (current) segments.push({ type: current.type, content: current.lines.join("\n") });
+
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.type === "box" ? (
+          <div key={i} className="my-2 overflow-x-auto rounded-md border border-[#21262d] bg-[#0d1117] p-3">
+            <pre className="whitespace-pre font-mono text-[11px] leading-relaxed text-[#e6edf3]">
+              {seg.content}
+            </pre>
+          </div>
+        ) : (
+          <Markdown key={i} remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {seg.content}
+          </Markdown>
+        ),
+      )}
+    </>
   );
 }
 
