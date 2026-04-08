@@ -6,13 +6,14 @@ import { getApiOrigin } from "@/lib/apiClient";
 import type { ChatMessage, ClaudeStatus, ActiveToolInfo } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
-/*  ANSI escape code stripper                                          */
+/*  Extract JSON objects from raw terminal output                      */
 /* ------------------------------------------------------------------ */
 
-const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\].*?\x1b\\|\r/g;
-
-function stripAnsi(s: string): string {
-  return s.replace(ANSI_RE, "");
+/** Strip all non-printable/control chars except newline */
+function cleanRaw(s: string): string {
+  // Remove all ANSI escape sequences (CSI, OSC, etc.)
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b[\x20-\x7e]*[\x40-\x7e]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|\r/g, "");
 }
 
 /* ------------------------------------------------------------------ */
@@ -271,41 +272,45 @@ export function useClaudeChat(
   const processOutput = useCallback(
     (raw: string) => {
       lastOutputTimeRef.current = Date.now();
-      const cleaned = stripAnsi(raw);
+      const cleaned = cleanRaw(raw);
       bufferRef.current += cleaned;
 
+      // Split on newlines and try to parse each line
       const lines = bufferRef.current.split("\n");
       bufferRef.current = lines.pop() ?? "";
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("{")) continue;
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (parsed && typeof parsed.type === "string") {
-            handleBridgeEvent(parsed);
-          }
-        } catch {
-          // Not valid JSON — shell noise, discard
-        }
+        tryParseEvent(line);
       }
 
-      // Try to parse remaining buffer if it looks complete
-      const remaining = bufferRef.current.trim();
-      if (remaining.startsWith("{") && remaining.endsWith("}")) {
-        try {
-          const parsed = JSON.parse(remaining);
-          if (parsed && typeof parsed.type === "string") {
-            handleBridgeEvent(parsed);
-            bufferRef.current = "";
-          }
-        } catch {
-          // Incomplete JSON, keep in buffer
-        }
-      }
+      // Also try the remaining buffer (last line without trailing newline)
+      tryParseEvent(bufferRef.current);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [handleBridgeEvent],
   );
+
+  function tryParseEvent(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    // Find JSON object boundaries — handles lines with shell noise before/after JSON
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return;
+    const candidate = trimmed.slice(start, end + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed.type === "string") {
+        handleBridgeEvent(parsed);
+        // Clear buffer if we successfully parsed from it
+        if (raw === bufferRef.current) {
+          bufferRef.current = "";
+        }
+      }
+    } catch {
+      // Not valid JSON yet, keep accumulating
+    }
+  }
 
   /* ── Send raw JSON to bridge via WebSocket ── */
   const sendToBridge = useCallback((obj: Record<string, unknown>) => {
