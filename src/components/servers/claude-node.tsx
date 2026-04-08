@@ -20,15 +20,14 @@ const SETTLE_D = 0.15;
 
 function ClaudeIcon({ size = 20 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className="pointer-events-none">
-      <path
-        d="M12 2L14.09 8.26L20 9.27L15.55 13.97L16.91 20L12 16.9L7.09 20L8.45 13.97L4 9.27L9.91 8.26L12 2Z"
-        fill="white"
-        stroke="white"
-        strokeWidth="0.5"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <img
+      src="/images/claude.png"
+      alt="Claude"
+      width={size}
+      height={size}
+      className="pointer-events-none"
+      draggable={false}
+    />
   );
 }
 
@@ -178,7 +177,7 @@ export function ClaudeNode({ account, serverX, serverY, onMoveEnd, onSpringPos, 
           dragging
             ? "border-white/30 shadow-lg"
             : "border-white/15 shadow-sm group-hover:border-white/25 group-hover:shadow-md"
-        } bg-[#E87B35]`}
+        } bg-[#C15F3C]`}
         style={{ width: NODE_SIZE, height: NODE_SIZE }}
       >
         <ClaudeIcon size={22} />
