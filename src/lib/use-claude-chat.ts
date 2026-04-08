@@ -173,9 +173,11 @@ export function useClaudeChat(
         return;
       }
 
-      // Tool result
+      // Tool result (deduplicate by toolCallId)
       if (evt.type === "tool_result") {
-        setMessages((prev) => [
+        setMessages((prev) => {
+          if (prev.some((m) => m.toolCallId === evt.id && m.type === "tool_result")) return prev;
+          return [
           ...prev,
           {
             id: crypto.randomUUID(),
@@ -186,7 +188,8 @@ export function useClaudeChat(
             isError: evt.isError ?? false,
             timestamp: Date.now(),
           },
-        ]);
+        ];
+        });
         return;
       }
 

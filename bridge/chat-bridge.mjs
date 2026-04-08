@@ -218,6 +218,7 @@ async function handleUserMessage(text, resumeSessionId) {
       // Result — turn complete
       if (message.type === "result") {
         currentSessionId = message.session_id;
+        pendingEvents = []; // Clear — turn is done
         emit({
           type: "result",
           text: message.result || "",
