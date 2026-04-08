@@ -23,7 +23,7 @@ let requestCounter = 0;
 let currentSessionId = null;
 let isProcessing = false;
 const messageQueue = [];
-let pendingEvents = []; accumulatedText = ""; // Events that might not have been received by frontend
+let pendingEvents = []; // Events that might not have been received by frontend
 const sessionAllowedTools = new Set(); // Tools auto-approved for this session
 let currentPermissionMode = "default"; // default | plan | acceptEdits | bypassPermissions
 let accumulatedText = ""; // Accumulated text from text_delta events for poll re-emission
