@@ -16,7 +16,9 @@ import {
   registerNotificationDeviceApi,
   toggleDeviceNotificationsApi,
   getVapidKeyApi,
+  getFcmConfigApi,
   subscribePushApi,
+  subscribeFcmApi,
   ApiError,
   type NotificationDevice,
 } from "@/lib/api";
@@ -112,17 +114,18 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
 
   useEffect(() => { loadDevice(); }, [loadDevice]);
 
-  /* ── Self-heal: re-register push SW if device exists but SW was lost ── */
+  /* ── Self-heal: re-register push/FCM SW if device exists but SW was lost ── */
   useEffect(() => {
     if (!device?.notificationsEnabled || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
 
     navigator.serviceWorker.getRegistrations().then(async (registrations) => {
       const hasPushSw = registrations.some((r) => {
         const sw = r.active || r.installing || r.waiting;
-        return sw?.scriptURL.endsWith("push-sw.js");
+        return sw && (sw.scriptURL.endsWith("push-sw.js") || sw.scriptURL.endsWith("firebase-messaging-sw.js"));
       });
       if (hasPushSw) return;
 
+      // Try VAPID Web Push first
       try {
         const vapid = await getVapidKeyApi();
         if (vapid && "PushManager" in window) {
@@ -135,9 +138,24 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
           if (keys) {
             await subscribePushApi({ endpoint: sub.endpoint, keyAuth: keys.auth!, keyP256dh: keys.p256dh! });
           }
+          return;
+        }
+      } catch {
+        // VAPID not available, try FCM
+      }
+
+      // Fallback: register Firebase SW and post config
+      try {
+        const fcmConfig = await getFcmConfigApi();
+        if (fcmConfig) {
+          const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+          await navigator.serviceWorker.ready;
+          if (swReg.active) {
+            swReg.active.postMessage({ type: "FIREBASE_CONFIG", config: fcmConfig });
+          }
         }
       } catch (err) {
-        console.warn("[notifications] Could not re-register push SW:", err);
+        console.warn("[notifications] Could not re-register notification SW:", err);
       }
     });
   }, [device]);
@@ -170,6 +188,9 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
         let pushEndpoint: string | undefined;
         let pushKeyAuth: string | undefined;
         let pushKeyP256dh: string | undefined;
+        let fcmToken: string | undefined;
+
+        // Try Web Push (VAPID) first
         try {
           const vapid = await getVapidKeyApi();
           if (vapid && "serviceWorker" in navigator && "PushManager" in window) {
@@ -184,10 +205,44 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
             }
           }
         } catch (err) {
-          console.error("[notifications] Push setup failed:", err);
-          setNotifError("Push notifications could not be set up. You may still receive in-app notifications.");
+          console.warn("[notifications] VAPID push not available, trying FCM:", err);
         }
-        await registerNotificationDeviceApi({ deviceName: getDeviceName(), platform: getPlatformName(), pushEndpoint, pushKeyAuth, pushKeyP256dh });
+
+        // If VAPID didn't work, try FCM
+        if (!pushEndpoint) {
+          try {
+            const fcmConfig = await getFcmConfigApi();
+            if (fcmConfig && "serviceWorker" in navigator) {
+              // Register the Firebase SW and post config to it
+              const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+              await navigator.serviceWorker.ready;
+              if (swReg.active) {
+                swReg.active.postMessage({ type: "FIREBASE_CONFIG", config: fcmConfig });
+              }
+              // Dynamically load Firebase and get FCM token
+              const { initializeApp } = await import("firebase/app");
+              const { getMessaging, getToken } = await import("firebase/messaging");
+              const app = initializeApp(fcmConfig);
+              const messaging = getMessaging(app);
+              fcmToken = await getToken(messaging, {
+                serviceWorkerRegistration: swReg,
+              });
+              if (fcmToken) {
+                await subscribeFcmApi(fcmToken, getPlatformName());
+              }
+            }
+          } catch (err) {
+            console.error("[notifications] FCM setup failed:", err);
+            setNotifError("Push notifications could not be set up. You may still receive in-app notifications.");
+          }
+        }
+
+        await registerNotificationDeviceApi({
+          deviceName: getDeviceName(),
+          platform: getPlatformName(),
+          pushEndpoint, pushKeyAuth, pushKeyP256dh,
+          fcmToken,
+        });
       } else if (!device.notificationsEnabled) {
         await toggleDeviceNotificationsApi(device.id, true);
       }
