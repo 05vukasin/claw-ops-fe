@@ -28,8 +28,17 @@ const messageQueue = [];
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
+import { appendFileSync } from "fs";
+const LOG_FILE = "/tmp/claw-bridge.log";
+
+function log(msg) {
+  try { appendFileSync(LOG_FILE, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
+}
+
 function emit(obj) {
-  process.stdout.write(JSON.stringify(obj) + "\n");
+  const line = JSON.stringify(obj) + "\n";
+  log(`EMIT: ${line.trim()}`);
+  process.stdout.write(line);
 }
 
 function waitForResponse(id) {
@@ -221,12 +230,14 @@ const rl = createInterface({ input: process.stdin, terminal: false });
 rl.on("line", (line) => {
   const trimmed = line.trim();
   if (!trimmed) return;
+  log(`RECV: ${trimmed}`);
 
   let msg;
   try {
     msg = JSON.parse(trimmed);
   } catch {
-    return; // Ignore non-JSON input
+    log(`SKIP non-JSON: ${trimmed.slice(0, 100)}`);
+    return;
   }
 
   // Permission or question response
