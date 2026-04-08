@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FiChevronRight, FiChevronDown, FiEye, FiEyeOff, FiRefreshCw, FiCheckCircle, FiTrash2, FiStar, FiGlobe } from "react-icons/fi";
 import { Modal } from "@/components/ui/modal";
+import { getUser } from "@/lib/auth";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import {
   fetchProviderAccountsApi,
@@ -47,7 +49,15 @@ const ASSIGN_STYLE: Record<string, string> = {
 };
 
 export default function DomainsPage() {
+  const router = useRouter();
   const isMobile = useIsMobile();
+
+  // Block EMPLOYEE role
+  useEffect(() => {
+    const u = getUser();
+    if (u && u.role === "EMPLOYEE") router.replace("/");
+  }, [router]);
+
   const [alert, setAlert] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const showAlert = useCallback((msg: string, type: "success" | "error") => {
     setAlert({ msg, type });

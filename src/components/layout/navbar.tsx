@@ -19,17 +19,18 @@ interface NavbarProps {
 interface NavItem {
   label: string;
   href: string;
-  adminOnly?: boolean;
+  /** If set, only these roles can see the item. Omit = visible to all. */
+  roles?: string[];
 }
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Servers", href: "/" },
-  { label: "Domains", href: "/domains" },
+  { label: "Domains", href: "/domains", roles: ["ADMIN", "DEVOPS"] },
   { label: "Scripts", href: "/scripts" },
   { label: "ZIP Generator", href: "/zip-generator" },
-  { label: "Notifications", href: "/notifications", adminOnly: true },
-  { label: "Users", href: "/users", adminOnly: true },
-  { label: "Logs", href: "/logs", adminOnly: true },
+  { label: "Notifications", href: "/notifications", roles: ["ADMIN"] },
+  { label: "Users", href: "/users", roles: ["ADMIN"] },
+  { label: "Logs", href: "/logs", roles: ["ADMIN"] },
 ];
 
 export function Navbar({ open, onClose }: NavbarProps) {
@@ -150,7 +151,7 @@ export function Navbar({ open, onClose }: NavbarProps) {
           {/* Nav links */}
           <nav className="flex-1 overflow-y-auto px-3 py-3">
             <ul className="space-y-0.5">
-              {NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === "ADMIN").map((item, i) => {
+              {NAV_ITEMS.filter((item) => !item.roles || (user?.role && item.roles.includes(user.role))).map((item, i) => {
                 const isActive = pathname === item.href;
                 return (
                   <li key={item.href} className="animate-nav-item" style={{ animationDelay: `${i * 40}ms` }}>
