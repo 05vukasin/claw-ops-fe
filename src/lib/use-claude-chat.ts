@@ -318,7 +318,7 @@ export function useClaudeChat(
   /* ── Launch the bridge script on the server ── */
   const launchBridge = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    const cmd = `export PATH="$HOME/.local/bin:$PATH" && cd ~ && node ~/.local/share/claw-ops/chat-bridge.mjs`;
+    const cmd = `stty -echo 2>/dev/null; export PATH="$HOME/.local/bin:$PATH" && cd ~ && exec node ~/.local/share/claw-ops/chat-bridge.mjs`;
     wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd + "\r" }));
     // Fallback: if bridge doesn't emit "ready" within 4s, set idle anyway
     setTimeout(() => {
@@ -345,7 +345,7 @@ export function useClaudeChat(
       const token = await getSessionTokenApi(serverId);
       const wsBase = getApiOrigin().replace(/^https/, "wss").replace(/^http/, "ws");
       const ws = new WebSocket(
-        `${wsBase}/ws/terminal?token=${encodeURIComponent(token)}&cols=200&rows=50`,
+        `${wsBase}/ws/terminal?token=${encodeURIComponent(token)}&cols=9999&rows=50`,
       );
       wsRef.current = ws;
 
