@@ -244,6 +244,7 @@ async function handleUserMessage(text, resumeSessionId) {
       }
     }
   } catch (err) {
+    pendingEvents = [];
     emit({ type: "error", message: err.message || "Unknown error" });
   }
 

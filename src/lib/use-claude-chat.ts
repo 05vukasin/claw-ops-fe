@@ -265,6 +265,10 @@ export function useClaudeChat(
 
       // Error
       if (evt.type === "error") {
+        currentAssistantRef.current = null;
+        currentThinkingRef.current = null;
+        setActiveTool(null);
+        setStatus("idle");
         setMessages((prev) => [
           ...prev,
           {
