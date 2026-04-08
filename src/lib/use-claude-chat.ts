@@ -275,42 +275,37 @@ export function useClaudeChat(
       const cleaned = cleanRaw(raw);
       bufferRef.current += cleaned;
 
+      function tryParse(line: string) {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const start = trimmed.indexOf("{");
+        const end = trimmed.lastIndexOf("}");
+        if (start === -1 || end === -1 || end <= start) return;
+        const candidate = trimmed.slice(start, end + 1);
+        try {
+          const parsed = JSON.parse(candidate);
+          if (parsed && typeof parsed.type === "string") {
+            handleBridgeEvent(parsed);
+            if (line === bufferRef.current) bufferRef.current = "";
+          }
+        } catch {
+          // Not valid JSON yet
+        }
+      }
+
       // Split on newlines and try to parse each line
       const lines = bufferRef.current.split("\n");
       bufferRef.current = lines.pop() ?? "";
 
       for (const line of lines) {
-        tryParseEvent(line);
+        tryParse(line);
       }
 
-      // Also try the remaining buffer (last line without trailing newline)
-      tryParseEvent(bufferRef.current);
+      // Also try the remaining buffer
+      tryParse(bufferRef.current);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [handleBridgeEvent],
   );
-
-  function tryParseEvent(raw: string) {
-    const trimmed = raw.trim();
-    if (!trimmed) return;
-    // Find JSON object boundaries — handles lines with shell noise before/after JSON
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start === -1 || end === -1 || end <= start) return;
-    const candidate = trimmed.slice(start, end + 1);
-    try {
-      const parsed = JSON.parse(candidate);
-      if (parsed && typeof parsed.type === "string") {
-        handleBridgeEvent(parsed);
-        // Clear buffer if we successfully parsed from it
-        if (raw === bufferRef.current) {
-          bufferRef.current = "";
-        }
-      }
-    } catch {
-      // Not valid JSON yet, keep accumulating
-    }
-  }
 
   /* ── Send raw JSON to bridge via WebSocket ── */
   const sendToBridge = useCallback((obj: Record<string, unknown>) => {
