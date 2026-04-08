@@ -320,14 +320,13 @@ export function useClaudeChat(
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     const cmd = `export PATH="$HOME/.local/bin:$PATH" && cd ~ && node ~/.local/share/claw-ops/chat-bridge.mjs`;
     wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd + "\r" }));
-    // Fallback: if bridge doesn't emit "ready" within 8s, set idle anyway
-    // (allows the old claude -p fallback or manual debugging)
+    // Fallback: if bridge doesn't emit "ready" within 4s, set idle anyway
     setTimeout(() => {
       if (!bridgeReadyRef.current) {
         bridgeReadyRef.current = true;
         setStatus("idle");
       }
-    }, 8000);
+    }, 4000);
   }, []);
 
   /* ── Connect to WebSocket and launch bridge ── */
@@ -351,32 +350,11 @@ export function useClaudeChat(
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Wait for shell, then launch bridge
-        const fallback = setTimeout(() => {
-          if (!shellReadyRef.current) {
-            shellReadyRef.current = true;
-            launchBridge();
-          }
-        }, 3000);
-
-        const check = setInterval(() => {
-          if (!wsRef.current || ws.readyState !== WebSocket.OPEN) {
-            clearInterval(check);
-            clearTimeout(fallback);
-            return;
-          }
-          if (shellReadyRef.current) {
-            clearInterval(check);
-            clearTimeout(fallback);
-            return;
-          }
-          if (lastOutputTimeRef.current > 0 && Date.now() - lastOutputTimeRef.current > 1000) {
-            clearInterval(check);
-            clearTimeout(fallback);
-            shellReadyRef.current = true;
-            launchBridge();
-          }
-        }, 200);
+        // Launch bridge after a short delay for shell to initialize
+        setTimeout(() => {
+          shellReadyRef.current = true;
+          launchBridge();
+        }, 500);
       };
 
       ws.onmessage = (event) => {
