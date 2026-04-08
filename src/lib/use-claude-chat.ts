@@ -117,7 +117,7 @@ export function useClaudeChat(
         return;
       }
 
-      // Tool use start (now comes with full input from consolidated bridge event)
+      // Tool use start (deduplicate by toolCallId)
       if (evt.type === "tool_use_start") {
         currentAssistantRef.current = null;
         currentThinkingRef.current = null;
@@ -125,19 +125,22 @@ export function useClaudeChat(
         setActiveTool(tool);
         setStatus("tool_running");
         const inputStr = evt.input ? JSON.stringify(evt.input) : "";
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            type: "tool_use",
-            toolName: evt.name,
-            toolCallId: evt.id,
-            toolInput: inputStr,
-            content: "",
-            timestamp: Date.now(),
-          },
-        ]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.toolCallId === evt.id && m.type === "tool_use")) return prev;
+          return [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              type: "tool_use",
+              toolName: evt.name,
+              toolCallId: evt.id,
+              toolInput: inputStr,
+              content: "",
+              timestamp: Date.now(),
+            },
+          ];
+        });
         return;
       }
 
@@ -187,11 +190,14 @@ export function useClaudeChat(
         return;
       }
 
-      // Permission request
+      // Permission request (deduplicate by permissionId)
       if (evt.type === "permission_request") {
         currentAssistantRef.current = null;
         setStatus("awaiting_permission");
-        setMessages((prev) => [
+        setMessages((prev) => {
+          // Skip if we already have this permission request
+          if (prev.some((m) => m.permissionId === evt.id)) return prev;
+          return [
           ...prev,
           {
             id: crypto.randomUUID(),
@@ -204,27 +210,31 @@ export function useClaudeChat(
             permissionResolved: false,
             timestamp: Date.now(),
           },
-        ]);
+        ];
+        });
         return;
       }
 
-      // Ask question
+      // Ask question (deduplicate by askId)
       if (evt.type === "ask_question") {
         currentAssistantRef.current = null;
         setStatus("awaiting_input");
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "system",
-            type: "ask_question",
-            content: "",
-            askId: evt.id,
-            askQuestions: evt.questions,
-            askResolved: false,
-            timestamp: Date.now(),
-          },
-        ]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.askId === evt.id)) return prev;
+          return [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: "system",
+              type: "ask_question",
+              content: "",
+              askId: evt.id,
+              askQuestions: evt.questions,
+              askResolved: false,
+              timestamp: Date.now(),
+            },
+          ];
+        });
         return;
       }
 
