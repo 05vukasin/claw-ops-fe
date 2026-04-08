@@ -23,6 +23,7 @@ let requestCounter = 0;
 let currentSessionId = null;
 let isProcessing = false;
 const messageQueue = [];
+let pendingEvents = []; // Events that might not have been received by frontend
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -39,16 +40,12 @@ function emit(obj) {
   const line = JSON.stringify(obj) + "\n";
   log(`EMIT: ${line.trim()}`);
   writeSync(1, line);
-}
-
-// Emit with a small delay to prevent terminal from batching events
-function emitDelayed(obj, ms = 50) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      emit(obj);
-      resolve();
-    }, ms);
-  });
+  // Store important events for re-emission on poll
+  if (obj.type === "permission_request" || obj.type === "ask_question" ||
+      obj.type === "tool_use_start" || obj.type === "tool_result" ||
+      obj.type === "result" || obj.type === "status") {
+    pendingEvents.push(obj);
+  }
 }
 
 function waitForResponse(id) {
@@ -263,8 +260,21 @@ rl.on("line", (line) => {
     return;
   }
 
+  // Poll — re-emit any pending events the frontend might have missed
+  if (msg.type === "poll") {
+    if (pendingEvents.length > 0) {
+      log(`POLL: re-emitting ${pendingEvents.length} pending events`);
+      for (const evt of pendingEvents) {
+        const line = JSON.stringify(evt) + "\n";
+        writeSync(1, line);
+      }
+    }
+    return;
+  }
+
   // Permission or question response
   if (msg.type === "permission_response" || msg.type === "ask_response") {
+    pendingEvents = []; // Clear pending — frontend is caught up
     const resolver = pendingRequests.get(msg.id);
     if (resolver) {
       resolver(msg);

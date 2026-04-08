@@ -487,6 +487,15 @@ export function useClaudeChat(
     };
   }, [serverId, connect]);
 
+  /* ── Poll bridge for missed events ── */
+  useEffect(() => {
+    if (status === "idle" || status === "disconnected" || status === "connecting") return;
+    const interval = setInterval(() => {
+      sendToBridge({ type: "poll" });
+    }, 500);
+    return () => clearInterval(interval);
+  }, [status, sendToBridge]);
+
   return {
     messages,
     status,
