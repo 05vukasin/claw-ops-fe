@@ -117,14 +117,14 @@ export function useClaudeChat(
         return;
       }
 
-      // Tool use start
+      // Tool use start (now comes with full input from consolidated bridge event)
       if (evt.type === "tool_use_start") {
-        currentAssistantRef.current = null; // finalize any streaming text
+        currentAssistantRef.current = null;
         currentThinkingRef.current = null;
-        toolInputAccum.current = "";
         const tool: ActiveToolInfo = { name: evt.name, callId: evt.id };
         setActiveTool(tool);
         setStatus("tool_running");
+        const inputStr = evt.input ? JSON.stringify(evt.input) : "";
         setMessages((prev) => [
           ...prev,
           {
@@ -133,7 +133,7 @@ export function useClaudeChat(
             type: "tool_use",
             toolName: evt.name,
             toolCallId: evt.id,
-            toolInput: "",
+            toolInput: inputStr,
             content: "",
             timestamp: Date.now(),
           },

@@ -38,8 +38,17 @@ function log(msg) {
 function emit(obj) {
   const line = JSON.stringify(obj) + "\n";
   log(`EMIT: ${line.trim()}`);
-  // Use low-level writeSync to bypass Node.js buffering
   writeSync(1, line);
+}
+
+// Emit with a small delay to prevent terminal from batching events
+function emitDelayed(obj, ms = 50) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      emit(obj);
+      resolve();
+    }, ms);
+  });
 }
 
 function waitForResponse(id) {
@@ -60,6 +69,8 @@ function getToolDescription(toolName, input) {
 
 async function handleUserMessage(text, resumeSessionId) {
   isProcessing = true;
+  let toolInputAccum = "";
+  let pendingToolUse = null;
 
   const queryOptions = {
     includePartialMessages: true,
@@ -67,7 +78,7 @@ async function handleUserMessage(text, resumeSessionId) {
       // Handle AskUserQuestion
       if (toolName === "AskUserQuestion") {
         const id = `req-${++requestCounter}`;
-        emit({ type: "ask_question", id, questions: input.questions || [] });
+        await emitDelayed({ type: "ask_question", id, questions: input.questions || [] });
         emit({ type: "status", status: "awaiting_input" });
         const response = await waitForResponse(id);
         emit({ type: "status", status: "thinking" });
@@ -83,7 +94,7 @@ async function handleUserMessage(text, resumeSessionId) {
       // Permission request for other tools
       const id = `req-${++requestCounter}`;
       const description = getToolDescription(toolName, input);
-      emit({ type: "permission_request", id, toolName, input, description });
+      await emitDelayed({ type: "permission_request", id, toolName, input, description });
       emit({ type: "status", status: "awaiting_permission" });
       const response = await waitForResponse(id);
       emit({ type: "status", status: "tool_running" });
@@ -130,25 +141,36 @@ async function handleUserMessage(text, resumeSessionId) {
           continue;
         }
 
-        // Tool use start
+        // Tool use start — just record, don't emit yet (wait for complete input)
         if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
-          emit({
-            type: "tool_use_start",
+          toolInputAccum = "";
+          pendingToolUse = {
             id: event.content_block.id,
             name: event.content_block.name,
-          });
+          };
           continue;
         }
 
-        // Tool input delta
+        // Tool input delta — accumulate silently
         if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta") {
-          emit({ type: "tool_input_delta", json: event.delta.partial_json });
+          toolInputAccum += event.delta.partial_json;
           continue;
         }
 
-        // Content block stop
+        // Content block stop — emit consolidated tool_use if pending
         if (event.type === "content_block_stop") {
-          emit({ type: "content_block_stop", index: event.index });
+          if (pendingToolUse) {
+            let parsedInput = {};
+            try { parsedInput = JSON.parse(toolInputAccum); } catch {}
+            emit({
+              type: "tool_use_start",
+              id: pendingToolUse.id,
+              name: pendingToolUse.name,
+              input: parsedInput,
+            });
+            pendingToolUse = null;
+            toolInputAccum = "";
+          }
           continue;
         }
 
