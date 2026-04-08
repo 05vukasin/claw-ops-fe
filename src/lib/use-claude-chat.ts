@@ -318,8 +318,16 @@ export function useClaudeChat(
   /* ── Launch the bridge script on the server ── */
   const launchBridge = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    const cmd = `cd ~ && node ~/.local/share/claw-ops/chat-bridge.mjs 2>/dev/null`;
+    const cmd = `export PATH="$HOME/.local/bin:$PATH" && cd ~ && node ~/.local/share/claw-ops/chat-bridge.mjs`;
     wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd + "\r" }));
+    // Fallback: if bridge doesn't emit "ready" within 8s, set idle anyway
+    // (allows the old claude -p fallback or manual debugging)
+    setTimeout(() => {
+      if (!bridgeReadyRef.current) {
+        bridgeReadyRef.current = true;
+        setStatus("idle");
+      }
+    }, 8000);
   }, []);
 
   /* ── Connect to WebSocket and launch bridge ── */
