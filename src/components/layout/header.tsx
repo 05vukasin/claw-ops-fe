@@ -1,14 +1,28 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Z_INDEX } from "@/lib/z-index";
 import { Navbar } from "./navbar";
+import { SettingsOverlay } from "@/components/settings/settings-overlay";
 
 export function Header() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [navOpen, setNavOpen] = useState(false);
 
   const handleOpen = useCallback(() => setNavOpen(true), []);
   const handleClose = useCallback(() => setNavOpen(false), []);
+
+  const settingsOpen = useMemo(() => searchParams.get("settings") === "open", [searchParams]);
+
+  const handleSettingsClose = useCallback(() => {
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.delete("settings");
+    const qs = sp.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }, [router, pathname, searchParams]);
 
   return (
     <>
@@ -60,6 +74,8 @@ export function Header() {
       </header>
 
       <Navbar open={navOpen} onClose={handleClose} />
+
+      {settingsOpen && <SettingsOverlay onClose={handleSettingsClose} />}
     </>
   );
 }

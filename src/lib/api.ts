@@ -1290,3 +1290,229 @@ print(json.dumps(msgs))
     return [];
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Notifications                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface NotificationProvider {
+  id: string;
+  providerType: "WEB_PUSH" | "FCM";
+  displayName: string;
+  enabled: boolean;
+  isDefault: boolean;
+  credentialId: string | null;
+  providerSettings: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface NotificationDevice {
+  id: string;
+  deviceName: string;
+  platform: string;
+  notificationsEnabled: boolean;
+  createdAt: string;
+}
+
+export interface NotificationSendResult {
+  sent: number;
+  targetUserId?: string;
+}
+
+export interface ProviderValidation {
+  valid: boolean;
+  message: string;
+}
+
+/* ── Providers ── */
+
+export async function fetchNotificationProvidersApi(
+  page: number,
+  size: number,
+): Promise<PageResponse<NotificationProvider>> {
+  const res = await apiFetch(`/api/v1/notification-providers?page=${page}&size=${size}&sort=createdAt,desc`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load providers");
+  return res.json() as Promise<PageResponse<NotificationProvider>>;
+}
+
+export async function createNotificationProviderApi(body: {
+  providerType: string;
+  displayName: string;
+  credentialId: string;
+  providerSettings: Record<string, unknown>;
+}): Promise<NotificationProvider> {
+  const res = await apiFetch("/api/v1/notification-providers", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to create provider" }));
+    throw new ApiError(res.status, err.message || "Failed to create provider");
+  }
+  return res.json() as Promise<NotificationProvider>;
+}
+
+export async function updateNotificationProviderApi(
+  id: string,
+  body: Record<string, unknown>,
+): Promise<NotificationProvider> {
+  const res = await apiFetch(`/api/v1/notification-providers/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to update provider" }));
+    throw new ApiError(res.status, err.message || "Failed to update provider");
+  }
+  return res.json() as Promise<NotificationProvider>;
+}
+
+export async function deleteNotificationProviderApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/notification-providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, "Failed to delete provider");
+}
+
+export async function validateNotificationProviderApi(id: string): Promise<ProviderValidation> {
+  const res = await apiFetch(`/api/v1/notification-providers/${encodeURIComponent(id)}/validate`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Validation request failed");
+  return res.json() as Promise<ProviderValidation>;
+}
+
+export async function setDefaultNotificationProviderApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/notification-providers/${encodeURIComponent(id)}/set-default`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to set default");
+}
+
+/* ── Devices ── */
+
+export async function fetchNotificationDevicesApi(): Promise<NotificationDevice[]> {
+  const res = await apiFetch("/api/v1/notifications/devices");
+  if (!res.ok) throw new ApiError(res.status, "Failed to load devices");
+  return res.json() as Promise<NotificationDevice[]>;
+}
+
+export async function registerNotificationDeviceApi(body: {
+  deviceName: string;
+  platform: string;
+  fcmToken?: string;
+  pushEndpoint?: string;
+  pushKeyAuth?: string;
+  pushKeyP256dh?: string;
+}): Promise<NotificationDevice> {
+  const res = await apiFetch("/api/v1/notifications/devices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to register device" }));
+    throw new ApiError(res.status, err.message || "Failed to register device");
+  }
+  return res.json() as Promise<NotificationDevice>;
+}
+
+export async function toggleDeviceNotificationsApi(id: string, enabled: boolean): Promise<void> {
+  const res = await apiFetch(`/api/v1/notifications/devices/${encodeURIComponent(id)}/toggle`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new ApiError(res.status, "Failed to toggle notifications");
+}
+
+export async function removeNotificationDeviceApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/notifications/devices/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, "Failed to remove device");
+}
+
+/* ── Send ── */
+
+export async function sendNotificationApi(
+  title: string,
+  body: string,
+): Promise<NotificationSendResult> {
+  const res = await apiFetch("/api/v1/notifications/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Send failed" }));
+    throw new ApiError(res.status, err.message || "Send failed");
+  }
+  return res.json() as Promise<NotificationSendResult>;
+}
+
+export async function sendNotificationAllApi(
+  title: string,
+  body: string,
+): Promise<NotificationSendResult> {
+  const res = await apiFetch("/api/v1/notifications/send/all", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Send failed" }));
+    throw new ApiError(res.status, err.message || "Send failed");
+  }
+  return res.json() as Promise<NotificationSendResult>;
+}
+
+export async function sendNotificationToUserApi(
+  userId: string,
+  title: string,
+  body: string,
+): Promise<NotificationSendResult> {
+  const res = await apiFetch(`/api/v1/notifications/send/user/${encodeURIComponent(userId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Send failed" }));
+    throw new ApiError(res.status, err.message || "Send failed");
+  }
+  return res.json() as Promise<NotificationSendResult>;
+}
+
+/* ── Push subscriptions ── */
+
+export async function getVapidKeyApi(): Promise<{ publicKey: string } | null> {
+  const res = await apiFetch("/api/v1/notifications/vapid-key");
+  if (!res.ok) return null;
+  return res.json() as Promise<{ publicKey: string }>;
+}
+
+export async function subscribePushApi(body: {
+  endpoint: string;
+  keyAuth: string;
+  keyP256dh: string;
+}): Promise<void> {
+  const res = await apiFetch("/api/v1/notifications/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new ApiError(res.status, "Subscribe failed");
+}
+
+export async function unsubscribePushApi(endpoint: string): Promise<void> {
+  const res = await apiFetch("/api/v1/notifications/push/unsubscribe", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint }),
+  });
+  if (!res.ok) throw new ApiError(res.status, "Unsubscribe failed");
+}
+
+export async function subscribeFcmApi(token: string, platform: string): Promise<void> {
+  const res = await apiFetch("/api/v1/notifications/fcm/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, platform }),
+  });
+  if (!res.ok) throw new ApiError(res.status, "FCM subscribe failed");
+}

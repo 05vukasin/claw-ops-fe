@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 import { Z_INDEX } from "@/lib/z-index";
 import { clearAuth, getStoredAuth, getUser } from "@/lib/auth";
@@ -28,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Domains", href: "/domains" },
   { label: "Scripts", href: "/scripts" },
   { label: "ZIP Generator", href: "/zip-generator" },
+  { label: "Notifications", href: "/notifications", adminOnly: true },
   { label: "Users", href: "/users", adminOnly: true },
   { label: "Logs", href: "/logs", adminOnly: true },
 ];
@@ -42,9 +42,6 @@ export function Navbar({ open, onClose }: NavbarProps) {
     () => true,
     () => false,
   );
-
-  const { resolvedTheme, setTheme } = useTheme();
-  const isDark = mounted ? resolvedTheme === "dark" : false;
 
   const [user, setUser] = useState<AuthUser | null>(null);
   useEffect(() => {
@@ -177,50 +174,22 @@ export function Navbar({ open, onClose }: NavbarProps) {
 
           {/* Bottom section */}
           <div className="border-t border-canvas-border px-3 py-3 space-y-1">
-            {/* Appearance toggle */}
+            {/* Settings */}
             <button
               type="button"
-              onClick={() => setTheme(isDark ? "light" : "dark")}
+              onClick={() => {
+                const sp = new URLSearchParams(window.location.search);
+                sp.set("settings", "open");
+                router.push(`${pathname}?${sp.toString()}`);
+                onClose();
+              }}
               className="flex w-full items-center rounded-md px-3 py-2 text-sm text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
             >
-              {isDark ? (
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="5" />
-                  <line x1="12" y1="1" x2="12" y2="3" />
-                  <line x1="12" y1="21" x2="12" y2="23" />
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                  <line x1="1" y1="12" x2="3" y2="12" />
-                  <line x1="21" y1="12" x2="23" y2="12" />
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                </svg>
-              ) : (
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-              )}
-              <span className="ml-2.5">
-                {isDark ? "Light mode" : "Dark mode"}
-              </span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              <span className="ml-2.5">Settings</span>
             </button>
 
             {/* Logout */}
@@ -328,6 +297,13 @@ function NavIcon({ name }: { name: string }) {
           <polyline points="21 8 21 21 3 21 3 8" />
           <rect x="1" y="3" width="22" height="5" rx="1" />
           <line x1="10" y1="12" x2="14" y2="12" />
+        </svg>
+      );
+    case "Notifications":
+      return (
+        <svg {...props}>
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
       );
     default:
