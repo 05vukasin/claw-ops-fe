@@ -269,4 +269,5 @@ rl.on("close", () => {
 /*  Signal ready                                                       */
 /* ------------------------------------------------------------------ */
 
-emit({ type: "ready" });
+// Small delay to ensure shell command echo has finished before we emit
+setTimeout(() => emit({ type: "ready" }), 100);
