@@ -13,3 +13,5 @@ export { MobileServerDashboard } from "./mobile-server-dashboard";
 export { ClaudeCodeOverlay } from "./claude-code-overlay";
 export { GitHubNode } from "./github-node";
 export { GitHubDashboardPanel } from "./github-dashboard-panel";
+export { ClaudeNode } from "./claude-node";
+export { ClaudeDashboardPanel } from "./claude-dashboard-panel";

@@ -7,6 +7,7 @@ import { AgentDashboardPanel } from "@/components/agents/agent-dashboard-panel";
 import { AgentConfigPanel } from "@/components/agents/agent-config-panel";
 import { FileEditorPanel } from "@/components/servers/file-editor-panel";
 import { GitHubDashboardPanel } from "@/components/servers/github-dashboard-panel";
+import { ClaudeDashboardPanel } from "@/components/servers/claude-dashboard-panel";
 import { useServers } from "@/lib/use-servers";
 import { Z_INDEX } from "@/lib/z-index";
 import type { Server, SftpFile } from "@/lib/api";
@@ -102,6 +103,20 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     [openGitHubKeys],
   );
 
+  // Claude panels from URL
+  const openClaudeKeys = useMemo(() => {
+    const param = searchParams.get("claude") ?? "";
+    return param.split(",").filter(Boolean);
+  }, [searchParams]);
+
+  const openClaudeEntries = useMemo(
+    () => openClaudeKeys.map((k) => ({
+      serverId: k.replace("claude::", ""),
+      key: k,
+    })),
+    [openClaudeKeys],
+  );
+
   // Focus order — shared between server, agent, and file panels
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
 
@@ -133,16 +148,18 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   // Edit modal
   const [editServer, setEditServer] = useState<Server | null>(null);
 
-  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[], githubKeys?: string[]) => {
+  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[], githubKeys?: string[], claudeKeys?: string[]) => {
     const sp = new URLSearchParams();
     if (serverIds.length > 0) sp.set("servers", serverIds.join(","));
     const agents = agentKeys ?? openAgentKeys;
     if (agents.length > 0) sp.set("agents", agents.join(","));
     const gh = githubKeys ?? openGitHubKeys;
     if (gh.length > 0) sp.set("github", gh.join(","));
+    const cc = claudeKeys ?? openClaudeKeys;
+    if (cc.length > 0) sp.set("claude", cc.join(","));
     const qs = sp.toString();
     router.push(qs ? `/?${qs}` : "/");
-  }, [router, openAgentKeys, openGitHubKeys]);
+  }, [router, openAgentKeys, openGitHubKeys, openClaudeKeys]);
 
   const handleClose = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -160,6 +177,12 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     const remaining = openGitHubKeys.filter((k) => k !== key);
     updateUrl(openIds, undefined, remaining);
   }, [openIds, openGitHubKeys, updateUrl]);
+
+  const handleClaudeClose = useCallback((key: string) => {
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+    const remaining = openClaudeKeys.filter((k) => k !== key);
+    updateUrl(openIds, undefined, undefined, remaining);
+  }, [openIds, openClaudeKeys, updateUrl]);
 
   const handleDelete = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -231,6 +254,7 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     openServers.length === 0 &&
     openAgentEntries.length === 0 &&
     openGitHubEntries.length === 0 &&
+    openClaudeEntries.length === 0 &&
     openFiles.length === 0 &&
     openConfigs.length === 0
   )
@@ -270,6 +294,17 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           serverId={entry.serverId}
           serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
           onClose={() => handleGitHubClose(entry.key)}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
+        />
+      ))}
+
+      {openClaudeEntries.map((entry) => (
+        <ClaudeDashboardPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
+          onClose={() => handleClaudeClose(entry.key)}
           zIndex={getZIndex(entry.key)}
           onFocus={() => handleFocus(entry.key)}
         />

@@ -6,9 +6,11 @@ import { Z_INDEX } from "@/lib/z-index";
 import { ServerNode } from "@/components/servers/server-node";
 import { AgentNode } from "@/components/servers/agent-node";
 import { GitHubNode } from "@/components/servers/github-node";
+import { ClaudeNode } from "@/components/servers/claude-node";
 import type { ServerWithUI } from "@/lib/use-servers";
 import type { AgentWithUI } from "@/lib/use-agents";
 import type { GitHubAccountWithUI } from "@/lib/use-github-accounts";
+import type { ClaudeAccountWithUI } from "@/lib/use-claude-accounts";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
@@ -43,12 +45,14 @@ interface CanvasStageProps {
   servers: ServerWithUI[];
   agents?: AgentWithUI[];
   githubAccounts?: GitHubAccountWithUI[];
+  claudeAccounts?: ClaudeAccountWithUI[];
   onMoveServer: (id: string, x: number, y: number) => void;
   onMoveAgent?: (serverId: string, name: string, offsetX: number, offsetY: number) => void;
   onMoveGitHub?: (serverId: string, offsetX: number, offsetY: number) => void;
+  onMoveClaude?: (serverId: string, offsetX: number, offsetY: number) => void;
 }
 
-export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub }: CanvasStageProps) {
+export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub, onMoveClaude }: CanvasStageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Multi-panel: read comma-separated servers param
@@ -122,6 +126,27 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveS
     [router, searchParams],
   );
 
+  const handleClaudeSelect = useCallback(
+    (serverId: string) => {
+      const key = `claude::${serverId}`;
+      const ccParam = searchParams.get("claude") ?? "";
+      const openCC = ccParam.split(",").filter(Boolean);
+      const updated = openCC.includes(key)
+        ? [...openCC.filter((x) => x !== key), key]
+        : [...openCC, key];
+      const sp = new URLSearchParams(searchParams);
+      sp.set("claude", updated.join(","));
+      const serversVal = sp.get("servers");
+      if (!serversVal) sp.delete("servers");
+      const agentsVal = sp.get("agents");
+      if (!agentsVal) sp.delete("agents");
+      const ghVal = sp.get("github");
+      if (!ghVal) sp.delete("github");
+      router.push(`/?${sp.toString()}`);
+    },
+    [router, searchParams],
+  );
+
   const handleFocus = useCallback(() => {}, []);
 
   // Server lookup for agent positioning
@@ -179,6 +204,18 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveS
     }
   }, []);
 
+  // Claude connector lines
+  const claudeLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
+
+  const handleClaudeSpringPos = useCallback((serverId: string, x: number, y: number) => {
+    const key = `claude::${serverId}`;
+    const line = claudeLineRefs.current.get(key);
+    if (line) {
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y2", String(y));
+    }
+  }, []);
+
   // Update connector x1/y1 when server positions change (live drag or stored)
   useEffect(() => {
     for (const a of agents) {
@@ -194,6 +231,15 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveS
       const sp = livePos[gh.serverId] ?? (() => { const s = serverMap.get(gh.serverId); return s ? { x: s.x, y: s.y } : null; })();
       if (!sp) continue;
       const line = githubLineRefs.current.get(`github::${gh.serverId}`);
+      if (line) {
+        line.setAttribute("x1", String(sp.x));
+        line.setAttribute("y1", String(sp.y));
+      }
+    }
+    for (const cc of claudeAccounts) {
+      const sp = livePos[cc.serverId] ?? (() => { const s = serverMap.get(cc.serverId); return s ? { x: s.x, y: s.y } : null; })();
+      if (!sp) continue;
+      const line = claudeLineRefs.current.get(`claude::${cc.serverId}`);
       if (line) {
         line.setAttribute("x1", String(sp.x));
         line.setAttribute("y1", String(sp.y));
@@ -236,7 +282,7 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveS
     if (e.button !== PAN_BUTTON) return;
     const target = e.target as HTMLElement;
     // If the click hit a server node, don't pan
-    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]") || target.closest("[data-github-node]")) return;
+    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]") || target.closest("[data-github-node]") || target.closest("[data-claude-node]")) return;
 
     panning.current = true;
     panStart.current = {
@@ -340,6 +386,26 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveS
               />
             );
           })}
+          {claudeAccounts.map((cc) => {
+            const sp = getServerPos(cc.serverId);
+            if (!sp) return null;
+            const key = `claude::${cc.serverId}`;
+            return (
+              <line
+                key={`line-${key}`}
+                ref={(el) => { if (el) claudeLineRefs.current.set(key, el); else claudeLineRefs.current.delete(key); }}
+                x1={sp.x}
+                y1={sp.y}
+                x2={sp.x + cc.offsetX}
+                y2={sp.y + cc.offsetY}
+                stroke="#E87B35"
+                strokeOpacity={0.3}
+                strokeWidth={2.5}
+                strokeDasharray="0 8"
+                strokeLinecap="round"
+              />
+            );
+          })}
         </svg>
 
         {/* Server nodes (render first so agents stack on top) */}
@@ -388,6 +454,24 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], onMoveS
               onMoveEnd={onMoveGitHub ?? (() => {})}
               onSpringPos={handleGitHubSpringPos}
               onSelect={handleGitHubSelect}
+              zoom={camera.zoom}
+            />
+          );
+        })}
+
+        {/* Claude Code nodes */}
+        {claudeAccounts.map((cc) => {
+          const sp = getServerPos(cc.serverId);
+          if (!sp) return null;
+          return (
+            <ClaudeNode
+              key={`claude-${cc.serverId}`}
+              account={cc}
+              serverX={sp.x}
+              serverY={sp.y}
+              onMoveEnd={onMoveClaude ?? (() => {})}
+              onSpringPos={handleClaudeSpringPos}
+              onSelect={handleClaudeSelect}
               zoom={camera.zoom}
             />
           );

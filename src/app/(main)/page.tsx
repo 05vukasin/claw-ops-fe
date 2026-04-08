@@ -6,6 +6,7 @@ import { FleetSummaryBar, MobileServerDashboard } from "@/components/servers";
 import { useServers } from "@/lib/use-servers";
 import { useAgents } from "@/lib/use-agents";
 import { useGitHubAccounts } from "@/lib/use-github-accounts";
+import { useClaudeAccounts } from "@/lib/use-claude-accounts";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { WorkspacePanel } from "./workspace-panel";
 import { NewServerButton } from "./new-server-button";
@@ -14,6 +15,7 @@ export default function ServersPage() {
   const { servers, moveServer, refresh } = useServers();
   const { agents, moveAgent } = useAgents(servers);
   const { accounts: githubAccounts, moveGitHubNode } = useGitHubAccounts(servers);
+  const { accounts: claudeAccounts, moveClaudeNode } = useClaudeAccounts(servers);
   const isMobile = useIsMobile();
 
   if (isMobile) {
@@ -27,7 +29,7 @@ export default function ServersPage() {
 
   return (
     <>
-      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} />
+      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} claudeAccounts={claudeAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} onMoveClaude={moveClaudeNode} />
       <FleetSummaryBar />
 
       {servers.length === 0 && (
