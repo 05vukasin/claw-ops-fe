@@ -115,6 +115,7 @@ async function handleUserMessage(text, resumeSessionId) {
       return { behavior: "deny", message: response.message || "User denied this action" };
     },
     permissionMode: currentPermissionMode,
+    allowDangerouslySkipPermissions: currentPermissionMode === "bypassPermissions",
   };
 
   // Build the prompt — for resume, pass session ID
