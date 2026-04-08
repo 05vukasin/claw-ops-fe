@@ -75,7 +75,7 @@ async function handleUserMessage(text, resumeSessionId) {
       // Handle AskUserQuestion
       if (toolName === "AskUserQuestion") {
         const id = `req-${++requestCounter}`;
-        await emitDelayed({ type: "ask_question", id, questions: input.questions || [] });
+        emit({ type: "ask_question", id, questions: input.questions || [] });
         emit({ type: "status", status: "awaiting_input" });
         const response = await waitForResponse(id);
         emit({ type: "status", status: "thinking" });
@@ -91,7 +91,7 @@ async function handleUserMessage(text, resumeSessionId) {
       // Permission request for other tools
       const id = `req-${++requestCounter}`;
       const description = getToolDescription(toolName, input);
-      await emitDelayed({ type: "permission_request", id, toolName, input, description });
+      emit({ type: "permission_request", id, toolName, input, description });
       emit({ type: "status", status: "awaiting_permission" });
       const response = await waitForResponse(id);
       emit({ type: "status", status: "tool_running" });
