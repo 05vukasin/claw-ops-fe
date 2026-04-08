@@ -28,7 +28,7 @@ const messageQueue = [];
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-import { appendFileSync } from "fs";
+import { appendFileSync, writeSync } from "fs";
 const LOG_FILE = "/tmp/claw-bridge.log";
 
 function log(msg) {
@@ -38,7 +38,8 @@ function log(msg) {
 function emit(obj) {
   const line = JSON.stringify(obj) + "\n";
   log(`EMIT: ${line.trim()}`);
-  process.stdout.write(line);
+  // Use low-level writeSync to bypass Node.js buffering
+  writeSync(1, line);
 }
 
 function waitForResponse(id) {
