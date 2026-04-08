@@ -4,7 +4,7 @@ import { apiFetch, buildApiUrl } from "./apiClient";
 /*  Shared types                                                       */
 /* ------------------------------------------------------------------ */
 
-export type UserRole = "ADMIN" | "DEVOPS" | "USER";
+export type UserRole = "ADMIN" | "DEVOPS" | "EMPLOYEE" | "USER";
 
 export interface AuthUser {
   id: string;
@@ -470,6 +470,40 @@ export async function changePasswordApi(
       : err.message;
     throw new ApiError(res.status, msg || "Failed to change password");
   }
+}
+
+/* ── Server Access (EMPLOYEE role) ── */
+
+export interface ServerAccess {
+  serverId: string;
+  serverName: string;
+  assignedAt: string;
+}
+
+export async function fetchServerAccessApi(userId: string): Promise<ServerAccess[]> {
+  const res = await apiFetch(`/api/v1/users/${encodeURIComponent(userId)}/server-access`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load server access");
+  return res.json() as Promise<ServerAccess[]>;
+}
+
+export async function addServerAccessApi(userId: string, serverIds: string[]): Promise<void> {
+  const res = await apiFetch(`/api/v1/users/${encodeURIComponent(userId)}/server-access`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ serverIds }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to assign server" }));
+    throw new ApiError(res.status, err.message || "Failed to assign server");
+  }
+}
+
+export async function revokeServerAccessApi(userId: string, serverId: string): Promise<void> {
+  const res = await apiFetch(
+    `/api/v1/users/${encodeURIComponent(userId)}/server-access/${encodeURIComponent(serverId)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, "Failed to revoke access");
 }
 
 /* ------------------------------------------------------------------ */

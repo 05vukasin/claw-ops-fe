@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiEye, FiEyeOff } from "react-icons/fi";
+import { FiEye, FiEyeOff, FiShield } from "react-icons/fi";
 import { Modal } from "@/components/ui/modal";
 import { MobileUsersDashboard } from "@/components/users";
 import { getUser } from "@/lib/auth";
@@ -13,14 +13,27 @@ import {
   updateUserApi,
   deleteUserApi,
   changePasswordApi,
+  fetchServerAccessApi,
+  addServerAccessApi,
+  revokeServerAccessApi,
+  fetchServersApi,
   ApiError,
   type ManagedUser,
   type UserRole,
+  type ServerAccess,
+  type Server,
   type PageResponse,
 } from "@/lib/api";
 
 const PAGE_SIZE = 15;
-const ROLES: UserRole[] = ["DEVOPS", "ADMIN"];
+const ROLES: UserRole[] = ["DEVOPS", "ADMIN", "EMPLOYEE"];
+
+const ROLE_STYLE: Record<string, string> = {
+  ADMIN: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  DEVOPS: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  EMPLOYEE: "bg-green-500/10 text-green-600 dark:text-green-400",
+  USER: "bg-canvas-surface-hover text-canvas-muted",
+};
 
 export default function UsersPage() {
   const router = useRouter();
@@ -46,6 +59,10 @@ export default function UsersPage() {
   // Password modal
   const [pwdModalOpen, setPwdModalOpen] = useState(false);
   const [pwdUserId, setPwdUserId] = useState("");
+
+  // Server Access modal (EMPLOYEE)
+  const [accessModalOpen, setAccessModalOpen] = useState(false);
+  const [accessUser, setAccessUser] = useState<ManagedUser | null>(null);
 
   const showAlert = useCallback((msg: string, type: "success" | "error") => {
     setAlert({ msg, type });
@@ -150,6 +167,13 @@ export default function UsersPage() {
           onSaved={() => { setPwdModalOpen(false); showAlert("Password changed", "success"); }}
           onError={(msg) => showAlert(msg, "error")}
         />
+        <ServerAccessModal
+          key={`access-${accessUser?.id}`}
+          open={accessModalOpen}
+          user={accessUser}
+          onClose={() => { setAccessModalOpen(false); setAccessUser(null); }}
+          onAlert={showAlert}
+        />
       </>
     );
   }
@@ -210,11 +234,7 @@ export default function UsersPage() {
                     <td className="px-4 py-3 text-canvas-muted">{u.email}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span
-                        className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
-                          u.role === "ADMIN"
-                            ? "bg-purple-500/10 text-purple-600 dark:text-purple-400"
-                            : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                        }`}
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium ${ROLE_STYLE[u.role] ?? ROLE_STYLE.USER}`}
                       >
                         {u.role}
                       </span>
@@ -237,6 +257,9 @@ export default function UsersPage() {
                       <div className="flex items-center gap-1">
                         <GhostBtn onClick={() => { setEditUser(u); setModalOpen(true); }}>Edit</GhostBtn>
                         <GhostBtn onClick={() => { setPwdUserId(u.id); setPwdModalOpen(true); }}>Password</GhostBtn>
+                        {u.role === "EMPLOYEE" && (
+                          <GhostBtn onClick={() => { setAccessUser(u); setAccessModalOpen(true); }}>Access</GhostBtn>
+                        )}
                         <GhostBtn onClick={() => handleToggle(u)}>
                           {u.enabled ? "Disable" : "Enable"}
                         </GhostBtn>
@@ -280,6 +303,15 @@ export default function UsersPage() {
         onClose={() => setPwdModalOpen(false)}
         onSaved={() => { setPwdModalOpen(false); showAlert("Password changed", "success"); }}
         onError={(msg) => showAlert(msg, "error")}
+      />
+
+      {/* Server Access Modal (EMPLOYEE) */}
+      <ServerAccessModal
+        key={`access-${accessUser?.id}`}
+        open={accessModalOpen}
+        user={accessUser}
+        onClose={() => { setAccessModalOpen(false); setAccessUser(null); }}
+        onAlert={showAlert}
       />
     </div>
   );
@@ -500,6 +532,149 @@ function PasswordModal({
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  Server Access Modal (EMPLOYEE role)                                */
+/* ================================================================== */
+
+function ServerAccessModal({
+  open,
+  user,
+  onClose,
+  onAlert,
+}: {
+  open: boolean;
+  user: ManagedUser | null;
+  onClose: () => void;
+  onAlert: (msg: string, type: "success" | "error") => void;
+}) {
+  const [access, setAccess] = useState<ServerAccess[]>([]);
+  const [allServers, setAllServers] = useState<Server[]>([]);
+  const [selectedServerId, setSelectedServerId] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const [serversRes, accessRes] = await Promise.all([
+        fetchServersApi(0, 200),
+        fetchServerAccessApi(user.id),
+      ]);
+      setAllServers(serversRes.content);
+      setAccess(accessRes);
+    } catch {
+      onAlert("Failed to load server access", "error");
+    }
+    setLoading(false);
+  }, [user, onAlert]);
+
+  useEffect(() => {
+    if (open && user) loadData();
+  }, [open, user, loadData]);
+
+  const assignedIds = new Set(access.map((a) => a.serverId));
+  const available = allServers.filter((s) => !assignedIds.has(s.id));
+
+  const handleAdd = useCallback(async () => {
+    if (!user || !selectedServerId) return;
+    try {
+      await addServerAccessApi(user.id, [selectedServerId]);
+      onAlert("Server access granted", "success");
+      setSelectedServerId("");
+      const updated = await fetchServerAccessApi(user.id);
+      setAccess(updated);
+    } catch (err) {
+      onAlert(err instanceof ApiError ? err.message : "Failed to assign", "error");
+    }
+  }, [user, selectedServerId, onAlert]);
+
+  const handleRevoke = useCallback(async (serverId: string, serverName: string) => {
+    if (!user || !window.confirm(`Remove access to "${serverName}"?`)) return;
+    try {
+      await revokeServerAccessApi(user.id, serverId);
+      onAlert("Access revoked", "success");
+      const updated = await fetchServerAccessApi(user.id);
+      setAccess(updated);
+    } catch {
+      onAlert("Failed to revoke access", "error");
+    }
+  }, [user, onAlert]);
+
+  const inputBase = "w-full rounded-md border border-canvas-border bg-transparent px-3 py-2 text-sm text-canvas-fg placeholder:text-canvas-muted/60 focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10";
+
+  return (
+    <Modal open={open} onClose={onClose}>
+      <div className="px-6 pb-1 pt-6">
+        <h3 className="text-[15px] font-semibold tracking-tight text-canvas-fg">
+          Server Access — {user?.username}
+        </h3>
+      </div>
+
+      <div className="px-6 pb-2 pt-4">
+        {loading ? (
+          <p className="py-6 text-center text-xs text-canvas-muted">Loading...</p>
+        ) : (
+          <>
+            {/* Current access */}
+            {access.length === 0 ? (
+              <p className="mb-4 text-xs text-canvas-muted">No servers assigned yet.</p>
+            ) : (
+              <div className="mb-4 overflow-x-auto rounded-md border border-canvas-border">
+                <table className="w-full text-[12px]">
+                  <thead>
+                    <tr className="border-b border-canvas-border text-left text-[10px] uppercase tracking-wider text-canvas-muted">
+                      <th className="px-3 py-2">Server</th>
+                      <th className="px-3 py-2">Assigned</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {access.map((a) => (
+                      <tr key={a.serverId} className="border-b border-canvas-border last:border-0">
+                        <td className="px-3 py-2 font-medium text-canvas-fg">{a.serverName}</td>
+                        <td className="px-3 py-2 text-canvas-muted">{formatDate(a.assignedAt)}</td>
+                        <td className="px-3 py-2">
+                          <button type="button" onClick={() => handleRevoke(a.serverId, a.serverName)}
+                            className="text-[10px] font-medium text-red-500 hover:text-red-400">Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Add server */}
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">Add Server</label>
+                <select value={selectedServerId} onChange={(e) => setSelectedServerId(e.target.value)} className={inputBase}>
+                  <option value="">
+                    {available.length ? "Select a server..." : "All servers assigned"}
+                  </option>
+                  {available.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.environment})</option>
+                  ))}
+                </select>
+              </div>
+              <button type="button" onClick={handleAdd} disabled={!selectedServerId}
+                className="rounded-md bg-canvas-fg px-4 py-2 text-xs font-medium text-canvas-bg hover:opacity-90 disabled:opacity-40">
+                Add
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center justify-end border-t border-canvas-border px-6 py-4">
+        <button type="button" onClick={onClose} className="rounded-md px-4 py-2 text-sm text-canvas-muted transition-colors hover:text-canvas-fg">
+          Close
+        </button>
+      </div>
     </Modal>
   );
 }
