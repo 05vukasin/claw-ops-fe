@@ -10,9 +10,10 @@ interface MobileFileSheetProps {
   open: boolean;
   onClose: () => void;
   onCopyPath?: (path: string) => void;
+  onFileOpen?: (file: import("@/lib/api").SftpFile) => void;
 }
 
-export function MobileFileSheet({ serverId, open, onClose, onCopyPath }: MobileFileSheetProps) {
+export function MobileFileSheet({ serverId, open, onClose, onCopyPath, onFileOpen }: MobileFileSheetProps) {
   // Lock body scroll
   useEffect(() => {
     if (!open) return;
@@ -59,6 +60,7 @@ export function MobileFileSheet({ serverId, open, onClose, onCopyPath }: MobileF
           <FileBrowser
             serverId={serverId}
             onFileClick={onCopyPath}
+            onFileOpen={onFileOpen}
             height={9999}
           />
         </div>

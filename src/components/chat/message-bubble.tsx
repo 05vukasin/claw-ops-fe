@@ -242,16 +242,15 @@ function ToolUseIndicator({ message }: { message: ChatMessage }) {
   const desc = extractToolDescription(message.toolName, message.toolInput);
 
   return (
-    <div className="px-4 py-1">
-      <div className="flex items-center gap-2 rounded-md border-l-2 border-purple-500/50 bg-canvas-surface-hover px-3 py-2">
-        <Icon size={13} className="shrink-0 text-purple-400" />
-        <span className="text-[12px] font-medium text-purple-300">{label}</span>
+    <div className="px-4 py-0.5">
+      <div className="flex items-center gap-1.5 px-1 text-[11px] text-canvas-muted">
+        <Icon size={11} className="shrink-0 text-purple-400/60" />
+        <span className="text-purple-400/70">{label}</span>
         {desc && (
-          <span className="line-clamp-1 min-w-0 flex-1 font-mono text-[11px] text-gray-500">
+          <span className="line-clamp-1 min-w-0 flex-1 font-mono text-[10px] opacity-50">
             {desc}
           </span>
         )}
-        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-purple-400" />
       </div>
     </div>
   );
@@ -264,37 +263,39 @@ function ToolUseIndicator({ message }: { message: ChatMessage }) {
 function ToolResultBlock({ message }: { message: ChatMessage }) {
   const [collapsed, setCollapsed] = useState(true);
   const isError = message.isError ?? false;
-  const accentColor = isError ? "border-red-500/50" : "border-green-500/50";
-  const StatusIcon = isError ? FiX : FiCheck;
-  const statusColor = isError ? "text-red-400" : "text-green-400";
-  const statusLabel = isError ? "Error" : "Completed";
 
-  // Don't show empty successful results
+  // Hide empty successful results entirely
   if (!isError && !message.content.trim()) return null;
 
-  return (
-    <div className="px-4 py-1">
-      <div className={`rounded-md border-l-2 ${accentColor} bg-canvas-surface-hover`}>
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          className="flex w-full items-center gap-2 px-3 py-2 text-left"
-        >
-          <StatusIcon size={12} className={`shrink-0 ${statusColor}`} />
-          <span className={`text-[11px] font-medium ${statusColor}`}>{statusLabel}</span>
-          <span className="flex-1" />
-          {collapsed ? (
-            <FiChevronRight size={12} className="shrink-0 text-gray-600" />
-          ) : (
-            <FiChevronDown size={12} className="shrink-0 text-gray-600" />
-          )}
-        </button>
-        {!collapsed && message.content && (
-          <pre className="max-h-[200px] overflow-y-auto border-t border-canvas-border px-3 py-2 font-mono text-[11px] leading-relaxed text-gray-400">
-            {message.content.slice(0, 2000)}
-          </pre>
-        )}
+  // Errors stay visible
+  if (isError) {
+    return (
+      <div className="px-4 py-0.5">
+        <div className="flex items-center gap-1.5 rounded-md border-l-2 border-red-500/50 bg-red-500/5 px-2 py-1.5">
+          <FiX size={10} className="shrink-0 text-red-400" />
+          <span className="line-clamp-2 text-[11px] text-red-400">{message.content.slice(0, 200)}</span>
+        </div>
       </div>
+    );
+  }
+
+  // Success results — minimal expandable
+  const lineCount = message.content.split("\n").length;
+  return (
+    <div className="px-4 py-0">
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="flex items-center gap-1 px-1 py-0.5 text-[10px] text-canvas-muted/50 hover:text-canvas-muted"
+      >
+        {collapsed ? <FiChevronRight size={9} /> : <FiChevronDown size={9} />}
+        <span>output ({lineCount} {lineCount === 1 ? "line" : "lines"})</span>
+      </button>
+      {!collapsed && (
+        <pre className="ml-2 max-h-[200px] overflow-y-auto rounded bg-canvas-bg/50 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-canvas-muted">
+          {message.content.slice(0, 2000)}
+        </pre>
+      )}
     </div>
   );
 }
@@ -339,7 +340,6 @@ function ThinkingBlock({ message }: { message: ChatMessage }) {
 
 function PermissionRequestBlock({
   message,
-  onRespond,
 }: {
   message: ChatMessage;
   onRespond?: (id: string, allow: boolean, allowSession?: boolean) => void;
@@ -347,77 +347,24 @@ function PermissionRequestBlock({
   const resolved = message.permissionResolved;
   const allowed = message.permissionAllowed;
   const toolName = message.toolName ?? "Tool";
-  const { icon: Icon, label } = getToolDisplay(toolName);
-  const desc = message.content || getPermissionDescription(toolName, message.permissionInput);
 
+  // Unresolved: don't render inline — the modal in ChatView handles it
+  if (!resolved) return null;
+
+  // Resolved: show compact badge
   return (
-    <div className="px-4 py-1.5">
-      <div className="rounded-lg border border-orange-500/30 bg-canvas-surface-hover px-3.5 py-3">
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-2">
-          <Icon size={14} className="shrink-0 text-orange-400" />
-          <span className="text-[12px] font-medium text-orange-300">
-            Permission required
-          </span>
-        </div>
-
-        {/* Tool info */}
-        <p className="text-[13px] text-canvas-fg mb-1">
-          <span className="font-medium">{label}</span>
-        </p>
-        {desc && (
-          <p className="font-mono text-[11px] text-gray-400 mb-3 line-clamp-3 break-all">
-            {desc}
-          </p>
-        )}
-
-        {/* Buttons or resolved state */}
-        {resolved ? (
-          <div className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[12px] font-medium ${
-            allowed ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
-          }`}>
-            {allowed ? <FiCheck size={12} /> : <FiX size={12} />}
-            {allowed ? "Allowed" : "Denied"}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onRespond?.(message.permissionId!, true)}
-                className="flex-1 rounded-lg bg-green-600 px-3 py-2 text-[13px] font-medium text-white active:bg-green-700"
-              >
-                Allow
-              </button>
-              <button
-                type="button"
-                onClick={() => onRespond?.(message.permissionId!, false)}
-                className="flex-1 rounded-lg bg-canvas-surface-hover px-3 py-2 text-[13px] font-medium text-gray-300 active:bg-canvas-border"
-              >
-                Deny
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => onRespond?.(message.permissionId!, true, true)}
-              className="w-full rounded-lg border border-green-600/30 bg-green-600/10 px-3 py-2 text-[12px] font-medium text-green-400 active:bg-green-600/20"
-            >
-              Allow all {toolName} this session
-            </button>
-          </div>
-        )}
+    <div className="px-4 py-0.5">
+      <div className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+        allowed ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+      }`}>
+        {allowed ? <FiCheck size={10} /> : <FiX size={10} />}
+        {allowed ? "Allowed" : "Denied"}: {toolName}
       </div>
     </div>
   );
 }
 
-function getPermissionDescription(toolName: string, input?: Record<string, unknown>): string {
-  if (!input) return "";
-  if (toolName === "Bash" && input.command) return String(input.command).slice(0, 200);
-  if (["Read", "Write", "Edit"].includes(toolName) && input.file_path) return String(input.file_path);
-  if (toolName === "Grep" && input.pattern) return `pattern: ${input.pattern}`;
-  return JSON.stringify(input).slice(0, 200);
-}
+/* getPermissionDescription removed — permission modal is now in chat-view.tsx */
 
 /* ------------------------------------------------------------------ */
 /*  Ask question (tappable option buttons)                             */

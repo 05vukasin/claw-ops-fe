@@ -6,6 +6,21 @@ import type { Server } from "@/lib/api";
 import type { ChatSession } from "@/lib/types";
 import { ChatLayout } from "@/components/chat";
 
+const STORAGE_KEY = "openclaw-chat-last:v1";
+
+function loadLastChat(): { serverId?: string; sessionId?: string } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveLastChat(serverId: string, sessionId: string | null) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ serverId, sessionId }));
+  } catch {}
+}
+
 export default function ChatPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
@@ -15,13 +30,15 @@ export default function ChatPage() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
   /* ── Load sessions for a server ── */
-  const loadSessions = useCallback(async (serverId: string) => {
+  const loadSessions = useCallback(async (serverId: string, preferredSessionId?: string) => {
     setSessionsLoading(true);
     try {
       const list = await fetchChatSessionsApi(serverId);
       setSessions(list);
-      // Auto-open the most recent chat
-      if (list.length > 0) {
+      // Use preferred session if it exists in the list, otherwise most recent
+      if (preferredSessionId && list.some((s) => s.sessionId === preferredSessionId)) {
+        setSelectedSessionId(preferredSessionId);
+      } else if (list.length > 0) {
         setSelectedSessionId(list[0].sessionId);
       }
     } catch {
@@ -30,7 +47,7 @@ export default function ChatPage() {
     setSessionsLoading(false);
   }, []);
 
-  /* ── Initial server fetch ── */
+  /* ── Initial server fetch + restore last chat ── */
   useEffect(() => {
     fetchServersApi(0, 50)
       .then((page) => {
@@ -38,11 +55,14 @@ export default function ChatPage() {
         const serverList = online.length > 0 ? online : page.content;
         setServers(serverList);
 
-        // Auto-select first online server
         if (serverList.length > 0) {
-          const first = serverList[0];
-          setSelectedServerId(first.id);
-          loadSessions(first.id);
+          const last = loadLastChat();
+          // Restore last server if it's in the list
+          const restoredServer = last.serverId && serverList.some((s) => s.id === last.serverId)
+            ? last.serverId
+            : serverList[0].id;
+          setSelectedServerId(restoredServer);
+          loadSessions(restoredServer, last.sessionId);
         }
 
         setLoading(false);
@@ -51,6 +71,13 @@ export default function ChatPage() {
         setLoading(false);
       });
   }, [loadSessions]);
+
+  /* ── Persist selection to localStorage ── */
+  useEffect(() => {
+    if (selectedServerId) {
+      saveLastChat(selectedServerId, selectedSessionId);
+    }
+  }, [selectedServerId, selectedSessionId]);
 
   /* ── Handle server change ── */
   const handleServerChange = useCallback(
@@ -73,7 +100,6 @@ export default function ChatPage() {
     if (selectedServerId) loadSessions(selectedServerId);
   }, [selectedServerId, loadSessions]);
 
-  /* ── Loading state ── */
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -82,13 +108,10 @@ export default function ChatPage() {
     );
   }
 
-  /* ── No servers ── */
   if (servers.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center px-6">
-        <p className="text-center text-[13px] text-canvas-muted">
-          No servers assigned to your account.
-        </p>
+        <p className="text-center text-[13px] text-canvas-muted">No servers assigned to your account.</p>
       </div>
     );
   }

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { FiArrowLeft, FiShield, FiChevronDown } from "react-icons/fi";
+import { FiArrowLeft, FiShield, FiChevronDown, FiTerminal, FiFile, FiEdit } from "react-icons/fi";
 import { useClaudeChat } from "@/lib/use-claude-chat";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { fetchSessionMessagesApi } from "@/lib/api";
@@ -29,6 +29,24 @@ const EFFORT_OPTIONS = [
   { value: "high", label: "High" },
   { value: "max", label: "Max" },
 ];
+
+/* ── Permission modal helpers ── */
+const TOOL_ICONS: Record<string, typeof FiTerminal> = {
+  Bash: FiTerminal, Read: FiFile, Write: FiEdit, Edit: FiEdit, Glob: FiFile, Grep: FiFile,
+};
+const TOOL_LABELS: Record<string, string> = {
+  Bash: "Run command", Read: "Read file", Write: "Write file", Edit: "Edit file",
+  Glob: "Search files", Grep: "Search content",
+};
+function getToolDisplayForPermission(name: string) {
+  return { icon: TOOL_ICONS[name] ?? FiTerminal, label: TOOL_LABELS[name] ?? `Use ${name}` };
+}
+function getPermDescForModal(toolName: string, input?: Record<string, unknown>): string {
+  if (!input) return "";
+  if (toolName === "Bash" && input.command) return String(input.command).slice(0, 200);
+  if (["Read", "Write", "Edit"].includes(toolName) && input.file_path) return String(input.file_path);
+  return JSON.stringify(input).slice(0, 200);
+}
 
 interface ChatViewProps {
   serverId: string;
@@ -186,32 +204,82 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
       </div>
 
       {/* ── Messages ── */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden py-3"
-      >
-        {loadingHistory && (
-          <div className="flex items-center justify-center py-8">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-canvas-border border-t-canvas-muted" />
-            <span className="ml-2 text-[12px] text-canvas-muted">Loading conversation...</span>
-          </div>
-        )}
-        {!loadingHistory && messages.length === 0 && status === "idle" && (
-          <div className="flex h-full items-center justify-center px-8">
-            <p className="text-center text-[13px] text-canvas-muted">
-              Send a message to start a conversation with Claude.
-            </p>
-          </div>
-        )}
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            onPermissionRespond={respondPermission}
-            onQuestionRespond={respondQuestion}
-          />
-        ))}
+      <div className="relative flex-1">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="absolute inset-0 overflow-y-auto overflow-x-hidden py-3"
+        >
+          {loadingHistory && (
+            <div className="flex items-center justify-center py-8">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-canvas-border border-t-canvas-muted" />
+              <span className="ml-2 text-[12px] text-canvas-muted">Loading conversation...</span>
+            </div>
+          )}
+          {!loadingHistory && messages.length === 0 && status === "idle" && (
+            <div className="flex h-full items-center justify-center px-8">
+              <p className="text-center text-[13px] text-canvas-muted">
+                Send a message to start a conversation with Claude.
+              </p>
+            </div>
+          )}
+          {messages.map((msg) => (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              onPermissionRespond={respondPermission}
+              onQuestionRespond={respondQuestion}
+            />
+          ))}
+        </div>
+
+        {/* ── Permission modal overlay ── */}
+        {(() => {
+          const pending = messages.find((m) => m.type === "permission_request" && !m.permissionResolved);
+          if (!pending) return null;
+          const toolName = pending.toolName ?? "Tool";
+          const { icon: PermIcon, label: permLabel } = getToolDisplayForPermission(toolName);
+          const permDesc = pending.content || getPermDescForModal(toolName, pending.permissionInput);
+          return (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
+              <div className="mx-4 w-full max-w-sm rounded-xl border border-orange-500/30 bg-canvas-bg p-4 shadow-2xl">
+                <div className="mb-3 flex items-center gap-2">
+                  <PermIcon size={16} className="shrink-0 text-orange-400" />
+                  <span className="text-[13px] font-semibold text-canvas-fg">Permission required</span>
+                </div>
+                <p className="mb-1 text-[13px] text-canvas-fg">{permLabel}</p>
+                {permDesc && (
+                  <p className="mb-4 break-all font-mono text-[11px] text-canvas-muted">{permDesc}</p>
+                )}
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => respondPermission(pending.permissionId!, true)}
+                      className="flex-1 rounded-lg bg-green-600 px-3 py-2.5 text-[13px] font-medium text-white active:bg-green-700"
+                    >
+                      Allow
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => respondPermission(pending.permissionId!, false)}
+                      className="flex-1 rounded-lg border border-canvas-border bg-canvas-surface-hover px-3 py-2.5 text-[13px] font-medium text-canvas-fg active:bg-canvas-border"
+                    >
+                      Deny
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => respondPermission(pending.permissionId!, true, true)}
+                    className="w-full rounded-lg border border-green-600/30 bg-green-600/10 px-3 py-2 text-[12px] font-medium text-green-400 active:bg-green-600/20"
+                  >
+                    Allow all {toolName} this session
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Input ── */}
