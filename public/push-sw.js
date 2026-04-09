@@ -32,8 +32,8 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
         self.registration.showNotification(title, {
             body,
-            icon: '/logo.png',
-            badge: '/logo.png',
+            icon: '/logo/logo.png',
+            badge: '/logo/logo.png',
             tag: 'clawops-notification',
             renotify: true,
         })
