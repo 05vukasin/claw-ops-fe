@@ -220,6 +220,15 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
               if (fcmToken) {
                 await subscribeFcmApi(fcmToken, getPlatformName());
               }
+              // Handle foreground notifications (when app tab is active)
+              const { onMessage } = await import("firebase/messaging");
+              onMessage(messaging, (payload) => {
+                const t = payload.notification?.title || payload.data?.title || "ClawOps";
+                const b = payload.notification?.body || payload.data?.body || "";
+                if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+                  new Notification(t, { body: b, icon: "/logo.png" });
+                }
+              });
             }
           } catch (err) {
             console.error("[notifications] FCM setup failed:", err);

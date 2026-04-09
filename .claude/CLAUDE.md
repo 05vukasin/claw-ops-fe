@@ -218,6 +218,41 @@ CANVAS=0 → OVERLAY=10 → FLOATING=20 → HEADER=30 → DROPDOWN=40 → MODAL=
 
 `@/*` maps to `./src/*` (configured in `tsconfig.json`).
 
+### GitHub Node System
+
+Canvas node for GitHub CLI integration per server:
+- **`src/lib/use-github-accounts.ts`** — Detects `gh auth status` on each ONLINE server via SSH. Singleton store with `useSyncExternalStore`. Cached in `openclaw-github-ui:v1`.
+- **`src/components/servers/github-node.tsx`** — 44px black circle with white `<FiGithub>` icon. Spring physics, drag, click-to-open. Status dot: green=authenticated, gray=not.
+- **`src/components/servers/github-dashboard-panel.tsx`** — Draggable panel with account info, token management (update/test/logout), git config editing, quick actions.
+- URL param: `?github=github::serverId`
+
+### Claude Code Node System
+
+Canvas node for Claude Code CLI per server:
+- **`src/lib/use-claude-accounts.ts`** — Detects `claude --version` and `claude auth status` on ONLINE servers. Cached in `openclaw-claude-ui:v1`.
+- **`src/components/servers/claude-node.tsx`** — 44px orange circle (`#C15F3C`) with white Claude logo. Same spring physics pattern.
+- **`src/components/servers/claude-dashboard-panel.tsx`** — Version, auth status, disk usage, projects list. Login opens interactive `ClaudeCodeOverlay`. Update via npm.
+- URL param: `?claude=claude::serverId`
+
+### Notification System
+
+Firebase Cloud Messaging + VAPID Web Push:
+- **`src/components/settings/settings-overlay.tsx`** — Notification setup flow: tries VAPID first, falls back to FCM. Registers service worker, gets FCM token, subscribes with backend, registers device.
+- **`public/push-sw.js`** — Universal push service worker handling FCM notification, FCM data, and VAPID payload formats. Shows system notifications with ClawOps branding.
+- **`public/firebase-messaging-sw.js`** — Delegates to `push-sw.js` for backward compatibility.
+- **`src/app/(main)/notifications/page.tsx`** — Admin page for managing providers, devices, and sending test notifications.
+- Foreground messages handled via `onMessage()` from Firebase messaging SDK.
+
+### Deploy Popup (Server-Side Execution)
+
+`src/components/servers/deploy-popup.tsx` — Runs `/root/deploy/deploy.sh` via `executeCommandApi` (HTTP POST, not WebSocket). The command runs server-side to completion regardless of client connection state. Popup shows spinner while running, then full log output on success/failure with retry button.
+
+### Mobile Terminal
+
+- **`src/components/servers/mobile-terminal-view.tsx`** — Fullscreen terminal for mobile with `useVisualViewport` for keyboard handling, quick-action toolbar (Tab, arrows, Ctrl keys).
+- **`src/components/servers/mobile-persistent-terminal.tsx`** — Same as above but with persistent sessions that survive browser close.
+- Font: 10px, lineHeight 1.25, letterSpacing 0.2 (optimized for ~50-55 columns on 375px screens).
+
 ## Key Conventions
 
 - Always use `logo.png` as the primary logo, not `logo-light.png`
@@ -230,4 +265,6 @@ CANVAS=0 → OVERLAY=10 → FLOATING=20 → HEADER=30 → DROPDOWN=40 → MODAL=
 - Server statuses: `ONLINE`, `OFFLINE`, `UNKNOWN`, `ERROR`
 - Health statuses: `HEALTHY`, `WARNING`, `CRITICAL`, `UNREACHABLE`, `UNKNOWN`, `MAINTENANCE`
 - Debounced localStorage saves (300ms) for camera position to avoid excessive writes during pan/zoom
-- Spring physics constants for agent nodes: STIFFNESS=220, DAMPING=18, SETTLE_V=0.05, SETTLE_D=0.15 — updated via rAF, not React state, for performance
+- Spring physics constants for agent/github/claude nodes: STIFFNESS=220, DAMPING=18, SETTLE_V=0.05, SETTLE_D=0.15 — updated via rAF, not React state, for performance
+- Deploy popup uses `executeCommandApi` (server-side execution), NOT WebSocket terminal — ensures deploy completes even if connection drops
+- Canvas nodes (GitHub, Claude) positioned relative to parent server with spring animation; default offsets avoid overlapping with agent ring (140px radius)
