@@ -4,7 +4,7 @@
  * so push subscriptions stay alive across page navigations.
  */
 
-const PUSH_SW_NAMES = ["push-sw.js", "firebase-messaging-sw.js"];
+const PUSH_SW_NAMES = ["push-sw.js", "firebase-messaging-sw.js", "firebase-mesaging-sw.js"];
 
 export function unregisterServiceWorker() {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
