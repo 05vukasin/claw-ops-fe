@@ -293,6 +293,8 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("Download failed:", err instanceof ApiError ? err.message : err);
+      setBusyMessage(`Download failed: ${err instanceof ApiError ? err.message : "Unknown error"}`);
+      await new Promise((r) => setTimeout(r, 3000));
     }
     setBusyMessage(null);
   }, [ctxMenu, serverId]);
