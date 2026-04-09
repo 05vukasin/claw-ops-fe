@@ -55,7 +55,7 @@ export function ServerSelector({ servers, selectedId, onChange }: ServerSelector
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[220px] rounded-lg border border-canvas-border bg-canvas-bg py-1 shadow-lg">
+        <div className="absolute left-0 top-full z-50 mt-1 min-w-[220px] rounded-lg border border-canvas-border bg-canvas-bg py-1 shadow-lg">
           {servers.map((server) => (
             <button
               key={server.id}

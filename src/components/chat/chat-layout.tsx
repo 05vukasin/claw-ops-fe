@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { FiMenu, FiX, FiFolder, FiCheck } from "react-icons/fi";
+import { FiMenu, FiX, FiFolder, FiCheck, FiChevronsLeft, FiMessageSquare } from "react-icons/fi";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { Z_INDEX } from "@/lib/z-index";
@@ -39,6 +39,7 @@ export function ChatLayout({
   const isMobile = useIsMobile();
   const { viewportHeight } = useVisualViewport();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
@@ -170,25 +171,44 @@ export function ChatLayout({
 
   return (
     <div className="flex h-full">
-      {/* ── Left sidebar: Sessions ── */}
-      <aside className="flex w-[260px] shrink-0 flex-col border-r border-canvas-border bg-canvas-bg">
-        {/* Sidebar header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-canvas-border px-3">
-          <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} />
-        </div>
+      {/* ── Left sidebar: Sessions (collapsible) ── */}
+      {sidebarCollapsed ? (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(false)}
+          className="flex h-full w-10 shrink-0 flex-col items-center justify-center border-r border-canvas-border text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
+          title="Show chats"
+        >
+          <FiMessageSquare size={16} />
+        </button>
+      ) : (
+        <aside className="flex w-[260px] shrink-0 flex-col border-r border-canvas-border bg-canvas-bg">
+          {/* Sidebar header */}
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-canvas-border px-3">
+            <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} />
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+              title="Collapse sidebar"
+            >
+              <FiChevronsLeft size={14} />
+            </button>
+          </div>
 
-        {/* Session list */}
-        {selectedServerId && (
-          <SessionList
-            selectedSessionId={selectedSessionId}
-            sessions={sessions}
-            loading={sessionsLoading}
-            onSelectSession={onSelectSession}
-            onNewChat={onNewChat}
-            onRefresh={onRefreshSessions}
-          />
-        )}
-      </aside>
+          {/* Session list */}
+          {selectedServerId && (
+            <SessionList
+              selectedSessionId={selectedSessionId}
+              sessions={sessions}
+              loading={sessionsLoading}
+              onSelectSession={onSelectSession}
+              onNewChat={onNewChat}
+              onRefresh={onRefreshSessions}
+            />
+          )}
+        </aside>
+      )}
 
       {/* ── Center: Chat ── */}
       <main className="flex min-w-0 flex-1 flex-col">
@@ -241,11 +261,12 @@ export function ChatLayout({
             </div>
           )}
 
-          {/* File browser */}
+          {/* File browser — full height */}
           <div className="flex-1 overflow-hidden">
             <FileBrowser
               serverId={selectedServerId}
               onFileClick={handleCopyPath}
+              height={9999}
             />
           </div>
         </aside>

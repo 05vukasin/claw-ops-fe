@@ -59,6 +59,7 @@ export function MobileFileSheet({ serverId, open, onClose, onCopyPath }: MobileF
           <FileBrowser
             serverId={serverId}
             onFileClick={onCopyPath}
+            height={9999}
           />
         </div>
       </div>
