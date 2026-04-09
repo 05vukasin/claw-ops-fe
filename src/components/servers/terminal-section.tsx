@@ -220,9 +220,10 @@ export const TerminalSection = forwardRef<TerminalSectionHandle, TerminalSection
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (wsRef.current === ws) {
-          xtermRef.current?.writeln("\r\n\x1b[90m--- Connection closed ---\x1b[0m");
+          const reason = event.reason || "Connection closed";
+          xtermRef.current?.writeln(`\r\n\x1b[90m--- ${reason} ---\x1b[0m`);
           setStatus("closed");
           wsRef.current = null;
         }

@@ -114,22 +114,22 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
 
   useEffect(() => { loadDevice(); }, [loadDevice]);
 
-  /* ── Self-heal: re-register push/FCM SW if device exists but SW was lost ── */
+  /* ── Self-heal: re-register push SW if device exists but SW was lost ── */
   useEffect(() => {
     if (!device?.notificationsEnabled || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
 
     navigator.serviceWorker.getRegistrations().then(async (registrations) => {
       const hasPushSw = registrations.some((r) => {
         const sw = r.active || r.installing || r.waiting;
-        return sw && (sw.scriptURL.endsWith("push-sw.js") || sw.scriptURL.endsWith("firebase-messaging-sw.js"));
+        return sw?.scriptURL.endsWith("push-sw.js");
       });
       if (hasPushSw) return;
 
-      // Try VAPID Web Push first
       try {
+        const swReg = await navigator.serviceWorker.register("/push-sw.js");
+        // Try VAPID subscription
         const vapid = await getVapidKeyApi();
         if (vapid && "PushManager" in window) {
-          const swReg = await navigator.serviceWorker.register("/push-sw.js");
           const sub = await swReg.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(vapid.publicKey),
@@ -140,22 +140,18 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
           }
           return;
         }
-      } catch {
-        // VAPID not available, try FCM
-      }
-
-      // Fallback: register Firebase SW and post config
-      try {
+        // Fallback: get new FCM token with this SW
         const fcmConfig = await getFcmConfigApi();
         if (fcmConfig) {
-          const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-          await navigator.serviceWorker.ready;
-          if (swReg.active) {
-            swReg.active.postMessage({ type: "FIREBASE_CONFIG", config: fcmConfig });
-          }
+          const { initializeApp } = await import("firebase/app");
+          const { getMessaging, getToken } = await import("firebase/messaging");
+          const app = initializeApp(fcmConfig);
+          const messaging = getMessaging(app);
+          const token = await getToken(messaging, { serviceWorkerRegistration: swReg });
+          if (token) await subscribeFcmApi(token, getPlatformName());
         }
       } catch (err) {
-        console.warn("[notifications] Could not re-register notification SW:", err);
+        console.warn("[notifications] Could not re-register push SW:", err);
       }
     });
   }, [device]);
@@ -208,18 +204,12 @@ export function SettingsOverlay({ onClose }: SettingsOverlayProps) {
           console.warn("[notifications] VAPID push not available, trying FCM:", err);
         }
 
-        // If VAPID didn't work, try FCM
-        if (!pushEndpoint) {
+        // If VAPID didn't work, try FCM (uses the same push-sw.js — no scope conflict)
+        if (!pushEndpoint && "serviceWorker" in navigator) {
           try {
             const fcmConfig = await getFcmConfigApi();
-            if (fcmConfig && "serviceWorker" in navigator) {
-              // Register the Firebase SW and post config to it
-              const swReg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-              await navigator.serviceWorker.ready;
-              if (swReg.active) {
-                swReg.active.postMessage({ type: "FIREBASE_CONFIG", config: fcmConfig });
-              }
-              // Dynamically load Firebase and get FCM token
+            if (fcmConfig) {
+              const swReg = await navigator.serviceWorker.register("/push-sw.js");
               const { initializeApp } = await import("firebase/app");
               const { getMessaging, getToken } = await import("firebase/messaging");
               const app = initializeApp(fcmConfig);
