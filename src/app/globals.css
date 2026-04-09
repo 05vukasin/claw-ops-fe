@@ -252,6 +252,43 @@ html:not(.dark) {
 .animate-sidebar-in {
   animation: sidebarSlideIn 200ms cubic-bezier(0.32, 0.72, 0, 1) both;
 }
+
+/* ── File panel fill — forces FileBrowser to fill parent height ── */
+
+.file-panel-fill {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-panel-fill > div {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.file-panel-fill > div > div:last-child {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ── Chat message fade-in ── */
+
+@keyframes messageFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-msg-in {
+  animation: messageFadeIn 200ms ease-out both;
+}
+
+/* ── Sidebar/panel smooth transitions ── */
+
+.transition-sidebar {
+  transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 150ms ease;
+}
 .thinking-dots .thinking-dot:nth-child(1) { animation-delay: 0s; }
 .thinking-dots .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
 .thinking-dots .thinking-dot:nth-child(3) { animation-delay: 0.4s; }

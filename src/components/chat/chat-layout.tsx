@@ -77,12 +77,13 @@ export function ChatLayout({
     }).catch(() => {});
   }, []);
 
-  /* ── Clamp file browser context menu within viewport ── */
+  /* ── Clamp portaled context menus within viewport ── */
   useEffect(() => {
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
-          if (node instanceof HTMLElement && node.style.position === "fixed" && node.classList.contains("min-w-35")) {
+          // Detect fixed-positioned portaled menus by checking inline styles
+          if (node instanceof HTMLElement && node.style.left && node.style.top && getComputedStyle(node).position === "fixed") {
             requestAnimationFrame(() => {
               const rect = node.getBoundingClientRect();
               const maxLeft = window.innerWidth - rect.width - 8;
@@ -143,9 +144,9 @@ export function ChatLayout({
   if (isMobile) {
     return (
       <div className="flex flex-col" style={{ height: viewportHeight, overflow: "hidden" }}>
-        {/* Mobile header */}
+        {/* Mobile header — sticky so it doesn't scroll behind the app Header */}
         <div
-          className="surface-overlay flex shrink-0 items-center gap-2 px-3 py-2.5"
+          className="surface-overlay sticky top-0 z-20 flex shrink-0 items-center gap-2 px-3 py-2.5"
           style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 10px)" }}
         >
           <button
@@ -345,13 +346,12 @@ export function ChatLayout({
             )}
 
             {/* File browser — full height with context menu + file open */}
-            <div className="min-h-0 flex-1 overflow-hidden">
+            <div className="file-panel-fill min-h-0 flex-1">
               <FileBrowser
                 ref={fileBrowserRef}
                 serverId={selectedServerId}
                 onFileClick={handleCopyPath}
                 onFileOpen={handleFileOpen}
-                height={9999}
               />
             </div>
           </aside>

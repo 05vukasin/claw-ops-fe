@@ -259,18 +259,19 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
               .sort((a, b) => a.timestamp - b.timestamp);
             return all.map((msg) =>
               msg._isInfo ? (
-                <div key={msg.id} className="flex justify-center px-4 py-1.5">
+                <div key={msg.id} className="animate-msg-in flex justify-center px-4 py-1.5">
                   <span className="rounded-full bg-canvas-surface-hover px-3 py-1 text-[11px] text-canvas-muted">
                     {msg.content}
                   </span>
                 </div>
               ) : (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  onPermissionRespond={respondPermission}
-                  onQuestionRespond={respondQuestion}
-                />
+                <div key={msg.id} className="animate-msg-in">
+                  <MessageBubble
+                    message={msg}
+                    onPermissionRespond={respondPermission}
+                    onQuestionRespond={respondQuestion}
+                  />
+                </div>
               ),
             );
           })()}

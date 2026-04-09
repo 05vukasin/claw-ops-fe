@@ -56,12 +56,11 @@ export function MobileFileSheet({ serverId, open, onClose, onCopyPath, onFileOpe
         </div>
 
         {/* File browser */}
-        <div className="flex-1 overflow-hidden">
+        <div className="file-panel-fill min-h-0 flex-1">
           <FileBrowser
             serverId={serverId}
             onFileClick={onCopyPath}
             onFileOpen={onFileOpen}
-            height={9999}
           />
         </div>
       </div>
