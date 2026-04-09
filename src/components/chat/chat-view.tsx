@@ -66,9 +66,29 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
   const scrollRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const [loadingHistory, setLoadingHistory] = useState(!!resumeSessionId);
-  const [permissionMode, setMode] = useState<string>("default");
+  const [permissionMode, setMode] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem("openclaw-chat-mode:v1") || "default";
+  });
   const [effortLevel, setEffortLevel] = useState<string | null>(null);
   const [showModeMenu, setShowModeMenu] = useState(false);
+  const [infoMessages, setInfoMessages] = useState<Array<{ id: string; content: string; timestamp: number }>>([]);
+  const bridgeSyncedRef = useRef(false);
+
+  /* ── Persist mode to localStorage ── */
+  useEffect(() => {
+    try { localStorage.setItem("openclaw-chat-mode:v1", permissionMode); } catch {}
+  }, [permissionMode]);
+
+  /* ── Sync stored mode to bridge when it first becomes ready ── */
+  useEffect(() => {
+    if (status === "idle" && !bridgeSyncedRef.current) {
+      bridgeSyncedRef.current = true;
+      if (permissionMode !== "default") {
+        setPermissionMode(permissionMode);
+      }
+    }
+  }, [status, permissionMode, setPermissionMode]);
 
   /* ── Load message history when resuming a session ── */
   useEffect(() => {
@@ -185,6 +205,13 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
                 key={opt.value}
                 type="button"
                 onClick={() => {
+                  if (opt.value !== permissionMode) {
+                    setInfoMessages((prev) => [...prev, {
+                      id: crypto.randomUUID(),
+                      content: `Switched to ${opt.label} mode`,
+                      timestamp: Date.now(),
+                    }]);
+                  }
                   setMode(opt.value);
                   setPermissionMode(opt.value);
                   setShowModeMenu(false);
@@ -223,14 +250,30 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
               </p>
             </div>
           )}
-          {messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              message={msg}
-              onPermissionRespond={respondPermission}
-              onQuestionRespond={respondQuestion}
-            />
-          ))}
+          {/* Merge hook messages with local info messages, sorted by time */}
+          {(() => {
+            const infoAsMsgs = infoMessages.map((m) => ({
+              ...m, role: "system" as const, type: "text" as const, _isInfo: true,
+            }));
+            const all = [...messages.map((m) => ({ ...m, _isInfo: false })), ...infoAsMsgs]
+              .sort((a, b) => a.timestamp - b.timestamp);
+            return all.map((msg) =>
+              msg._isInfo ? (
+                <div key={msg.id} className="flex justify-center px-4 py-1.5">
+                  <span className="rounded-full bg-canvas-surface-hover px-3 py-1 text-[11px] text-canvas-muted">
+                    {msg.content}
+                  </span>
+                </div>
+              ) : (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  onPermissionRespond={respondPermission}
+                  onQuestionRespond={respondQuestion}
+                />
+              ),
+            );
+          })()}
         </div>
 
         {/* ── Permission modal overlay ── */}
@@ -270,7 +313,16 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
                   </div>
                   <button
                     type="button"
-                    onClick={() => respondPermission(pending.permissionId!, true, true)}
+                    onClick={() => {
+                      respondPermission(pending.permissionId!, true, true);
+                      setMode("acceptEdits");
+                      setPermissionMode("acceptEdits");
+                      setInfoMessages((prev) => [...prev, {
+                        id: crypto.randomUUID(),
+                        content: "Switched to Accept Edits mode",
+                        timestamp: Date.now(),
+                      }]);
+                    }}
                     className="w-full rounded-lg border border-green-600/30 bg-green-600/10 px-3 py-2 text-[12px] font-medium text-green-400 active:bg-green-600/20"
                   >
                     Allow all {toolName} this session

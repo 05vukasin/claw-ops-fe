@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FiMenu, FiX, FiFolder, FiCheck, FiChevronsLeft, FiMessageSquare, FiUpload } from "react-icons/fi";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
@@ -62,13 +62,40 @@ export function ChatLayout({
     const cdMatch = command.match(/^cd\s+(.+?)(?:\s*&&|\r|$)/);
     if (cdMatch) {
       setCurrentBrowserPath(cdMatch[1]);
-      return; // Don't copy cd commands
+      if (!command.includes("&&")) return;
     }
-    // Copy file paths
-    navigator.clipboard.writeText(command).then(() => {
-      setCopiedPath(command);
+    // Extract actual file path from "cd dir && ls -la name\r"
+    let path = command;
+    const lsMatch = command.match(/^cd\s+(.+?)\s*&&\s*ls\s+-la\s+(.+?)[\r\n]*$/);
+    if (lsMatch) {
+      path = lsMatch[1] === "/" ? `/${lsMatch[2]}` : `${lsMatch[1]}/${lsMatch[2]}`;
+    }
+    const atPath = `@${path}`;
+    navigator.clipboard.writeText(atPath).then(() => {
+      setCopiedPath(path);
       setTimeout(() => setCopiedPath(null), 1500);
     }).catch(() => {});
+  }, []);
+
+  /* ── Clamp file browser context menu within viewport ── */
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node instanceof HTMLElement && node.style.position === "fixed" && node.classList.contains("min-w-35")) {
+            requestAnimationFrame(() => {
+              const rect = node.getBoundingClientRect();
+              const maxLeft = window.innerWidth - rect.width - 8;
+              if (rect.left > maxLeft) node.style.left = `${Math.max(8, maxLeft)}px`;
+              const maxTop = window.innerHeight - rect.height - 8;
+              if (rect.top > maxTop) node.style.top = `${Math.max(8, maxTop)}px`;
+            });
+          }
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true });
+    return () => observer.disconnect();
   }, []);
 
   const handleFileOpen = useCallback((file: SftpFile) => {
@@ -318,7 +345,7 @@ export function ChatLayout({
             )}
 
             {/* File browser — full height with context menu + file open */}
-            <div className="min-h-0 flex-1">
+            <div className="min-h-0 flex-1 overflow-hidden">
               <FileBrowser
                 ref={fileBrowserRef}
                 serverId={selectedServerId}
