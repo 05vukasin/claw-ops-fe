@@ -26,6 +26,7 @@ const messageQueue = [];
 let pendingEvents = []; // Events that might not have been received by frontend
 const sessionAllowedTools = new Set(); // Tools auto-approved for this session
 let currentPermissionMode = "default"; // default | plan | acceptEdits | bypassPermissions
+let currentEffort = null; // null | "low" | "medium" | "high" | "max"
 let accumulatedText = ""; // Accumulated text from text_delta events for poll re-emission
 
 /* ------------------------------------------------------------------ */
@@ -117,6 +118,7 @@ async function handleUserMessage(text, resumeSessionId) {
     },
     permissionMode: currentPermissionMode,
     allowDangerouslySkipPermissions: currentPermissionMode === "bypassPermissions",
+    ...(currentEffort ? { effort: currentEffort } : {}),
   };
 
   // Build the prompt — for resume, pass session ID
@@ -302,6 +304,14 @@ rl.on("line", (line) => {
       resolver(msg);
       pendingRequests.delete(msg.id);
     }
+    return;
+  }
+
+  // Effort change
+  if (msg.type === "set_effort") {
+    currentEffort = msg.effort || null;
+    log(`EFFORT: changed to ${currentEffort}`);
+    emit({ type: "effort_changed", effort: currentEffort });
     return;
   }
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchServersApi } from "@/lib/api";
 import type { Server } from "@/lib/api";
-import { ChatView, SessionList } from "@/components/chat";
+import { ChatWorkspace, SessionList } from "@/components/chat";
 
 type LoadState = "loading" | "ready" | "error";
 type View = "sessions" | "chat";
@@ -124,7 +124,7 @@ export default function ChatPage() {
 
   /* ── Chat view ── */
   return (
-    <ChatView
+    <ChatWorkspace
       key={resumeSessionId ?? "new"}
       serverId={selectedId}
       serverName={selectedServer?.name ?? "Server"}

@@ -22,6 +22,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Chat", href: "/chat" },
   { label: "Servers", href: "/" },
   { label: "Domains", href: "/domains", roles: ["ADMIN", "DEVOPS"] },
   { label: "Scripts", href: "/scripts" },
@@ -214,6 +215,12 @@ function NavIcon({ name }: { name: string }) {
   };
 
   switch (name) {
+    case "Chat":
+      return (
+        <svg {...props}>
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      );
     case "Servers":
       return (
         <svg {...props}>

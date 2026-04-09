@@ -22,6 +22,14 @@ const MODE_OPTIONS = [
   { value: "plan", label: "Plan Mode", description: "Plan only, no changes" },
 ];
 
+const EFFORT_OPTIONS = [
+  { value: "", label: "Auto" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Med" },
+  { value: "high", label: "High" },
+  { value: "max", label: "Max" },
+];
+
 interface ChatViewProps {
   serverId: string;
   serverName: string;
@@ -30,7 +38,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ serverId, serverName, resumeSessionId, onBack }: ChatViewProps) {
-  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, reconnect, setInitialMessages } = useClaudeChat(
+  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     resumeSessionId,
   );
@@ -39,6 +47,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
   const userScrolledUpRef = useRef(false);
   const [loadingHistory, setLoadingHistory] = useState(!!resumeSessionId);
   const [permissionMode, setMode] = useState<string>("default");
+  const [effortLevel, setEffortLevel] = useState<string | null>(null);
   const [showModeMenu, setShowModeMenu] = useState(false);
 
   /* ── Load message history when resuming a session ── */
@@ -103,8 +112,9 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
         <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
       </div>
 
-      {/* ── Mode switcher ── */}
-      <div className="relative flex shrink-0 items-center border-b border-[#21262d] px-3 py-1.5">
+      {/* ── Mode & Effort bar ── */}
+      <div className="relative flex shrink-0 items-center gap-3 border-b border-[#21262d] px-3 py-1.5">
+        {/* Mode selector */}
         <button
           type="button"
           onClick={() => setShowModeMenu((v) => !v)}
@@ -114,6 +124,33 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
           <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
           <FiChevronDown size={10} />
         </button>
+
+        {/* Effort selector — segmented control */}
+        <div className="flex items-center gap-0.5 rounded-md bg-[#161b22] p-0.5">
+          {EFFORT_OPTIONS.map((opt) => {
+            const isActive = (opt.value === "" && !effortLevel) || opt.value === effortLevel;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  const val = opt.value || null;
+                  setEffortLevel(val);
+                  setEffort(val);
+                }}
+                className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                  isActive
+                    ? "bg-[#21262d] text-[#e6edf3]"
+                    : "text-gray-500 active:text-gray-300"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Mode dropdown */}
         {showModeMenu && (
           <div className="absolute left-3 top-full z-50 mt-1 rounded-lg border border-[#21262d] bg-[#161b22] py-1 shadow-lg">
             {MODE_OPTIONS.map((opt) => (

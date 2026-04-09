@@ -495,6 +495,14 @@ export function useClaudeChat(
     [sendToBridge],
   );
 
+  /* ── Set effort level ── */
+  const setEffort = useCallback(
+    (effort: string | null) => {
+      sendToBridge({ type: "set_effort", effort });
+    },
+    [sendToBridge],
+  );
+
   /* ── Respond to ask question ── */
   const respondQuestion = useCallback(
     (askId: string, answers: Record<string, string>) => {
@@ -553,6 +561,7 @@ export function useClaudeChat(
     respondPermission,
     respondQuestion,
     setPermissionMode,
+    setEffort,
     reconnect,
     setInitialMessages,
   };
