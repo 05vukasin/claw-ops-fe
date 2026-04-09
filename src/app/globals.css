@@ -230,6 +230,28 @@ html:not(.dark) {
 .thinking-dots .thinking-dot {
   animation: thinkingBounce 1.4s ease-in-out infinite;
 }
+
+/* ── Mobile file sheet slide-up ── */
+
+@keyframes sheetSlideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.animate-sheet-up {
+  animation: sheetSlideUp 250ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* ── Session sidebar slide-in (mobile) ── */
+
+@keyframes sidebarSlideIn {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-sidebar-in {
+  animation: sidebarSlideIn 200ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
 .thinking-dots .thinking-dot:nth-child(1) { animation-delay: 0s; }
 .thinking-dots .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
 .thinking-dots .thinking-dot:nth-child(3) { animation-delay: 0.4s; }

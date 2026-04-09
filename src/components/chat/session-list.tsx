@@ -1,9 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { FiPlus, FiChevronRight, FiRefreshCw } from "react-icons/fi";
-import { fetchChatSessionsApi } from "@/lib/api";
-import { useVisualViewport } from "@/lib/use-visual-viewport";
+import { FiPlus, FiRefreshCw } from "react-icons/fi";
 import type { ChatSession } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
@@ -27,129 +24,90 @@ function formatRelativeTime(ts: number): string {
 /* ------------------------------------------------------------------ */
 
 interface SessionListProps {
-  serverId: string;
-  serverName: string;
+  selectedSessionId?: string | null;
   onSelectSession: (sessionId: string) => void;
   onNewChat: () => void;
+  sessions: ChatSession[];
+  loading: boolean;
+  onRefresh: () => void;
 }
 
-type LoadState = "loading" | "ready" | "error";
-
 export function SessionList({
-  serverId,
-  serverName,
+  selectedSessionId,
   onSelectSession,
   onNewChat,
+  sessions,
+  loading,
+  onRefresh,
 }: SessionListProps) {
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const { viewportHeight } = useVisualViewport();
-
-  const load = useCallback(() => {
-    setLoadState("loading");
-    fetchChatSessionsApi(serverId)
-      .then((list) => {
-        setSessions(list);
-        setLoadState("ready");
-      })
-      .catch(() => {
-        setLoadState("error");
-      });
-  }, [serverId]);
-
-  useEffect(() => {
-    const id = requestAnimationFrame(() => load());
-    return () => cancelAnimationFrame(id);
-  }, [load]);
-
   return (
-    <div
-      className="flex flex-col"
-      style={{ height: viewportHeight, overflow: "hidden" }}
-    >
-      {/* ── Header ── */}
-      <div
-        className="flex shrink-0 items-center justify-between border-b border-[#21262d] px-4 py-2.5"
-        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 10px)" }}
-      >
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-semibold text-[#e6edf3]">
-            Chats
-          </p>
-          <p className="truncate text-[11px] text-gray-500">{serverName}</p>
-        </div>
-        {loadState === "ready" && (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-canvas-border px-3 py-2.5">
+        <span className="text-[13px] font-semibold text-canvas-fg">Chats</span>
+        <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={load}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 active:bg-white/5"
+            onClick={onRefresh}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
           >
-            <FiRefreshCw size={14} />
+            <FiRefreshCw size={13} />
           </button>
-        )}
+          <button
+            type="button"
+            onClick={onNewChat}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[#1f6feb] hover:bg-canvas-surface-hover"
+          >
+            <FiPlus size={15} />
+          </button>
+        </div>
       </div>
 
-      {/* ── Content ── */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
-        {/* New Chat button */}
-        <button
-          type="button"
-          onClick={onNewChat}
-          className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[#1f6feb] px-4 py-2.5 text-[13px] font-medium text-white active:opacity-80"
-        >
-          <FiPlus size={16} />
-          New Chat
-        </button>
-
-        {/* Loading */}
-        {loadState === "loading" && (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-600 border-t-gray-300" />
+      {/* Session list */}
+      <div className="flex-1 overflow-y-auto px-2 py-2">
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-canvas-border border-t-canvas-muted" />
           </div>
         )}
 
-        {/* Error */}
-        {loadState === "error" && (
-          <div className="flex flex-col items-center gap-3 py-12">
-            <p className="text-[13px] text-red-400">Failed to load sessions</p>
+        {!loading && sessions.length === 0 && (
+          <div className="py-8 text-center">
+            <p className="text-[12px] text-canvas-muted">No conversations yet</p>
             <button
               type="button"
-              onClick={load}
-              className="rounded-md bg-[#21262d] px-3 py-1.5 text-[12px] font-medium text-gray-300 active:bg-[#30363d]"
+              onClick={onNewChat}
+              className="mt-3 rounded-md bg-[#1f6feb] px-3 py-1.5 text-[12px] font-medium text-white active:opacity-80"
             >
-              Retry
+              Start a chat
             </button>
           </div>
         )}
 
-        {/* Empty */}
-        {loadState === "ready" && sessions.length === 0 && (
-          <p className="py-12 text-center text-[13px] text-gray-600">
-            No previous conversations
-          </p>
-        )}
-
-        {/* Session cards */}
-        {loadState === "ready" && sessions.length > 0 && (
-          <div className="space-y-2">
-            {sessions.map((session) => (
-              <button
-                key={session.sessionId}
-                type="button"
-                onClick={() => onSelectSession(session.sessionId)}
-                className="flex w-full items-center gap-3 rounded-lg border border-[#21262d] bg-[#161b22] px-4 py-3 text-left transition-colors active:bg-[#1c2128]"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 text-[13px] leading-snug text-[#e6edf3]">
+        {!loading && sessions.length > 0 && (
+          <div className="space-y-0.5">
+            {sessions.map((session) => {
+              const isActive = session.sessionId === selectedSessionId;
+              return (
+                <button
+                  key={session.sessionId}
+                  type="button"
+                  onClick={() => onSelectSession(session.sessionId)}
+                  className={`flex w-full flex-col rounded-lg px-3 py-2 text-left transition-colors ${
+                    isActive
+                      ? "bg-canvas-surface-hover text-canvas-fg"
+                      : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                  }`}
+                >
+                  <p className={`line-clamp-1 text-[13px] ${isActive ? "font-medium" : ""}`}>
                     {session.display}
                   </p>
-                  <p className="mt-1 text-[11px] text-gray-600">
+                  <p className="mt-0.5 text-[10px] text-canvas-muted">
                     {formatRelativeTime(session.timestamp)}
                   </p>
-                </div>
-                <FiChevronRight size={14} className="shrink-0 text-gray-600" />
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

@@ -62,34 +62,34 @@ function hasBoxDrawing(text: string): boolean {
 /* ── Markdown components ── */
 const markdownComponents = {
   p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="my-1 text-[14px] leading-relaxed text-[#e6edf3]">{children}</p>
+    <p className="my-1 text-[14px] leading-relaxed text-canvas-fg">{children}</p>
   ),
   code: ({ className, children }: { className?: string; children?: React.ReactNode }) => {
     const isBlock = className?.includes("language-");
     if (isBlock) {
       return (
-        <code className="block overflow-x-auto rounded bg-[#0d1117] p-3 font-mono text-[12px] leading-relaxed text-[#e6edf3]">
+        <code className="block overflow-x-auto rounded bg-canvas-bg p-3 font-mono text-[12px] leading-relaxed text-canvas-fg">
           {children}
         </code>
       );
     }
     return (
-      <code className="rounded bg-[#1c2128] px-1.5 py-0.5 font-mono text-[12px] text-[#e6edf3]">
+      <code className="rounded bg-canvas-surface-hover px-1.5 py-0.5 font-mono text-[12px] text-canvas-fg">
         {children}
       </code>
     );
   },
   pre: ({ children }: { children?: React.ReactNode }) => (
-    <pre className="my-2 overflow-x-auto rounded-md bg-[#0d1117] border border-[#21262d]">{children}</pre>
+    <pre className="my-2 overflow-x-auto rounded-md bg-canvas-bg border border-canvas-border">{children}</pre>
   ),
   strong: ({ children }: { children?: React.ReactNode }) => (
-    <strong className="font-bold text-white">{children}</strong>
+    <strong className="font-bold text-canvas-fg">{children}</strong>
   ),
   ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul className="my-1.5 ml-4 list-disc text-[14px] text-[#e6edf3]">{children}</ul>
+    <ul className="my-1.5 ml-4 list-disc text-[14px] text-canvas-fg">{children}</ul>
   ),
   ol: ({ children }: { children?: React.ReactNode }) => (
-    <ol className="my-1.5 ml-4 list-decimal text-[14px] text-[#e6edf3]">{children}</ol>
+    <ol className="my-1.5 ml-4 list-decimal text-[14px] text-canvas-fg">{children}</ol>
   ),
   li: ({ children }: { children?: React.ReactNode }) => (
     <li className="my-0.5">{children}</li>
@@ -98,18 +98,18 @@ const markdownComponents = {
     <a href={href} className="text-blue-400 underline" target="_blank" rel="noopener noreferrer">{children}</a>
   ),
   table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="my-2 overflow-x-auto rounded-md border border-[#21262d]">
-      <table className="w-full text-[12px] text-[#e6edf3]">{children}</table>
+    <div className="my-2 overflow-x-auto rounded-md border border-canvas-border">
+      <table className="w-full text-[12px] text-canvas-fg">{children}</table>
     </div>
   ),
   thead: ({ children }: { children?: React.ReactNode }) => (
-    <thead className="border-b border-[#21262d] bg-[#161b22]">{children}</thead>
+    <thead className="border-b border-canvas-border bg-canvas-surface-hover">{children}</thead>
   ),
   th: ({ children }: { children?: React.ReactNode }) => (
     <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-400">{children}</th>
   ),
   td: ({ children }: { children?: React.ReactNode }) => (
-    <td className="border-t border-[#21262d] px-3 py-1.5">{children}</td>
+    <td className="border-t border-canvas-border px-3 py-1.5">{children}</td>
   ),
 };
 
@@ -218,8 +218,8 @@ function AssistantTextContent({ content }: { content: string }) {
     <>
       {segments.map((seg, i) =>
         seg.type === "box" ? (
-          <div key={i} className="my-2 overflow-x-auto rounded-md border border-[#21262d] bg-[#0d1117] p-3">
-            <pre className="whitespace-pre font-mono text-[11px] leading-relaxed text-[#e6edf3]">
+          <div key={i} className="my-2 overflow-x-auto rounded-md border border-canvas-border bg-canvas-bg p-3">
+            <pre className="whitespace-pre font-mono text-[11px] leading-relaxed text-canvas-fg">
               {seg.content}
             </pre>
           </div>
@@ -243,7 +243,7 @@ function ToolUseIndicator({ message }: { message: ChatMessage }) {
 
   return (
     <div className="px-4 py-1">
-      <div className="flex items-center gap-2 rounded-md border-l-2 border-purple-500/50 bg-[#161b22] px-3 py-2">
+      <div className="flex items-center gap-2 rounded-md border-l-2 border-purple-500/50 bg-canvas-surface-hover px-3 py-2">
         <Icon size={13} className="shrink-0 text-purple-400" />
         <span className="text-[12px] font-medium text-purple-300">{label}</span>
         {desc && (
@@ -274,7 +274,7 @@ function ToolResultBlock({ message }: { message: ChatMessage }) {
 
   return (
     <div className="px-4 py-1">
-      <div className={`rounded-md border-l-2 ${accentColor} bg-[#161b22]`}>
+      <div className={`rounded-md border-l-2 ${accentColor} bg-canvas-surface-hover`}>
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
@@ -290,7 +290,7 @@ function ToolResultBlock({ message }: { message: ChatMessage }) {
           )}
         </button>
         {!collapsed && message.content && (
-          <pre className="max-h-[200px] overflow-y-auto border-t border-[#21262d] px-3 py-2 font-mono text-[11px] leading-relaxed text-gray-400">
+          <pre className="max-h-[200px] overflow-y-auto border-t border-canvas-border px-3 py-2 font-mono text-[11px] leading-relaxed text-gray-400">
             {message.content.slice(0, 2000)}
           </pre>
         )}
@@ -323,7 +323,7 @@ function ThinkingBlock({ message }: { message: ChatMessage }) {
         <span className="text-[11px] text-gray-600">Thinking</span>
       </button>
       {!collapsed && (
-        <div className="ml-2 max-h-[300px] overflow-y-auto rounded-md bg-[#0d1117]/50 px-3 py-2">
+        <div className="ml-2 max-h-[300px] overflow-y-auto rounded-md bg-canvas-bg/50 px-3 py-2">
           <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-gray-600">
             {message.content}
           </p>
@@ -352,7 +352,7 @@ function PermissionRequestBlock({
 
   return (
     <div className="px-4 py-1.5">
-      <div className="rounded-lg border border-orange-500/30 bg-[#161b22] px-3.5 py-3">
+      <div className="rounded-lg border border-orange-500/30 bg-canvas-surface-hover px-3.5 py-3">
         {/* Header */}
         <div className="flex items-center gap-2 mb-2">
           <Icon size={14} className="shrink-0 text-orange-400" />
@@ -362,7 +362,7 @@ function PermissionRequestBlock({
         </div>
 
         {/* Tool info */}
-        <p className="text-[13px] text-[#e6edf3] mb-1">
+        <p className="text-[13px] text-canvas-fg mb-1">
           <span className="font-medium">{label}</span>
         </p>
         {desc && (
@@ -392,7 +392,7 @@ function PermissionRequestBlock({
               <button
                 type="button"
                 onClick={() => onRespond?.(message.permissionId!, false)}
-                className="flex-1 rounded-lg bg-[#21262d] px-3 py-2 text-[13px] font-medium text-gray-300 active:bg-[#30363d]"
+                className="flex-1 rounded-lg bg-canvas-surface-hover px-3 py-2 text-[13px] font-medium text-gray-300 active:bg-canvas-border"
               >
                 Deny
               </button>
@@ -448,10 +448,10 @@ function AskQuestionBlock({
 
   return (
     <div className="px-4 py-1.5">
-      <div className="rounded-lg border border-blue-500/30 bg-[#161b22] px-3.5 py-3">
+      <div className="rounded-lg border border-blue-500/30 bg-canvas-surface-hover px-3.5 py-3">
         {questions.map((q) => (
           <div key={q.question} className="mb-3 last:mb-0">
-            <p className="text-[13px] font-medium text-[#e6edf3] mb-2">
+            <p className="text-[13px] font-medium text-canvas-fg mb-2">
               {q.question}
             </p>
             <div className="space-y-1.5">
@@ -466,14 +466,14 @@ function AskQuestionBlock({
                     className={`flex w-full items-start gap-2 rounded-md border px-3 py-2 text-left transition-colors ${
                       isSelected
                         ? "border-blue-500 bg-blue-500/10"
-                        : "border-[#30363d] bg-[#0d1117] active:bg-[#1c2128]"
+                        : "border-canvas-border bg-canvas-bg active:bg-canvas-surface-hover"
                     } ${resolved ? "opacity-60" : ""}`}
                   >
                     <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full border-2 ${
                       isSelected ? "border-blue-500 bg-blue-500" : "border-gray-600"
                     }`} />
                     <div className="min-w-0">
-                      <p className="text-[12px] font-medium text-[#e6edf3]">{opt.label}</p>
+                      <p className="text-[12px] font-medium text-canvas-fg">{opt.label}</p>
                       {opt.description && (
                         <p className="text-[11px] text-gray-500">{opt.description}</p>
                       )}

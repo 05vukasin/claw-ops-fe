@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { FiArrowLeft, FiShield, FiChevronDown } from "react-icons/fi";
 import { useClaudeChat } from "@/lib/use-claude-chat";
@@ -13,7 +14,6 @@ const MODE_LABELS: Record<string, string> = {
   default: "Default",
   acceptEdits: "Accept Edits",
   plan: "Plan Mode",
-  bypassPermissions: "Allow All",
 };
 
 const MODE_OPTIONS = [
@@ -35,9 +35,11 @@ interface ChatViewProps {
   serverName: string;
   resumeSessionId?: string | null;
   onBack?: () => void;
+  headerless?: boolean;
+  fileButton?: ReactNode;
 }
 
-export function ChatView({ serverId, serverName, resumeSessionId, onBack }: ChatViewProps) {
+export function ChatView({ serverId, serverName, resumeSessionId, onBack, headerless, fileButton }: ChatViewProps) {
   const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     resumeSessionId,
@@ -86,39 +88,39 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
 
   return (
     <div
-      className="flex flex-col"
-      style={{ height: viewportHeight, overflow: "hidden" }}
+      className="flex flex-1 flex-col"
+      style={{ height: headerless ? "100%" : viewportHeight, overflow: "hidden" }}
     >
-      {/* ── Header ── */}
-      <div
-        className="flex shrink-0 items-center gap-2 border-b border-[#21262d] px-3 py-2.5"
-        style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 10px)" }}
-      >
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 active:bg-white/5"
-          >
-            <FiArrowLeft size={18} />
-          </button>
-        )}
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-semibold text-[#e6edf3]">
-            Claude
-          </p>
-          <p className="truncate text-[11px] text-gray-500">{serverName}</p>
+      {/* ── Header (hidden when headerless — managed by ChatLayout) ── */}
+      {!headerless && (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-canvas-border px-3 py-2.5"
+          style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 10px)" }}
+        >
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover"
+            >
+              <FiArrowLeft size={18} />
+            </button>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[14px] font-semibold text-canvas-fg">Claude</p>
+            <p className="truncate text-[11px] text-canvas-muted">{serverName}</p>
+          </div>
+          <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
         </div>
-        <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
-      </div>
+      )}
 
       {/* ── Mode & Effort bar ── */}
-      <div className="relative flex shrink-0 items-center gap-3 border-b border-[#21262d] px-3 py-1.5">
+      <div className="relative flex shrink-0 items-center gap-3 border-b border-canvas-border px-3 py-1.5">
         {/* Mode selector */}
         <button
           type="button"
           onClick={() => setShowModeMenu((v) => !v)}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-gray-400 active:bg-white/5"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-canvas-muted hover:bg-canvas-surface-hover"
         >
           <FiShield size={11} />
           <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
@@ -126,7 +128,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
         </button>
 
         {/* Effort selector — segmented control */}
-        <div className="flex items-center gap-0.5 rounded-md bg-[#161b22] p-0.5">
+        <div className="flex items-center gap-0.5 rounded-md bg-canvas-surface-hover p-0.5">
           {EFFORT_OPTIONS.map((opt) => {
             const isActive = (opt.value === "" && !effortLevel) || opt.value === effortLevel;
             return (
@@ -140,8 +142,8 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
                 }}
                 className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
                   isActive
-                    ? "bg-[#21262d] text-[#e6edf3]"
-                    : "text-gray-500 active:text-gray-300"
+                    ? "bg-canvas-bg text-canvas-fg"
+                    : "text-canvas-muted hover:text-canvas-fg"
                 }`}
               >
                 {opt.label}
@@ -150,9 +152,16 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
           })}
         </div>
 
+        {/* Status (shown when headerless — since header status is hidden) */}
+        {headerless && (
+          <div className="ml-auto">
+            <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
+          </div>
+        )}
+
         {/* Mode dropdown */}
         {showModeMenu && (
-          <div className="absolute left-3 top-full z-50 mt-1 rounded-lg border border-[#21262d] bg-[#161b22] py-1 shadow-lg">
+          <div className="absolute left-3 top-full z-50 mt-1 rounded-lg border border-canvas-border bg-canvas-bg py-1 shadow-lg">
             {MODE_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
@@ -162,13 +171,13 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
                   setPermissionMode(opt.value);
                   setShowModeMenu(false);
                 }}
-                className={`flex w-full items-start gap-2 px-3 py-2 text-left active:bg-white/5 ${
-                  permissionMode === opt.value ? "bg-white/5" : ""
+                className={`flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-canvas-surface-hover ${
+                  permissionMode === opt.value ? "bg-canvas-surface-hover" : ""
                 }`}
               >
                 <div>
-                  <p className="text-[12px] font-medium text-[#e6edf3]">{opt.label}</p>
-                  <p className="text-[10px] text-gray-500">{opt.description}</p>
+                  <p className="text-[12px] font-medium text-canvas-fg">{opt.label}</p>
+                  <p className="text-[10px] text-canvas-muted">{opt.description}</p>
                 </div>
               </button>
             ))}
@@ -184,13 +193,13 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
       >
         {loadingHistory && (
           <div className="flex items-center justify-center py-8">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-600 border-t-gray-300" />
-            <span className="ml-2 text-[12px] text-gray-600">Loading conversation...</span>
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-canvas-border border-t-canvas-muted" />
+            <span className="ml-2 text-[12px] text-canvas-muted">Loading conversation...</span>
           </div>
         )}
         {!loadingHistory && messages.length === 0 && status === "idle" && (
           <div className="flex h-full items-center justify-center px-8">
-            <p className="text-center text-[13px] text-gray-600">
+            <p className="text-center text-[13px] text-canvas-muted">
               Send a message to start a conversation with Claude.
             </p>
           </div>
@@ -206,7 +215,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack }: Chat
       </div>
 
       {/* ── Input ── */}
-      <ChatInput status={status} onSend={sendMessage} />
+      <ChatInput status={status} onSend={sendMessage} fileButton={fileButton} />
     </div>
   );
 }
