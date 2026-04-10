@@ -11,10 +11,11 @@ import { Z_INDEX } from "@/lib/z-index";
 interface CodexCodeOverlayProps {
   serverId: string;
   serverName: string;
+  initialCommand?: string;
   onClose: () => void;
 }
 
-export function CodexCodeOverlay({ serverId, serverName, onClose }: CodexCodeOverlayProps) {
+export function CodexCodeOverlay({ serverId, serverName, initialCommand = "codex", onClose }: CodexCodeOverlayProps) {
   const isMobile = useIsMobile();
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export function CodexCodeOverlay({ serverId, serverName, onClose }: CodexCodeOve
       <MobilePersistentTerminal
         serverId={serverId}
         serverName={serverName}
-        initialCommand="codex"
+        initialCommand={initialCommand}
         onClose={onClose}
       />,
       document.body,
@@ -73,7 +74,7 @@ export function CodexCodeOverlay({ serverId, serverName, onClose }: CodexCodeOve
         className="flex min-h-0 flex-1 flex-col"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <PersistentTerminal serverId={serverId} initialCommand="codex" />
+        <PersistentTerminal serverId={serverId} initialCommand={initialCommand} />
       </div>
     </div>,
     document.body,
