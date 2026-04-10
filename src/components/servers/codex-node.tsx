@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiCode } from "react-icons/fi";
+import Image from "next/image";
 import type { CodexAccountWithUI } from "@/lib/use-codex-accounts";
 
 const NODE_SIZE = 44;
@@ -178,10 +178,10 @@ export function CodexNode({ account, serverX, serverY, onMoveEnd, onSpringPos, o
           dragging
             ? "border-white/20 shadow-lg"
             : "border-white/10 shadow-sm group-hover:border-white/20 group-hover:shadow-md"
-        } bg-[#0f766e]`}
+        } bg-white`}
         style={{ width: NODE_SIZE, height: NODE_SIZE }}
       >
-        <FiCode size={20} className="pointer-events-none text-white" />
+        <Image src="/images/codex.png" alt="Codex" width={36} height={36} className="pointer-events-none rounded-full" />
         <span className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-canvas-bg ${statusDot}`} />
       </div>
       <p className="mt-1 text-center text-[9px] leading-tight text-canvas-muted" style={{ maxWidth: NODE_SIZE + 16 }}>

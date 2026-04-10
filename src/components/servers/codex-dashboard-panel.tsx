@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiChevronRight, FiCode, FiFolder, FiRefreshCw, FiSettings, FiTerminal, FiX } from "react-icons/fi";
+import Image from "next/image";
+import { FiChevronRight, FiFolder, FiRefreshCw, FiSettings, FiTerminal, FiX } from "react-icons/fi";
 import { executeCommandApi } from "@/lib/api";
 import { Z_INDEX } from "@/lib/z-index";
 import { CodexCodeOverlay } from "./codex-code-overlay";
@@ -237,8 +238,8 @@ export function CodexDashboardPanel({ serverId, serverName, onClose, zIndex, onF
           data-drag-handle
           className="flex shrink-0 cursor-grab items-center gap-3 border-b border-canvas-border px-5 py-3.5 select-none active:cursor-grabbing"
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0f766e]" data-drag-handle>
-            <FiCode size={14} className="pointer-events-none text-white" />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white" data-drag-handle>
+            <Image src="/images/codex.png" alt="Codex" width={24} height={24} className="pointer-events-none rounded-full" />
           </div>
           <div className="min-w-0 flex-1" data-drag-handle>
             <p className="truncate text-sm font-semibold leading-tight text-canvas-fg" data-drag-handle>Codex</p>
