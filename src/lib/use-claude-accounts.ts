@@ -69,9 +69,13 @@ function initFromCache() {
 
 const DETECT_CMD = [
   'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:$PATH"',
-  'claude --version 2>/dev/null || echo "NOT_FOUND"',
+  'CLAUDE_BIN="$(command -v claude 2>/dev/null || true)"',
+  'if [ -z "$CLAUDE_BIN" ]; then NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"; if [ -n "$NPM_PREFIX" ] && [ -x "$NPM_PREFIX/bin/claude" ]; then CLAUDE_BIN="$NPM_PREFIX/bin/claude"; fi; fi',
+  'if [ -z "$CLAUDE_BIN" ]; then for p in "$HOME/.nvm/versions/node"/*/bin/claude "$HOME/.local/bin/claude" "$HOME/.npm-global/bin/claude" "/usr/local/bin/claude"; do if [ -x "$p" ]; then CLAUDE_BIN="$p"; break; fi; done; fi',
+  'if [ -z "$CLAUDE_BIN" ]; then echo "NOT_FOUND"; exit 0; fi',
+  '"$CLAUDE_BIN" --version 2>/dev/null || echo "NOT_FOUND"',
   'echo "---CC_SEP---"',
-  'claude auth status 2>/dev/null || echo "NOT_AUTHENTICATED"',
+  '"$CLAUDE_BIN" auth status 2>/dev/null || echo "NOT_AUTHENTICATED"',
   'echo "---CC_SEP---"',
   'du -sh ~/.claude 2>/dev/null | cut -f1 || echo "0"',
   'echo "---CC_SEP---"',
