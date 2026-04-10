@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiChevronRight, FiCode, FiFolder, FiRefreshCw, FiSettings, FiTerminal, FiX } from "react-icons/fi";
+import Image from "next/image";
+import { FiChevronRight, FiFolder, FiRefreshCw, FiSettings, FiTerminal, FiX } from "react-icons/fi";
 import { executeCommandApi } from "@/lib/api";
 import { Z_INDEX } from "@/lib/z-index";
 import { CodexCodeOverlay } from "./codex-code-overlay";
@@ -31,7 +32,8 @@ interface CodexDashboardPanelProps {
 const FETCH_CMD = [
   'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:$PATH"',
   'CODEX_BIN="$(command -v codex 2>/dev/null || true)"',
-  'if [ -z "$CODEX_BIN" ]; then for p in "$HOME/.local/bin/codex" "$HOME/.npm-global/bin/codex" "/usr/local/bin/codex"; do if [ -x "$p" ]; then CODEX_BIN="$p"; break; fi; done; fi',
+  'if [ -z "$CODEX_BIN" ]; then NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"; if [ -n "$NPM_PREFIX" ] && [ -x "$NPM_PREFIX/bin/codex" ]; then CODEX_BIN="$NPM_PREFIX/bin/codex"; fi; fi',
+  'if [ -z "$CODEX_BIN" ]; then for p in "$HOME/.nvm/versions/node"/*/bin/codex "$HOME/.local/bin/codex" "$HOME/.npm-global/bin/codex" "/usr/local/bin/codex"; do if [ -x "$p" ]; then CODEX_BIN="$p"; break; fi; done; fi',
   'if [ -z "$CODEX_BIN" ]; then echo "NOT_FOUND"; exit 0; fi',
   '"$CODEX_BIN" --version 2>/dev/null || echo "UNKNOWN_VERSION"',
   'echo "---CODEX_SEP---"',
@@ -236,8 +238,8 @@ export function CodexDashboardPanel({ serverId, serverName, onClose, zIndex, onF
           data-drag-handle
           className="flex shrink-0 cursor-grab items-center gap-3 border-b border-canvas-border px-5 py-3.5 select-none active:cursor-grabbing"
         >
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0f766e]" data-drag-handle>
-            <FiCode size={14} className="pointer-events-none text-white" />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white" data-drag-handle>
+            <Image src="/images/codex.png" alt="Codex" width={24} height={24} className="pointer-events-none rounded-full" />
           </div>
           <div className="min-w-0 flex-1" data-drag-handle>
             <p className="truncate text-sm font-semibold leading-tight text-canvas-fg" data-drag-handle>Codex</p>
@@ -356,6 +358,7 @@ export function CodexDashboardPanel({ serverId, serverName, onClose, zIndex, onF
         <CodexCodeOverlay
           serverId={serverId}
           serverName={serverName}
+          initialCommand={executablePath ?? "codex"}
           onClose={() => { setShowOverlay(false); fetchData(); }}
         />
       )}

@@ -71,7 +71,8 @@ function initFromCache() {
 const DETECT_CMD = [
   'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:$PATH"',
   'CODEX_BIN="$(command -v codex 2>/dev/null || true)"',
-  'if [ -z "$CODEX_BIN" ]; then for p in "$HOME/.local/bin/codex" "$HOME/.npm-global/bin/codex" "/usr/local/bin/codex"; do if [ -x "$p" ]; then CODEX_BIN="$p"; break; fi; done; fi',
+  'if [ -z "$CODEX_BIN" ]; then NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"; if [ -n "$NPM_PREFIX" ] && [ -x "$NPM_PREFIX/bin/codex" ]; then CODEX_BIN="$NPM_PREFIX/bin/codex"; fi; fi',
+  'if [ -z "$CODEX_BIN" ]; then for p in "$HOME/.nvm/versions/node"/*/bin/codex "$HOME/.local/bin/codex" "$HOME/.npm-global/bin/codex" "/usr/local/bin/codex"; do if [ -x "$p" ]; then CODEX_BIN="$p"; break; fi; done; fi',
   'if [ -z "$CODEX_BIN" ]; then echo "NOT_FOUND"; exit 0; fi',
   '"$CODEX_BIN" --version 2>/dev/null || echo "UNKNOWN_VERSION"',
   'echo "---CODEX_SEP---"',
