@@ -314,18 +314,18 @@ function ThinkingBlock({ message }: { message: ChatMessage }) {
       <button
         type="button"
         onClick={() => setCollapsed((c) => !c)}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left active:bg-white/5"
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-left hover:bg-canvas-surface-hover"
       >
         {collapsed ? (
-          <FiChevronRight size={10} className="shrink-0 text-gray-600" />
+          <FiChevronRight size={10} className="shrink-0 text-purple-400/60" />
         ) : (
-          <FiChevronDown size={10} className="shrink-0 text-gray-600" />
+          <FiChevronDown size={10} className="shrink-0 text-purple-400/60" />
         )}
-        <span className="text-[11px] text-gray-600">Thinking</span>
+        <span className="text-[11px] text-canvas-muted">Thinking...</span>
       </button>
       {!collapsed && (
-        <div className="ml-2 max-h-[300px] overflow-y-auto rounded-md bg-canvas-bg/50 px-3 py-2">
-          <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-gray-600">
+        <div className="ml-2 max-h-[300px] overflow-y-auto rounded-md border-l-2 border-purple-400/30 bg-canvas-surface-hover/50 px-3 py-2">
+          <p className="whitespace-pre-wrap text-[11px] italic leading-relaxed text-canvas-muted">
             {message.content}
           </p>
         </div>

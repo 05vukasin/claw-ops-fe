@@ -275,6 +275,19 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
               ),
             );
           })()}
+          {/* ── Thinking indicator at end of messages ── */}
+          {(status === "thinking" || status === "tool_running") && (
+            <div className="animate-msg-in flex items-center gap-2 px-5 py-2">
+              <span className="thinking-dots flex items-center gap-0.5">
+                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-purple-400" />
+                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-purple-400" />
+                <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-purple-400" />
+              </span>
+              <span className="text-[11px] text-canvas-muted">
+                {status === "tool_running" ? "Working..." : "Thinking..."}
+              </span>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
 
