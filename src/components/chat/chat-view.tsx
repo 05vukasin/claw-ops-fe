@@ -18,10 +18,16 @@ const MODE_LABELS: Record<string, string> = {
   plan: "Plan Mode",
 };
 
-const MODE_OPTIONS = [
+const CLAUDE_MODE_OPTIONS = [
   { value: "default", label: "Default", description: "Ask before edits and commands" },
   { value: "acceptEdits", label: "Accept Edits", description: "Auto-approve file edits" },
   { value: "plan", label: "Plan Mode", description: "Plan only, no changes" },
+];
+
+const CODEX_MODE_OPTIONS = [
+  { value: "default", label: "Default", description: "Workspace write with approval popups for commands and edits" },
+  { value: "acceptEdits", label: "Accept Edits", description: "Workspace write with automatic command and edit execution" },
+  { value: "plan", label: "Plan Mode", description: "Read-only sandbox for planning without file changes" },
 ];
 
 const EFFORT_OPTIONS = [
@@ -75,9 +81,10 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
   const bottomRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const [loadingHistory, setLoadingHistory] = useState(!!resumeSessionId);
+  const modeStorageKey = `openclaw-chat-mode:${provider}:v1`;
   const [permissionMode, setMode] = useState<string>(() => {
     if (typeof window === "undefined") return "default";
-    return localStorage.getItem("openclaw-chat-mode:v1") || "default";
+    return localStorage.getItem(`openclaw-chat-mode:${provider}:v1`) || "default";
   });
   const [effortLevel, setEffortLevel] = useState<string | null>(null);
   const [showModeMenu, setShowModeMenu] = useState(false);
@@ -86,21 +93,22 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
   const isClaude = provider === "claude";
   const providerLabel = isClaude ? "Claude" : "Codex";
   const showProviderToggle = availableProviders.length > 1;
+  const modeOptions = isClaude ? CLAUDE_MODE_OPTIONS : CODEX_MODE_OPTIONS;
 
   /* ── Persist mode to localStorage ── */
   useEffect(() => {
-    try { localStorage.setItem("openclaw-chat-mode:v1", permissionMode); } catch {}
-  }, [permissionMode]);
+    try { localStorage.setItem(modeStorageKey, permissionMode); } catch {}
+  }, [modeStorageKey, permissionMode]);
 
   /* ── Sync stored mode to bridge when it first becomes ready ── */
   useEffect(() => {
-    if (isClaude && status === "idle" && !bridgeSyncedRef.current) {
+    if (status === "idle" && !bridgeSyncedRef.current) {
       bridgeSyncedRef.current = true;
       if (permissionMode !== "default") {
         setPermissionMode(permissionMode);
       }
     }
-  }, [isClaude, status, permissionMode, setPermissionMode]);
+  }, [status, permissionMode, setPermissionMode]);
 
   /* ── Load message history when resuming a session ── */
   useEffect(() => {
@@ -172,46 +180,40 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
         )}
 
         {/* Mode selector */}
-        {isClaude ? (
-          <button
-            type="button"
-            onClick={() => setShowModeMenu((v) => !v)}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-canvas-muted hover:bg-canvas-surface-hover"
-          >
-            <FiShield size={11} />
-            <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
-            <FiChevronDown size={10} />
-          </button>
-        ) : (
-          <span className="text-[11px] text-canvas-muted">Codex session</span>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowModeMenu((v) => !v)}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-canvas-muted hover:bg-canvas-surface-hover"
+        >
+          <FiShield size={11} />
+          <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
+          <FiChevronDown size={10} />
+        </button>
 
         {/* Effort selector — segmented control */}
-        {isClaude && (
-          <div className="flex items-center gap-0.5 rounded-md bg-canvas-surface-hover p-0.5">
-            {EFFORT_OPTIONS.map((opt) => {
-              const isActive = (opt.value === "" && !effortLevel) || opt.value === effortLevel;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    const val = opt.value || null;
-                    setEffortLevel(val);
-                    setEffort(val);
-                  }}
-                  className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                    isActive
-                      ? "bg-canvas-bg text-canvas-fg"
-                      : "text-canvas-muted hover:text-canvas-fg"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <div className="flex items-center gap-0.5 rounded-md bg-canvas-surface-hover p-0.5">
+          {EFFORT_OPTIONS.map((opt) => {
+            const isActive = (opt.value === "" && !effortLevel) || opt.value === effortLevel;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  const val = opt.value || null;
+                  setEffortLevel(val);
+                  setEffort(val);
+                }}
+                className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                  isActive
+                    ? "bg-canvas-bg text-canvas-fg"
+                    : "text-canvas-muted hover:text-canvas-fg"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
 
         {/* Status (shown when headerless — since header status is hidden) */}
         {headerless && (
@@ -221,9 +223,9 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
         )}
 
         {/* Mode dropdown */}
-        {isClaude && showModeMenu && (
+        {showModeMenu && (
           <div className="absolute left-3 top-full z-50 mt-1 rounded-lg border border-canvas-border bg-canvas-bg py-1 shadow-lg">
-            {MODE_OPTIONS.map((opt) => (
+            {modeOptions.map((opt) => (
               <button
                 key={opt.value}
                 type="button"

@@ -1083,7 +1083,7 @@ export async function checkClaudeCodeInstalledApi(serverId: string): Promise<boo
   try {
     const result = await executeCommandApi(
       serverId,
-      'which claude 2>/dev/null || command -v claude 2>/dev/null || test -f /usr/local/bin/claude || test -f "$HOME/.local/bin/claude" || test -f "$HOME/.npm-global/bin/claude" || (npm list -g @anthropic-ai/claude-code 2>/dev/null | grep -q claude-code)',
+      'command -v claude 2>/dev/null || test -x /usr/local/bin/claude || test -x "$HOME/.local/bin/claude" || test -x "$HOME/.npm-global/bin/claude" || ls "$HOME/.nvm/versions/node"/*/bin/claude >/dev/null 2>&1 || (NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"; test -n "$NPM_PREFIX" && test -x "$NPM_PREFIX/bin/claude") || (npm list -g @anthropic-ai/claude-code 2>/dev/null | grep -q claude-code)',
       10,
     );
     return result.exitCode === 0;
