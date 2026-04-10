@@ -8,6 +8,7 @@ import { AgentConfigPanel } from "@/components/agents/agent-config-panel";
 import { FileEditorPanel } from "@/components/servers/file-editor-panel";
 import { GitHubDashboardPanel } from "@/components/servers/github-dashboard-panel";
 import { ClaudeDashboardPanel } from "@/components/servers/claude-dashboard-panel";
+import { CodexDashboardPanel } from "@/components/servers/codex-dashboard-panel";
 import { useServers } from "@/lib/use-servers";
 import { Z_INDEX } from "@/lib/z-index";
 import type { Server, SftpFile } from "@/lib/api";
@@ -117,6 +118,19 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     [openClaudeKeys],
   );
 
+  const openCodexKeys = useMemo(() => {
+    const param = searchParams.get("codex") ?? "";
+    return param.split(",").filter(Boolean);
+  }, [searchParams]);
+
+  const openCodexEntries = useMemo(
+    () => openCodexKeys.map((k) => ({
+      serverId: k.replace("codex::", ""),
+      key: k,
+    })),
+    [openCodexKeys],
+  );
+
   // Focus order — shared between server, agent, and file panels
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
 
@@ -148,7 +162,7 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   // Edit modal
   const [editServer, setEditServer] = useState<Server | null>(null);
 
-  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[], githubKeys?: string[], claudeKeys?: string[]) => {
+  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[], githubKeys?: string[], claudeKeys?: string[], codexKeys?: string[]) => {
     const sp = new URLSearchParams();
     if (serverIds.length > 0) sp.set("servers", serverIds.join(","));
     const agents = agentKeys ?? openAgentKeys;
@@ -157,9 +171,11 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     if (gh.length > 0) sp.set("github", gh.join(","));
     const cc = claudeKeys ?? openClaudeKeys;
     if (cc.length > 0) sp.set("claude", cc.join(","));
+    const codex = codexKeys ?? openCodexKeys;
+    if (codex.length > 0) sp.set("codex", codex.join(","));
     const qs = sp.toString();
     router.push(qs ? `/?${qs}` : "/");
-  }, [router, openAgentKeys, openGitHubKeys, openClaudeKeys]);
+  }, [router, openAgentKeys, openGitHubKeys, openClaudeKeys, openCodexKeys]);
 
   const handleClose = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -183,6 +199,12 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     const remaining = openClaudeKeys.filter((k) => k !== key);
     updateUrl(openIds, undefined, undefined, remaining);
   }, [openIds, openClaudeKeys, updateUrl]);
+
+  const handleCodexClose = useCallback((key: string) => {
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+    const remaining = openCodexKeys.filter((k) => k !== key);
+    updateUrl(openIds, undefined, undefined, undefined, remaining);
+  }, [openIds, openCodexKeys, updateUrl]);
 
   const handleDelete = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -255,6 +277,7 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     openAgentEntries.length === 0 &&
     openGitHubEntries.length === 0 &&
     openClaudeEntries.length === 0 &&
+    openCodexEntries.length === 0 &&
     openFiles.length === 0 &&
     openConfigs.length === 0
   )
@@ -305,6 +328,17 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           serverId={entry.serverId}
           serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
           onClose={() => handleClaudeClose(entry.key)}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
+        />
+      ))}
+
+      {openCodexEntries.map((entry) => (
+        <CodexDashboardPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
+          onClose={() => handleCodexClose(entry.key)}
           zIndex={getZIndex(entry.key)}
           onFocus={() => handleFocus(entry.key)}
         />

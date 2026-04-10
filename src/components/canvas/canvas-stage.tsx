@@ -7,10 +7,12 @@ import { ServerNode } from "@/components/servers/server-node";
 import { AgentNode } from "@/components/servers/agent-node";
 import { GitHubNode } from "@/components/servers/github-node";
 import { ClaudeNode } from "@/components/servers/claude-node";
+import { CodexNode } from "@/components/servers/codex-node";
 import type { ServerWithUI } from "@/lib/use-servers";
 import type { AgentWithUI } from "@/lib/use-agents";
 import type { GitHubAccountWithUI } from "@/lib/use-github-accounts";
 import type { ClaudeAccountWithUI } from "@/lib/use-claude-accounts";
+import type { CodexAccountWithUI } from "@/lib/use-codex-accounts";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
@@ -46,13 +48,15 @@ interface CanvasStageProps {
   agents?: AgentWithUI[];
   githubAccounts?: GitHubAccountWithUI[];
   claudeAccounts?: ClaudeAccountWithUI[];
+  codexAccounts?: CodexAccountWithUI[];
   onMoveServer: (id: string, x: number, y: number) => void;
   onMoveAgent?: (serverId: string, name: string, offsetX: number, offsetY: number) => void;
   onMoveGitHub?: (serverId: string, offsetX: number, offsetY: number) => void;
   onMoveClaude?: (serverId: string, offsetX: number, offsetY: number) => void;
+  onMoveCodex?: (serverId: string, offsetX: number, offsetY: number) => void;
 }
 
-export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub, onMoveClaude }: CanvasStageProps) {
+export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeAccounts = [], codexAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub, onMoveClaude, onMoveCodex }: CanvasStageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Multi-panel: read comma-separated servers param
@@ -147,6 +151,29 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     [router, searchParams],
   );
 
+  const handleCodexSelect = useCallback(
+    (serverId: string) => {
+      const key = `codex::${serverId}`;
+      const codexParam = searchParams.get("codex") ?? "";
+      const openCodex = codexParam.split(",").filter(Boolean);
+      const updated = openCodex.includes(key)
+        ? [...openCodex.filter((x) => x !== key), key]
+        : [...openCodex, key];
+      const sp = new URLSearchParams(searchParams);
+      sp.set("codex", updated.join(","));
+      const serversVal = sp.get("servers");
+      if (!serversVal) sp.delete("servers");
+      const agentsVal = sp.get("agents");
+      if (!agentsVal) sp.delete("agents");
+      const ghVal = sp.get("github");
+      if (!ghVal) sp.delete("github");
+      const claudeVal = sp.get("claude");
+      if (!claudeVal) sp.delete("claude");
+      router.push(`/?${sp.toString()}`);
+    },
+    [router, searchParams],
+  );
+
   const handleFocus = useCallback(() => {}, []);
 
   // Server lookup for agent positioning
@@ -216,6 +243,17 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     }
   }, []);
 
+  const codexLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
+
+  const handleCodexSpringPos = useCallback((serverId: string, x: number, y: number) => {
+    const key = `codex::${serverId}`;
+    const line = codexLineRefs.current.get(key);
+    if (line) {
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y2", String(y));
+    }
+  }, []);
+
   // Update connector x1/y1 when server positions change (live drag or stored)
   useEffect(() => {
     for (const a of agents) {
@@ -240,6 +278,15 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
       const sp = livePos[cc.serverId] ?? (() => { const s = serverMap.get(cc.serverId); return s ? { x: s.x, y: s.y } : null; })();
       if (!sp) continue;
       const line = claudeLineRefs.current.get(`claude::${cc.serverId}`);
+      if (line) {
+        line.setAttribute("x1", String(sp.x));
+        line.setAttribute("y1", String(sp.y));
+      }
+    }
+    for (const codex of codexAccounts) {
+      const sp = livePos[codex.serverId] ?? (() => { const s = serverMap.get(codex.serverId); return s ? { x: s.x, y: s.y } : null; })();
+      if (!sp) continue;
+      const line = codexLineRefs.current.get(`codex::${codex.serverId}`);
       if (line) {
         line.setAttribute("x1", String(sp.x));
         line.setAttribute("y1", String(sp.y));
@@ -282,7 +329,7 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     if (e.button !== PAN_BUTTON) return;
     const target = e.target as HTMLElement;
     // If the click hit a server node, don't pan
-    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]") || target.closest("[data-github-node]") || target.closest("[data-claude-node]")) return;
+    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]") || target.closest("[data-github-node]") || target.closest("[data-claude-node]") || target.closest("[data-codex-node]")) return;
 
     panning.current = true;
     panStart.current = {
@@ -406,6 +453,26 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
               />
             );
           })}
+          {codexAccounts.map((codex) => {
+            const sp = getServerPos(codex.serverId);
+            if (!sp) return null;
+            const key = `codex::${codex.serverId}`;
+            return (
+              <line
+                key={`line-${key}`}
+                ref={(el) => { if (el) codexLineRefs.current.set(key, el); else codexLineRefs.current.delete(key); }}
+                x1={sp.x}
+                y1={sp.y}
+                x2={sp.x + codex.offsetX}
+                y2={sp.y + codex.offsetY}
+                stroke="#14b8a6"
+                strokeOpacity={0.34}
+                strokeWidth={2.5}
+                strokeDasharray="0 8"
+                strokeLinecap="round"
+              />
+            );
+          })}
         </svg>
 
         {/* Server nodes (render first so agents stack on top) */}
@@ -472,6 +539,23 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
               onMoveEnd={onMoveClaude ?? (() => {})}
               onSpringPos={handleClaudeSpringPos}
               onSelect={handleClaudeSelect}
+              zoom={camera.zoom}
+            />
+          );
+        })}
+
+        {codexAccounts.map((codex) => {
+          const sp = getServerPos(codex.serverId);
+          if (!sp) return null;
+          return (
+            <CodexNode
+              key={`codex-${codex.serverId}`}
+              account={codex}
+              serverX={sp.x}
+              serverY={sp.y}
+              onMoveEnd={onMoveCodex ?? (() => {})}
+              onSpringPos={handleCodexSpringPos}
+              onSelect={handleCodexSelect}
               zoom={camera.zoom}
             />
           );
