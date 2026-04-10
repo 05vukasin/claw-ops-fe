@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { FiMenu, FiX, FiFolder, FiCheck, FiChevronsLeft, FiMessageSquare, FiUpload } from "react-icons/fi";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
@@ -67,7 +66,6 @@ export function ChatLayout({
   const [currentBrowserPath, setCurrentBrowserPath] = useState("~");
 
   const selectedServer = servers.find((s) => s.id === selectedServerId);
-  const showProviderToggle = availableProviders.length > 1;
   const providerLabel = selectedProvider === "codex" ? "Codex" : "Claude";
 
   const handleCopyPath = useCallback((command: string) => {
@@ -175,16 +173,6 @@ export function ChatLayout({
           <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} />
         </div>
 
-        {showProviderToggle && selectedProvider && (
-          <div className="flex shrink-0 items-center gap-2 border-b border-canvas-border px-3 py-2">
-            <ProviderToggle
-              availableProviders={availableProviders}
-              selectedProvider={selectedProvider}
-              onChange={onProviderChange}
-            />
-          </div>
-        )}
-
         {/* Chat view */}
         <div className="flex min-h-0 flex-1 flex-col">
           {selectedServerId ? (
@@ -193,6 +181,8 @@ export function ChatLayout({
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               provider={selectedProvider ?? "claude"}
+              availableProviders={availableProviders}
+              onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
               headerless
@@ -321,6 +311,8 @@ export function ChatLayout({
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               provider={selectedProvider ?? "claude"}
+              availableProviders={availableProviders}
+              onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
               headerless
@@ -401,18 +393,6 @@ export function ChatLayout({
         )}
       </div>
 
-      {showProviderToggle && selectedProvider && !isMobile && (
-        <div className="pointer-events-none absolute left-[276px] right-[316px] top-2 z-10 flex justify-center">
-          <div className="pointer-events-auto">
-            <ProviderToggle
-              availableProviders={availableProviders}
-              selectedProvider={selectedProvider}
-              onChange={onProviderChange}
-            />
-          </div>
-        </div>
-      )}
-
       {/* File editor panels (above everything) */}
       {fileEditors}
 
@@ -424,38 +404,5 @@ export function ChatLayout({
         </div>
       )}
     </>
-  );
-}
-
-interface ProviderToggleProps {
-  availableProviders: ChatProvider[];
-  selectedProvider: ChatProvider;
-  onChange: (provider: ChatProvider) => void;
-}
-
-function ProviderToggle({ availableProviders, selectedProvider, onChange }: ProviderToggleProps) {
-  return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-canvas-border bg-canvas-bg/90 p-1 shadow-sm backdrop-blur">
-      {availableProviders.map((provider) => {
-        const active = provider === selectedProvider;
-        const label = provider === "codex" ? "Codex" : "Claude";
-        const src = provider === "codex" ? "/images/codex.png" : "/images/claude.png";
-        return (
-          <button
-            key={provider}
-            type="button"
-            onClick={() => onChange(provider)}
-            className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-              active
-                ? "bg-canvas-surface-hover text-canvas-fg"
-                : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
-            }`}
-          >
-            <Image src={src} alt={label} width={14} height={14} className="h-3.5 w-3.5 rounded-sm" />
-            <span>{label}</span>
-          </button>
-        );
-      })}
-    </div>
   );
 }

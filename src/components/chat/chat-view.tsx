@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { FiArrowLeft, FiShield, FiChevronDown, FiTerminal, FiFile, FiEdit } from "react-icons/fi";
 import { useClaudeChat } from "@/lib/use-claude-chat";
@@ -53,6 +54,8 @@ interface ChatViewProps {
   serverId: string;
   serverName: string;
   provider: ChatProvider;
+  availableProviders?: ChatProvider[];
+  onProviderChange?: (provider: ChatProvider) => void;
   resumeSessionId?: string | null;
   backgroundSessionId?: string | null;
   onBack?: () => void;
@@ -60,7 +63,7 @@ interface ChatViewProps {
   fileButton?: ReactNode;
 }
 
-export function ChatView({ serverId, serverName, provider, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
+export function ChatView({ serverId, serverName, provider, availableProviders = [], onProviderChange, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
   const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     provider,
@@ -82,6 +85,7 @@ export function ChatView({ serverId, serverName, provider, resumeSessionId, back
   const bridgeSyncedRef = useRef(false);
   const isClaude = provider === "claude";
   const providerLabel = isClaude ? "Claude" : "Codex";
+  const showProviderToggle = availableProviders.length > 1;
 
   /* ── Persist mode to localStorage ── */
   useEffect(() => {
@@ -159,6 +163,14 @@ export function ChatView({ serverId, serverName, provider, resumeSessionId, back
 
       {/* ── Mode & Effort bar ── */}
       <div className="relative flex shrink-0 items-center gap-3 border-b border-canvas-border px-3 py-1.5">
+        {showProviderToggle && onProviderChange && (
+          <ProviderToggle
+            availableProviders={availableProviders}
+            selectedProvider={provider}
+            onChange={onProviderChange}
+          />
+        )}
+
         {/* Mode selector */}
         {isClaude ? (
           <button
@@ -362,6 +374,39 @@ export function ChatView({ serverId, serverName, provider, resumeSessionId, back
 
       {/* ── Input ── */}
       <ChatInput status={status} provider={provider} onSend={sendMessage} fileButton={fileButton} />
+    </div>
+  );
+}
+
+interface ProviderToggleProps {
+  availableProviders: ChatProvider[];
+  selectedProvider: ChatProvider;
+  onChange: (provider: ChatProvider) => void;
+}
+
+function ProviderToggle({ availableProviders, selectedProvider, onChange }: ProviderToggleProps) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-full border border-canvas-border bg-canvas-bg p-1">
+      {availableProviders.map((provider) => {
+        const active = provider === selectedProvider;
+        const label = provider === "codex" ? "Codex" : "Claude";
+        const src = provider === "codex" ? "/images/codex.png" : "/images/claude.png";
+        return (
+          <button
+            key={provider}
+            type="button"
+            onClick={() => onChange(provider)}
+            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              active
+                ? "bg-canvas-surface-hover text-canvas-fg"
+                : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+            }`}
+          >
+            <Image src={src} alt={label} width={14} height={14} className="h-3.5 w-3.5 rounded-sm" />
+            <span>{label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
