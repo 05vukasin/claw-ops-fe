@@ -7,6 +7,7 @@ import { useServers } from "@/lib/use-servers";
 import { useAgents } from "@/lib/use-agents";
 import { useGitHubAccounts } from "@/lib/use-github-accounts";
 import { useClaudeAccounts } from "@/lib/use-claude-accounts";
+import { useCodexAccounts } from "@/lib/use-codex-accounts";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { WorkspacePanel } from "./workspace-panel";
 import { NewServerButton } from "./new-server-button";
@@ -16,6 +17,7 @@ export default function ServersPage() {
   const { agents, moveAgent } = useAgents(servers);
   const { accounts: githubAccounts, moveGitHubNode } = useGitHubAccounts(servers);
   const { accounts: claudeAccounts, moveClaudeNode } = useClaudeAccounts(servers);
+  const { accounts: codexAccounts, moveCodexNode } = useCodexAccounts(servers);
   const isMobile = useIsMobile();
 
   if (isMobile) {
@@ -29,7 +31,7 @@ export default function ServersPage() {
 
   return (
     <>
-      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} claudeAccounts={claudeAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} onMoveClaude={moveClaudeNode} />
+      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} claudeAccounts={claudeAccounts} codexAccounts={codexAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} onMoveClaude={moveClaudeNode} onMoveCodex={moveCodexNode} />
       <FleetSummaryBar />
 
       {servers.length === 0 && (
