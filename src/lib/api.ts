@@ -1564,3 +1564,84 @@ export async function subscribeFcmApi(token: string, platform: string): Promise<
   });
   if (!res.ok) throw new ApiError(res.status, "FCM subscribe failed");
 }
+
+/* ------------------------------------------------------------------ */
+/*  Background chat sessions                                           */
+/* ------------------------------------------------------------------ */
+
+export interface BackgroundSession {
+  id: string;
+  running: boolean;
+  status: string;
+  claudeSessionId: string | null;
+  startedAt: number;
+  lastActivity: number;
+}
+
+export async function startBackgroundChatApi(
+  serverId: string,
+  sessionId: string,
+  resumeClaudeId?: string,
+): Promise<void> {
+  const resumeFlag = resumeClaudeId ? ` --resume-claude ${resumeClaudeId}` : "";
+  const cmd = `mkdir -p ~/.claw-sessions/${sessionId} && export PATH="$HOME/.local/bin:$PATH" && nohup node ~/.local/share/claw-ops/chat-bridge.mjs --background --id ${sessionId}${resumeFlag} > /dev/null 2>&1 & echo $!`;
+  const result = await executeCommandApi(serverId, cmd, 10);
+  if (result.exitCode !== 0) throw new ApiError(500, "Failed to start background chat");
+}
+
+export async function sendBackgroundMessageApi(
+  serverId: string,
+  sessionId: string,
+  msg: Record<string, unknown>,
+): Promise<void> {
+  const escaped = JSON.stringify(msg).replace(/'/g, "'\\''");
+  const cmd = `echo '${escaped}' >> ~/.claw-sessions/${sessionId}/input.jsonl`;
+  await executeCommandApi(serverId, cmd, 5);
+}
+
+export async function pollBackgroundOutputApi(
+  serverId: string,
+  sessionId: string,
+  afterLine: number,
+): Promise<{ lines: string[]; nextLine: number }> {
+  const cmd = `tail -n +${afterLine + 1} ~/.claw-sessions/${sessionId}/output.jsonl 2>/dev/null`;
+  const result = await executeCommandApi(serverId, cmd, 10);
+  if (result.exitCode !== 0) return { lines: [], nextLine: afterLine };
+  const lines = result.stdout.split("\n").filter(Boolean);
+  return { lines, nextLine: afterLine + lines.length };
+}
+
+export async function listBackgroundSessionsApi(
+  serverId: string,
+): Promise<BackgroundSession[]> {
+  const script = `python3 -c "
+import json,os,glob
+sessions=[]
+for d in glob.glob(os.path.expanduser('~/.claw-sessions/*/')):
+  sid=os.path.basename(d.rstrip('/'))
+  meta={}
+  try:
+    with open(os.path.join(d,'meta.json')) as f: meta=json.loads(f.read())
+  except: pass
+  running=False
+  try:
+    pid=int(open(os.path.join(d,'pid')).read().strip())
+    os.kill(pid,0)
+    running=True
+  except: pass
+  sessions.append({'id':sid,'running':running,'status':meta.get('status','unknown'),'claudeSessionId':meta.get('claudeSessionId'),'startedAt':meta.get('startedAt',0),'lastActivity':meta.get('lastActivity',0)})
+sessions.sort(key=lambda x:x['lastActivity'],reverse=True)
+print(json.dumps(sessions))
+"`;
+  const result = await executeCommandApi(serverId, script, 15);
+  if (result.exitCode !== 0) return [];
+  try { return JSON.parse(result.stdout) as BackgroundSession[]; } catch { return []; }
+}
+
+export async function stopBackgroundSessionApi(
+  serverId: string,
+  sessionId: string,
+): Promise<void> {
+  const cmd = `cat ~/.claw-sessions/${sessionId}/pid 2>/dev/null | xargs -r kill 2>/dev/null; echo '{"type":"stop"}' >> ~/.claw-sessions/${sessionId}/input.jsonl 2>/dev/null`;
+  await executeCommandApi(serverId, cmd, 5);
+}

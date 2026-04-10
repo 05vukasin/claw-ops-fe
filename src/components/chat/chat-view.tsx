@@ -52,15 +52,17 @@ interface ChatViewProps {
   serverId: string;
   serverName: string;
   resumeSessionId?: string | null;
+  backgroundSessionId?: string | null;
   onBack?: () => void;
   headerless?: boolean;
   fileButton?: ReactNode;
 }
 
-export function ChatView({ serverId, serverName, resumeSessionId, onBack, headerless, fileButton }: ChatViewProps) {
+export function ChatView({ serverId, serverName, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
   const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     resumeSessionId,
+    backgroundSessionId,
   );
   const { viewportHeight } = useVisualViewport();
   const scrollRef = useRef<HTMLDivElement>(null);

@@ -22,10 +22,12 @@ interface ChatLayoutProps {
   onServerChange: (serverId: string) => void;
   sessions: ChatSession[];
   selectedSessionId: string | null;
+  backgroundSessionId?: string | null;
   onSelectSession: (sessionId: string) => void;
   onNewChat: () => void;
   onRefreshSessions: () => void;
   sessionsLoading: boolean;
+  runningSessionIds?: Set<string>;
 }
 
 export function ChatLayout({
@@ -34,10 +36,12 @@ export function ChatLayout({
   onServerChange,
   sessions,
   selectedSessionId,
+  backgroundSessionId,
   onSelectSession,
   onNewChat,
   onRefreshSessions,
   sessionsLoading,
+  runningSessionIds,
 }: ChatLayoutProps) {
   const isMobile = useIsMobile();
   const { viewportHeight } = useVisualViewport();
@@ -170,6 +174,7 @@ export function ChatLayout({
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               resumeSessionId={selectedSessionId}
+              backgroundSessionId={backgroundSessionId}
               headerless
               fileButton={
                 <button
@@ -208,6 +213,7 @@ export function ChatLayout({
                     onSelectSession={(sid) => { onSelectSession(sid); setSidebarOpen(false); }}
                     onNewChat={() => { onNewChat(); setSidebarOpen(false); }}
                     onRefresh={onRefreshSessions}
+                    runningSessionIds={runningSessionIds}
                   />
                 )}
               </div>
@@ -295,6 +301,7 @@ export function ChatLayout({
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               resumeSessionId={selectedSessionId}
+              backgroundSessionId={backgroundSessionId}
               headerless
             />
           ) : (

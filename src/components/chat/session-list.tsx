@@ -30,6 +30,7 @@ interface SessionListProps {
   sessions: ChatSession[];
   loading: boolean;
   onRefresh: () => void;
+  runningSessionIds?: Set<string>;
 }
 
 export function SessionList({
@@ -39,6 +40,7 @@ export function SessionList({
   sessions,
   loading,
   onRefresh,
+  runningSessionIds,
 }: SessionListProps) {
   return (
     <div className="flex h-full flex-col">
@@ -88,23 +90,29 @@ export function SessionList({
           <div className="space-y-0.5">
             {sessions.map((session) => {
               const isActive = session.sessionId === selectedSessionId;
+              const isRunning = runningSessionIds?.has(session.sessionId);
               return (
                 <button
                   key={session.sessionId}
                   type="button"
                   onClick={() => onSelectSession(session.sessionId)}
-                  className={`flex w-full flex-col rounded-lg px-3 py-2 text-left transition-colors ${
+                  className={`flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
                     isActive
                       ? "bg-canvas-surface-hover text-canvas-fg"
                       : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
                   }`}
                 >
-                  <p className={`line-clamp-1 text-[13px] ${isActive ? "font-medium" : ""}`}>
-                    {session.display}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-canvas-muted">
-                    {formatRelativeTime(session.timestamp)}
-                  </p>
+                  {isRunning && (
+                    <span className="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-green-500" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className={`line-clamp-1 text-[13px] ${isActive ? "font-medium" : ""}`}>
+                      {session.display}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-canvas-muted">
+                      {isRunning ? "Running" : formatRelativeTime(session.timestamp)}
+                    </p>
+                  </div>
                 </button>
               );
             })}

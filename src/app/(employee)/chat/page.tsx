@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { fetchServersApi, fetchChatSessionsApi } from "@/lib/api";
-import type { Server } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchServersApi, fetchChatSessionsApi, listBackgroundSessionsApi } from "@/lib/api";
+import type { Server, BackgroundSession } from "@/lib/api";
 import type { ChatSession } from "@/lib/types";
 import { ChatLayout } from "@/components/chat";
 
@@ -26,8 +26,20 @@ export default function ChatPage() {
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [backgroundSessionId, setBackgroundSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [bgSessions, setBgSessions] = useState<BackgroundSession[]>([]);
+
+  // Running session IDs for the sidebar indicator
+  const runningSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const bg of bgSessions) {
+      if (bg.running && bg.claudeSessionId) ids.add(bg.claudeSessionId);
+      if (bg.running) ids.add(bg.id);
+    }
+    return ids;
+  }, [bgSessions]);
 
   /* ── Load sessions for a server ── */
   const loadSessions = useCallback(async (serverId: string, preferredSessionId?: string) => {
@@ -35,7 +47,6 @@ export default function ChatPage() {
     try {
       const list = await fetchChatSessionsApi(serverId);
       setSessions(list);
-      // Use preferred session if it exists in the list, otherwise most recent
       if (preferredSessionId && list.some((s) => s.sessionId === preferredSessionId)) {
         setSelectedSessionId(preferredSessionId);
       } else if (list.length > 0) {
@@ -45,6 +56,16 @@ export default function ChatPage() {
       setSessions([]);
     }
     setSessionsLoading(false);
+  }, []);
+
+  /* ── Load background session status ── */
+  const loadBgSessions = useCallback(async (serverId: string) => {
+    try {
+      const list = await listBackgroundSessionsApi(serverId);
+      setBgSessions(list);
+    } catch {
+      setBgSessions([]);
+    }
   }, []);
 
   /* ── Initial server fetch + restore last chat ── */
@@ -57,12 +78,12 @@ export default function ChatPage() {
 
         if (serverList.length > 0) {
           const last = loadLastChat();
-          // Restore last server if it's in the list
           const restoredServer = last.serverId && serverList.some((s) => s.id === last.serverId)
             ? last.serverId
             : serverList[0].id;
           setSelectedServerId(restoredServer);
           loadSessions(restoredServer, last.sessionId);
+          loadBgSessions(restoredServer);
         }
 
         setLoading(false);
@@ -70,7 +91,14 @@ export default function ChatPage() {
       .catch(() => {
         setLoading(false);
       });
-  }, [loadSessions]);
+  }, [loadSessions, loadBgSessions]);
+
+  /* ── Poll background sessions every 10s ── */
+  useEffect(() => {
+    if (!selectedServerId) return;
+    const interval = setInterval(() => loadBgSessions(selectedServerId), 10000);
+    return () => clearInterval(interval);
+  }, [selectedServerId, loadBgSessions]);
 
   /* ── Persist selection to localStorage ── */
   useEffect(() => {
@@ -84,21 +112,41 @@ export default function ChatPage() {
     (serverId: string) => {
       setSelectedServerId(serverId);
       setSelectedSessionId(null);
+      setBackgroundSessionId(null);
       setSessions([]);
+      setBgSessions([]);
       loadSessions(serverId);
+      loadBgSessions(serverId);
     },
-    [loadSessions],
+    [loadSessions, loadBgSessions],
   );
 
-  /* ── Handle new chat ── */
+  /* ── Handle new chat (starts as background session) ── */
   const handleNewChat = useCallback(() => {
+    const newBgId = crypto.randomUUID();
     setSelectedSessionId(null);
+    setBackgroundSessionId(newBgId);
   }, []);
+
+  /* ── Handle selecting an existing session ── */
+  const handleSelectSession = useCallback((sessionId: string) => {
+    setSelectedSessionId(sessionId);
+    // Check if this session has a running background bridge
+    const bg = bgSessions.find((b) => b.claudeSessionId === sessionId || b.id === sessionId);
+    if (bg?.running) {
+      setBackgroundSessionId(bg.id);
+    } else {
+      setBackgroundSessionId(null);
+    }
+  }, [bgSessions]);
 
   /* ── Handle session refresh ── */
   const handleRefreshSessions = useCallback(() => {
-    if (selectedServerId) loadSessions(selectedServerId);
-  }, [selectedServerId, loadSessions]);
+    if (selectedServerId) {
+      loadSessions(selectedServerId);
+      loadBgSessions(selectedServerId);
+    }
+  }, [selectedServerId, loadSessions, loadBgSessions]);
 
   if (loading) {
     return (
@@ -123,10 +171,12 @@ export default function ChatPage() {
       onServerChange={handleServerChange}
       sessions={sessions}
       selectedSessionId={selectedSessionId}
-      onSelectSession={setSelectedSessionId}
+      backgroundSessionId={backgroundSessionId}
+      onSelectSession={handleSelectSession}
       onNewChat={handleNewChat}
       onRefreshSessions={handleRefreshSessions}
       sessionsLoading={sessionsLoading}
+      runningSessionIds={runningSessionIds}
     />
   );
 }

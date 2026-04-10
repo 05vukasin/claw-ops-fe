@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getSessionTokenApi } from "@/lib/api";
+import { getSessionTokenApi, startBackgroundChatApi, sendBackgroundMessageApi, pollBackgroundOutputApi } from "@/lib/api";
 import { getApiOrigin } from "@/lib/apiClient";
 import type { ChatMessage, ClaudeStatus, ActiveToolInfo } from "@/lib/types";
 
@@ -23,7 +23,9 @@ function cleanRaw(s: string): string {
 export function useClaudeChat(
   serverId: string | null,
   resumeSessionId?: string | null,
+  backgroundSessionId?: string | null,
 ) {
+  const isBackground = !!backgroundSessionId;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ClaudeStatus>("disconnected");
   const [activeTool, setActiveTool] = useState<ActiveToolInfo | null>(null);
@@ -38,6 +40,7 @@ export function useClaudeChat(
   const lastOutputTimeRef = useRef(0);
   const toolInputAccum = useRef("");
   const lastSnapshotRef = useRef("");
+  const bgPollLineRef = useRef(0);
 
   /* ── Pre-populate messages (for loading history) ── */
   const setInitialMessages = useCallback((msgs: ChatMessage[]) => {
@@ -360,13 +363,17 @@ export function useClaudeChat(
     [handleBridgeEvent],
   );
 
-  /* ── Send raw JSON to bridge via WebSocket ── */
+  /* ── Send raw JSON to bridge ── */
   const sendToBridge = useCallback((obj: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (isBackground && backgroundSessionId && serverId) {
+      // Background mode: write to input file via SSH
+      sendBackgroundMessageApi(serverId, backgroundSessionId, obj).catch(() => {});
+    } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Terminal mode: write to WebSocket
       const json = JSON.stringify(obj);
       wsRef.current.send(JSON.stringify({ type: "INPUT", data: json + "\n" }));
     }
-  }, []);
+  }, [isBackground, backgroundSessionId, serverId]);
 
   /* ── Launch the bridge script on the server ── */
   const launchBridge = useCallback(() => {
@@ -443,7 +450,8 @@ export function useClaudeChat(
   const sendMessage = useCallback(
     (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+      if (!trimmed) return;
+      if (!isBackground && (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)) return;
       if (status !== "idle") return;
 
       // Add user message to state
@@ -537,34 +545,81 @@ export function useClaudeChat(
     [sendToBridge],
   );
 
+  /* ── Background: start session and begin polling ── */
+  const connectBackground = useCallback(async () => {
+    if (!serverId || !backgroundSessionId) return;
+    setStatus("connecting");
+    try {
+      await startBackgroundChatApi(serverId, backgroundSessionId, resumeSessionId || undefined);
+      // Wait a moment for bridge to start
+      await new Promise((r) => setTimeout(r, 500));
+      bgPollLineRef.current = 0;
+      setStatus("idle");
+      bridgeReadyRef.current = true;
+    } catch {
+      setStatus("disconnected");
+    }
+  }, [serverId, backgroundSessionId, resumeSessionId]);
+
+  /* ── Background: poll for output ── */
+  useEffect(() => {
+    if (!isBackground || !serverId || !backgroundSessionId || !bridgeReadyRef.current) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const { lines, nextLine } = await pollBackgroundOutputApi(serverId, backgroundSessionId, bgPollLineRef.current);
+        bgPollLineRef.current = nextLine;
+        for (const line of lines) {
+          try {
+            const evt = JSON.parse(line);
+            if (evt && typeof evt.type === "string") {
+              handleBridgeEvent(evt);
+            }
+          } catch {}
+        }
+      } catch {}
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isBackground, serverId, backgroundSessionId, handleBridgeEvent]);
+
   /* ── Reconnect ── */
   const reconnect = useCallback(() => {
     if (!resumeSessionId) {
       sessionIdRef.current = null;
       setMessages([]);
     }
-    connect();
-  }, [connect, resumeSessionId]);
+    if (isBackground) {
+      connectBackground();
+    } else {
+      connect();
+    }
+  }, [connect, connectBackground, isBackground, resumeSessionId]);
 
   /* ── Auto-connect on mount ── */
   useEffect(() => {
     if (!serverId) return;
+    if (isBackground) {
+      const id = requestAnimationFrame(() => connectBackground());
+      return () => cancelAnimationFrame(id);
+    }
     const id = requestAnimationFrame(() => connect());
     return () => {
       cancelAnimationFrame(id);
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [serverId, connect]);
+  }, [serverId, connect, connectBackground, isBackground]);
 
-  /* ── Poll bridge for missed events ── */
+  /* ── Poll bridge for missed events (terminal mode only) ── */
   useEffect(() => {
+    if (isBackground) return; // Background mode has its own polling
     if (status === "idle" || status === "disconnected" || status === "connecting") return;
     const interval = setInterval(() => {
       sendToBridge({ type: "poll" });
     }, 500);
     return () => clearInterval(interval);
-  }, [status, sendToBridge]);
+  }, [status, sendToBridge, isBackground]);
 
   return {
     messages,
