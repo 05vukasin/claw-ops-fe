@@ -35,10 +35,12 @@ import {
   sendNotificationAllApi,
   sendNotificationToUserApi,
   getVapidKeyApi,
+  getFcmConfigApi,
   subscribePushApi,
   unsubscribePushApi,
   subscribeFcmApi,
   createSecretApi,
+  generateVapidKeysApi,
   ApiError,
   type NotificationProvider,
   type NotificationDevice,
@@ -274,7 +276,59 @@ export default function NotificationsPage() {
     const deviceName = `${getBrowserName()} on ${getPlatformName()}`;
     const platform = getPlatformName();
     try {
-      await registerNotificationDeviceApi({ deviceName, platform });
+      // Request notification permission
+      if (typeof Notification !== "undefined" && Notification.permission !== "granted") {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") { showAlert("Notification permission denied by browser", "error"); return; }
+      }
+
+      let pushEndpoint: string | undefined;
+      let pushKeyAuth: string | undefined;
+      let pushKeyP256dh: string | undefined;
+      let fcmToken: string | undefined;
+
+      // Try VAPID Web Push first
+      if ("serviceWorker" in navigator && "PushManager" in window) {
+        try {
+          const vapid = await getVapidKeyApi();
+          if (vapid) {
+            const swReg = await navigator.serviceWorker.register("/push-sw.js");
+            const sub = await swReg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(vapid.publicKey),
+            });
+            const keys = sub.toJSON().keys;
+            if (keys) {
+              pushEndpoint = sub.endpoint;
+              pushKeyAuth = keys.auth;
+              pushKeyP256dh = keys.p256dh;
+              await subscribePushApi({ endpoint: sub.endpoint, keyAuth: keys.auth!, keyP256dh: keys.p256dh! });
+            }
+          }
+        } catch (err) {
+          console.warn("[notifications] VAPID not available, trying FCM:", err);
+        }
+
+        // Fallback to FCM
+        if (!pushEndpoint) {
+          try {
+            const fcmConfig = await getFcmConfigApi();
+            if (fcmConfig) {
+              const swReg = await navigator.serviceWorker.register("/push-sw.js");
+              const { initializeApp } = await import("firebase/app");
+              const { getMessaging, getToken } = await import("firebase/messaging");
+              const app = initializeApp(fcmConfig);
+              const messaging = getMessaging(app);
+              fcmToken = await getToken(messaging, { serviceWorkerRegistration: swReg });
+              if (fcmToken) await subscribeFcmApi(fcmToken, platform);
+            }
+          } catch (err) {
+            console.warn("[notifications] FCM setup failed:", err);
+          }
+        }
+      }
+
+      await registerNotificationDeviceApi({ deviceName, platform, pushEndpoint, pushKeyAuth, pushKeyP256dh, fcmToken });
       showAlert(`Device registered: ${deviceName}`, "success");
       loadDevices();
     } catch (err) {
@@ -313,10 +367,46 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-4 flex items-center gap-3">
         <FiBell size={20} className="text-canvas-muted" />
         <h1 className="text-lg font-bold text-canvas-fg">Notifications</h1>
       </div>
+
+      {/* ═══════ ACTIVE PROVIDER BANNER ═══════ */}
+      {(() => {
+        const def = providers.find((p) => p.isDefault);
+        if (!def) return (
+          <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-5 py-3">
+            <p className="text-xs font-medium text-yellow-600 dark:text-yellow-400">No default provider configured. Add a provider below and set it as default.</p>
+          </div>
+        );
+        return (
+          <div className="mb-4 rounded-lg border border-canvas-border bg-canvas-bg px-5 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Active Provider</span>
+              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${def.providerType === "WEB_PUSH" ? "bg-blue-500/10 text-blue-500" : "bg-orange-500/10 text-orange-500"}`}>
+                {def.providerType === "WEB_PUSH" ? "Push API (VAPID)" : "Firebase Cloud Messaging"}
+              </span>
+              <span className="text-xs text-canvas-fg">{def.displayName}</span>
+              {providers.length > 1 && (
+                <div className="ml-auto flex items-center gap-1.5">
+                  <span className="text-[10px] text-canvas-muted">Switch to:</span>
+                  {providers.filter((p) => !p.isDefault && p.enabled).map((p) => (
+                    <button key={p.id} type="button" onClick={() => handleSetDefault(p.id)}
+                      className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors ${
+                        p.providerType === "WEB_PUSH"
+                          ? "border border-blue-500/30 text-blue-500 hover:bg-blue-500/10"
+                          : "border border-orange-500/30 text-orange-500 hover:bg-orange-500/10"
+                      }`}>
+                      {p.displayName}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ═══════ DEVICES ═══════ */}
       <div className="mb-4 rounded-lg border border-canvas-border bg-canvas-bg">
@@ -520,7 +610,23 @@ export default function NotificationsPage() {
             {provType === "WEB_PUSH" && (
               <>
                 <div>
-                  <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-canvas-muted">VAPID Public Key</label>
+                  <div className="mb-1 flex items-center justify-between">
+                    <label className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">VAPID Public Key</label>
+                    <button type="button"
+                      onClick={async () => {
+                        try {
+                          const keys = await generateVapidKeysApi();
+                          setVapidPublic(keys.publicKey);
+                          setVapidPrivate(keys.privateKey);
+                          showAlert("VAPID keys generated", "success");
+                        } catch (err) {
+                          showAlert(err instanceof ApiError ? err.message : "Failed to generate keys", "error");
+                        }
+                      }}
+                      className="text-[10px] font-medium text-blue-500 hover:text-blue-400">
+                      Generate Key Pair
+                    </button>
+                  </div>
                   <input type="text" value={vapidPublic} onChange={(e) => setVapidPublic(e.target.value)} className={`${inputBase} font-mono text-xs`} placeholder="BLcex5XS4d..." />
                 </div>
                 <div>

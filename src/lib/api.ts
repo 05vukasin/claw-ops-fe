@@ -1521,6 +1521,12 @@ export async function getVapidKeyApi(): Promise<{ publicKey: string } | null> {
   return res.json() as Promise<{ publicKey: string }>;
 }
 
+export async function generateVapidKeysApi(): Promise<{ publicKey: string; privateKey: string }> {
+  const res = await apiFetch("/api/v1/notifications/generate-vapid-keys", { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to generate VAPID keys");
+  return res.json() as Promise<{ publicKey: string; privateKey: string }>;
+}
+
 export async function getFcmConfigApi(): Promise<Record<string, string> | null> {
   const res = await apiFetch("/api/v1/notifications/fcm-config");
   if (res.status === 404) return null;
