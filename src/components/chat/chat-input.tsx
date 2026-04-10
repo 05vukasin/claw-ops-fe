@@ -3,15 +3,16 @@
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
 import { FiSend } from "react-icons/fi";
-import type { ClaudeStatus } from "@/lib/types";
+import type { ClaudeStatus, ChatProvider } from "@/lib/types";
 
 interface ChatInputProps {
   status: ClaudeStatus;
+  provider: ChatProvider;
   onSend: (text: string) => void;
   fileButton?: ReactNode;
 }
 
-export function ChatInput({ status, onSend, fileButton }: ChatInputProps) {
+export function ChatInput({ status, provider, onSend, fileButton }: ChatInputProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -60,7 +61,7 @@ export function ChatInput({ status, onSend, fileButton }: ChatInputProps) {
           onKeyDown={handleKeyDown}
           placeholder={
             status === "idle"
-              ? "Message Claude..."
+              ? `Message ${provider === "codex" ? "Codex" : "Claude"}...`
               : status === "connecting"
                 ? "Connecting..."
                 : "Disconnected"

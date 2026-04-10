@@ -5,15 +5,17 @@ import { FiFolder, FiX, FiCheck } from "react-icons/fi";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { ChatView } from "./chat-view";
 import { FileBrowser } from "@/components/servers";
+import type { ChatProvider } from "@/lib/types";
 
 interface ChatWorkspaceProps {
   serverId: string;
   serverName: string;
+  provider?: ChatProvider;
   resumeSessionId?: string | null;
   onBack?: () => void;
 }
 
-export function ChatWorkspace({ serverId, serverName, resumeSessionId, onBack }: ChatWorkspaceProps) {
+export function ChatWorkspace({ serverId, serverName, provider = "claude", resumeSessionId, onBack }: ChatWorkspaceProps) {
   const isMobile = useIsMobile();
   const [showFiles, setShowFiles] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export function ChatWorkspace({ serverId, serverName, resumeSessionId, onBack }:
       <ChatView
         serverId={serverId}
         serverName={serverName}
+        provider={provider}
         resumeSessionId={resumeSessionId}
         onBack={onBack}
       />
@@ -45,6 +48,7 @@ export function ChatWorkspace({ serverId, serverName, resumeSessionId, onBack }:
         <ChatView
           serverId={serverId}
           serverName={serverName}
+          provider={provider}
           resumeSessionId={resumeSessionId}
           onBack={onBack}
         />

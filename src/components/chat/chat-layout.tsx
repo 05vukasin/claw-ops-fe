@@ -7,7 +7,7 @@ import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { Z_INDEX } from "@/lib/z-index";
 import type { Server, SftpFile } from "@/lib/api";
 import { uploadFileApi } from "@/lib/api";
-import type { ChatSession } from "@/lib/types";
+import type { ChatSession, ChatProvider } from "@/lib/types";
 import { ChatView } from "./chat-view";
 import { SessionList } from "./session-list";
 import { ServerSelector } from "./server-selector";
@@ -20,6 +20,9 @@ interface ChatLayoutProps {
   servers: Server[];
   selectedServerId: string | null;
   onServerChange: (serverId: string) => void;
+  selectedProvider: ChatProvider | null;
+  availableProviders: ChatProvider[];
+  onProviderChange: (provider: ChatProvider) => void;
   sessions: ChatSession[];
   selectedSessionId: string | null;
   backgroundSessionId?: string | null;
@@ -34,6 +37,9 @@ export function ChatLayout({
   servers,
   selectedServerId,
   onServerChange,
+  selectedProvider,
+  availableProviders,
+  onProviderChange,
   sessions,
   selectedSessionId,
   backgroundSessionId,
@@ -60,6 +66,7 @@ export function ChatLayout({
   const [currentBrowserPath, setCurrentBrowserPath] = useState("~");
 
   const selectedServer = servers.find((s) => s.id === selectedServerId);
+  const providerLabel = selectedProvider === "codex" ? "Codex" : "Claude";
 
   const handleCopyPath = useCallback((command: string) => {
     // Track directory changes from cd commands
@@ -161,7 +168,7 @@ export function ChatLayout({
             <FiMenu size={18} />
           </button>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-semibold text-canvas-fg">Claude</p>
+            <p className="truncate text-[14px] font-semibold text-canvas-fg">{providerLabel}</p>
           </div>
           <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} />
         </div>
@@ -170,9 +177,12 @@ export function ChatLayout({
         <div className="flex min-h-0 flex-1 flex-col">
           {selectedServerId ? (
             <ChatView
-              key={`${selectedServerId}-${selectedSessionId ?? "new"}`}
+              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}`}
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
+              provider={selectedProvider ?? "claude"}
+              availableProviders={availableProviders}
+              onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
               headerless
@@ -297,9 +307,12 @@ export function ChatLayout({
         <main className="flex min-w-0 flex-1 flex-col">
           {selectedServerId ? (
             <ChatView
-              key={`${selectedServerId}-${selectedSessionId ?? "new"}`}
+              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}`}
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
+              provider={selectedProvider ?? "claude"}
+              availableProviders={availableProviders}
+              onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
               headerless
