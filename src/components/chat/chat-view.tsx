@@ -9,6 +9,7 @@ import { fetchSessionMessagesApi } from "@/lib/api";
 import { StatusIndicator } from "./status-indicator";
 import { MessageBubble } from "./message-bubble";
 import { ChatInput } from "./chat-input";
+import type { ChatProvider } from "@/lib/types";
 
 const MODE_LABELS: Record<string, string> = {
   default: "Default",
@@ -51,6 +52,7 @@ function getPermDescForModal(toolName: string, input?: Record<string, unknown>):
 interface ChatViewProps {
   serverId: string;
   serverName: string;
+  provider: ChatProvider;
   resumeSessionId?: string | null;
   backgroundSessionId?: string | null;
   onBack?: () => void;
@@ -58,9 +60,10 @@ interface ChatViewProps {
   fileButton?: ReactNode;
 }
 
-export function ChatView({ serverId, serverName, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
+export function ChatView({ serverId, serverName, provider, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
   const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
+    provider,
     resumeSessionId,
     backgroundSessionId,
   );
@@ -77,6 +80,8 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [infoMessages, setInfoMessages] = useState<Array<{ id: string; content: string; timestamp: number }>>([]);
   const bridgeSyncedRef = useRef(false);
+  const isClaude = provider === "claude";
+  const providerLabel = isClaude ? "Claude" : "Codex";
 
   /* ── Persist mode to localStorage ── */
   useEffect(() => {
@@ -85,19 +90,19 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
 
   /* ── Sync stored mode to bridge when it first becomes ready ── */
   useEffect(() => {
-    if (status === "idle" && !bridgeSyncedRef.current) {
+    if (isClaude && status === "idle" && !bridgeSyncedRef.current) {
       bridgeSyncedRef.current = true;
       if (permissionMode !== "default") {
         setPermissionMode(permissionMode);
       }
     }
-  }, [status, permissionMode, setPermissionMode]);
+  }, [isClaude, status, permissionMode, setPermissionMode]);
 
   /* ── Load message history when resuming a session ── */
   useEffect(() => {
     if (!resumeSessionId || !serverId) return;
     let cancelled = false;
-    fetchSessionMessagesApi(serverId, resumeSessionId)
+    fetchSessionMessagesApi(serverId, provider, resumeSessionId)
       .then((msgs) => {
         if (!cancelled) {
           setInitialMessages(msgs);
@@ -108,7 +113,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
         if (!cancelled) setLoadingHistory(false);
       });
     return () => { cancelled = true; };
-  }, [resumeSessionId, serverId, setInitialMessages]);
+  }, [resumeSessionId, serverId, provider, setInitialMessages]);
 
   /* ── Auto-scroll to bottom on new messages ── */
   useEffect(() => {
@@ -145,7 +150,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
             </button>
           )}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-semibold text-canvas-fg">Claude</p>
+            <p className="truncate text-[14px] font-semibold text-canvas-fg">{providerLabel}</p>
             <p className="truncate text-[11px] text-canvas-muted">{serverName}</p>
           </div>
           <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
@@ -155,40 +160,46 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
       {/* ── Mode & Effort bar ── */}
       <div className="relative flex shrink-0 items-center gap-3 border-b border-canvas-border px-3 py-1.5">
         {/* Mode selector */}
-        <button
-          type="button"
-          onClick={() => setShowModeMenu((v) => !v)}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-canvas-muted hover:bg-canvas-surface-hover"
-        >
-          <FiShield size={11} />
-          <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
-          <FiChevronDown size={10} />
-        </button>
+        {isClaude ? (
+          <button
+            type="button"
+            onClick={() => setShowModeMenu((v) => !v)}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-canvas-muted hover:bg-canvas-surface-hover"
+          >
+            <FiShield size={11} />
+            <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
+            <FiChevronDown size={10} />
+          </button>
+        ) : (
+          <span className="text-[11px] text-canvas-muted">Codex session</span>
+        )}
 
         {/* Effort selector — segmented control */}
-        <div className="flex items-center gap-0.5 rounded-md bg-canvas-surface-hover p-0.5">
-          {EFFORT_OPTIONS.map((opt) => {
-            const isActive = (opt.value === "" && !effortLevel) || opt.value === effortLevel;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  const val = opt.value || null;
-                  setEffortLevel(val);
-                  setEffort(val);
-                }}
-                className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                  isActive
-                    ? "bg-canvas-bg text-canvas-fg"
-                    : "text-canvas-muted hover:text-canvas-fg"
-                }`}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
+        {isClaude && (
+          <div className="flex items-center gap-0.5 rounded-md bg-canvas-surface-hover p-0.5">
+            {EFFORT_OPTIONS.map((opt) => {
+              const isActive = (opt.value === "" && !effortLevel) || opt.value === effortLevel;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    const val = opt.value || null;
+                    setEffortLevel(val);
+                    setEffort(val);
+                  }}
+                  className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                    isActive
+                      ? "bg-canvas-bg text-canvas-fg"
+                      : "text-canvas-muted hover:text-canvas-fg"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Status (shown when headerless — since header status is hidden) */}
         {headerless && (
@@ -198,7 +209,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
         )}
 
         {/* Mode dropdown */}
-        {showModeMenu && (
+        {isClaude && showModeMenu && (
           <div className="absolute left-3 top-full z-50 mt-1 rounded-lg border border-canvas-border bg-canvas-bg py-1 shadow-lg">
             {MODE_OPTIONS.map((opt) => (
               <button
@@ -246,7 +257,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
           {!loadingHistory && messages.length === 0 && status === "idle" && (
             <div className="flex h-full items-center justify-center px-8">
               <p className="text-center text-[13px] text-canvas-muted">
-                Send a message to start a conversation with Claude.
+                Send a message to start a conversation with {providerLabel}.
               </p>
             </div>
           )}
@@ -350,7 +361,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, backgroundSess
       </div>
 
       {/* ── Input ── */}
-      <ChatInput status={status} onSend={sendMessage} fileButton={fileButton} />
+      <ChatInput status={status} provider={provider} onSend={sendMessage} fileButton={fileButton} />
     </div>
   );
 }

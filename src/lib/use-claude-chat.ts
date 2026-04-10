@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getSessionTokenApi, startBackgroundChatApi, sendBackgroundMessageApi, pollBackgroundOutputApi } from "@/lib/api";
 import { getApiOrigin } from "@/lib/apiClient";
-import type { ChatMessage, ClaudeStatus, ActiveToolInfo } from "@/lib/types";
+import type { ChatMessage, ClaudeStatus, ActiveToolInfo, ChatProvider } from "@/lib/types";
 
 /* ------------------------------------------------------------------ */
 /*  Extract JSON objects from raw terminal output                      */
@@ -12,7 +12,6 @@ import type { ChatMessage, ClaudeStatus, ActiveToolInfo } from "@/lib/types";
 /** Strip all non-printable/control chars except newline */
 function cleanRaw(s: string): string {
   // Remove all ANSI escape sequences (CSI, OSC, etc.)
-  // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b[\x20-\x7e]*[\x40-\x7e]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]|\r/g, "");
 }
 
@@ -22,6 +21,7 @@ function cleanRaw(s: string): string {
 
 export function useClaudeChat(
   serverId: string | null,
+  provider: ChatProvider,
   resumeSessionId?: string | null,
   backgroundSessionId?: string | null,
 ) {
@@ -378,7 +378,7 @@ export function useClaudeChat(
   /* ── Launch the bridge script on the server ── */
   const launchBridge = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    const cmd = `export PATH="$HOME/.local/bin:$PATH" && node ~/.local/share/claw-ops/chat-bridge.mjs`;
+    const cmd = `export PATH="$HOME/.local/bin:$PATH" && node ~/.local/share/claw-ops/chat-bridge.mjs --provider ${provider}`;
     wsRef.current.send(JSON.stringify({ type: "INPUT", data: cmd + "\r" }));
     // Fallback: if bridge doesn't emit "ready" within 4s, set idle anyway
     setTimeout(() => {
@@ -387,7 +387,7 @@ export function useClaudeChat(
         setStatus("idle");
       }
     }, 4000);
-  }, []);
+  }, [provider]);
 
   /* ── Connect to WebSocket and launch bridge ── */
   const connect = useCallback(async () => {
@@ -481,7 +481,7 @@ export function useClaudeChat(
         sessionId: resumeSessionId || undefined,
       });
     },
-    [status, sendToBridge, resumeSessionId],
+    [isBackground, status, sendToBridge, resumeSessionId],
   );
 
   /* ── Respond to permission request ── */
@@ -550,7 +550,7 @@ export function useClaudeChat(
     if (!serverId || !backgroundSessionId) return;
     setStatus("connecting");
     try {
-      await startBackgroundChatApi(serverId, backgroundSessionId, resumeSessionId || undefined);
+      await startBackgroundChatApi(serverId, backgroundSessionId, provider, resumeSessionId || undefined);
       // Wait a moment for bridge to start
       await new Promise((r) => setTimeout(r, 500));
       bgPollLineRef.current = 0;
@@ -559,7 +559,7 @@ export function useClaudeChat(
     } catch {
       setStatus("disconnected");
     }
-  }, [serverId, backgroundSessionId, resumeSessionId]);
+  }, [serverId, backgroundSessionId, provider, resumeSessionId]);
 
   /* ── Background: poll for output ── */
   useEffect(() => {

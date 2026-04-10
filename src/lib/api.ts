@@ -1236,12 +1236,51 @@ export async function killPersistentSessionApi(
 /*  Chat session listing & history                                     */
 /* ------------------------------------------------------------------ */
 
-import type { ChatSession, ChatMessage } from "./types";
+import type { ChatSession, ChatMessage, ChatProvider } from "./types";
 
 export async function fetchChatSessionsApi(
   serverId: string,
+  provider: ChatProvider,
 ): Promise<ChatSession[]> {
-  const script = `python3 -c "
+  const script = provider === "codex"
+    ? `python3 -c "
+import json,os,glob
+sessions=[]
+for s in glob.glob(os.path.expanduser('~/.codex/sessions/**/*.jsonl'), recursive=True):
+  sid=''
+  first_msg=''
+  timestamp=0
+  try:
+    with open(s) as f:
+      for line in f:
+        try:
+          d=json.loads(line)
+        except:
+          continue
+        if d.get('type')=='session_meta':
+          payload=d.get('payload',{})
+          sid=payload.get('id','') or sid
+          ts=payload.get('timestamp') or d.get('timestamp') or ''
+          try:
+            timestamp=int(__import__('datetime').datetime.fromisoformat(ts.replace('Z','+00:00')).timestamp()*1000)
+          except:
+            try: timestamp=int(os.path.getmtime(s)*1000)
+            except: timestamp=0
+        elif d.get('type')=='event_msg':
+          payload=d.get('payload',{})
+          if payload.get('type')=='user_message':
+            c=(payload.get('message') or '').strip()
+            if c and not c.startswith('/'):
+              first_msg=c[:100]
+              break
+    if sid and first_msg:
+      sessions.append({'sessionId':sid,'display':first_msg,'timestamp':timestamp or int(os.path.getmtime(s)*1000)})
+  except:
+    pass
+sessions.sort(key=lambda x:x['timestamp'],reverse=True)
+print(json.dumps(sessions[:50]))
+"`
+    : `python3 -c "
 import json,os,glob
 sessions=[]
 for s in glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')):
@@ -1277,10 +1316,48 @@ print(json.dumps(sessions[:50]))
 
 export async function fetchSessionMessagesApi(
   serverId: string,
+  provider: ChatProvider,
   sessionId: string,
 ): Promise<ChatMessage[]> {
   const safeId = sessionId.replace(/[^a-f0-9-]/g, "");
-  const script = `python3 -c "
+  const script = provider === "codex"
+    ? `python3 -c "
+import json,os,glob,sys,datetime
+sid='${safeId}'
+match=None
+for f in glob.glob(os.path.expanduser('~/.codex/sessions/**/*.jsonl'), recursive=True):
+  try:
+    with open(f) as fh:
+      first=fh.readline()
+    d=json.loads(first) if first else {}
+    if d.get('type')=='session_meta' and d.get('payload',{}).get('id')==sid:
+      match=f
+      break
+  except:
+    pass
+if not match: print('[]'); sys.exit(0)
+msgs=[]
+with open(match) as f:
+  for line in f:
+    try:
+      d=json.loads(line)
+      if d.get('type')!='event_msg': continue
+      payload=d.get('payload',{})
+      t=payload.get('type')
+      ts=d.get('timestamp') or payload.get('timestamp') or ''
+      if t=='user_message':
+        c=(payload.get('message') or '').strip()
+        if c and not c.startswith('/'):
+          msgs.append({'role':'user','content':c,'ts':ts})
+      elif t=='agent_message':
+        c=(payload.get('message') or '').strip()
+        if c:
+          msgs.append({'role':'assistant','content':c,'ts':ts})
+    except:
+      pass
+print(json.dumps(msgs))
+"`
+    : `python3 -c "
 import json,os,glob,sys
 sid='${safeId}'
 match=None
@@ -1573,7 +1650,8 @@ export interface BackgroundSession {
   id: string;
   running: boolean;
   status: string;
-  claudeSessionId: string | null;
+  provider: ChatProvider | null;
+  providerSessionId: string | null;
   startedAt: number;
   lastActivity: number;
 }
@@ -1581,10 +1659,14 @@ export interface BackgroundSession {
 export async function startBackgroundChatApi(
   serverId: string,
   sessionId: string,
-  resumeClaudeId?: string,
+  provider: ChatProvider,
+  resumeSessionId?: string,
 ): Promise<void> {
-  const resumeFlag = resumeClaudeId ? ` --resume-claude ${resumeClaudeId}` : "";
-  const cmd = `mkdir -p ~/.claw-sessions/${sessionId} && export PATH="$HOME/.local/bin:$PATH" && nohup node ~/.local/share/claw-ops/chat-bridge.mjs --background --id ${sessionId}${resumeFlag} > /dev/null 2>&1 & echo $!`;
+  const safeSessionId = sessionId.replace(/[^a-zA-Z0-9-]/g, "");
+  const safeProvider = provider === "codex" ? "codex" : "claude";
+  const safeResumeId = resumeSessionId ? resumeSessionId.replace(/[^a-zA-Z0-9-]/g, "") : "";
+  const resumeFlag = safeResumeId ? ` --resume-session ${safeResumeId}` : "";
+  const cmd = `mkdir -p ~/.claw-sessions/${safeSessionId} && export PATH="$HOME/.local/bin:$PATH" && nohup node ~/.local/share/claw-ops/chat-bridge.mjs --background --id ${safeSessionId} --provider ${safeProvider}${resumeFlag} > /dev/null 2>&1 & echo $!`;
   const result = await executeCommandApi(serverId, cmd, 10);
   if (result.exitCode !== 0) throw new ApiError(500, "Failed to start background chat");
 }
@@ -1629,7 +1711,10 @@ for d in glob.glob(os.path.expanduser('~/.claw-sessions/*/')):
     os.kill(pid,0)
     running=True
   except: pass
-  sessions.append({'id':sid,'running':running,'status':meta.get('status','unknown'),'claudeSessionId':meta.get('claudeSessionId'),'startedAt':meta.get('startedAt',0),'lastActivity':meta.get('lastActivity',0)})
+  provider=meta.get('provider')
+  provider_session_id=meta.get('providerSessionId') or meta.get('claudeSessionId')
+  if not provider and meta.get('claudeSessionId'): provider='claude'
+  sessions.append({'id':sid,'running':running,'status':meta.get('status','unknown'),'provider':provider,'providerSessionId':provider_session_id,'startedAt':meta.get('startedAt',0),'lastActivity':meta.get('lastActivity',0)})
 sessions.sort(key=lambda x:x['lastActivity'],reverse=True)
 print(json.dumps(sessions))
 "`;

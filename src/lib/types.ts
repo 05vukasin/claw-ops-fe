@@ -26,6 +26,8 @@ export interface ChatMessage {
   askResolved?: boolean;
 }
 
+export type ChatProvider = "claude" | "codex";
+
 export type ClaudeStatus =
   | "disconnected"
   | "connecting"
