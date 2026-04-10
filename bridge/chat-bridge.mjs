@@ -47,7 +47,7 @@ function emit(obj) {
   // Store important events for re-emission on poll
   if (obj.type === "permission_request" || obj.type === "ask_question" ||
       obj.type === "tool_use_start" || obj.type === "tool_result" ||
-      obj.type === "result" || obj.type === "status") {
+      obj.type === "result") {
     pendingEvents.push(obj);
   }
 }

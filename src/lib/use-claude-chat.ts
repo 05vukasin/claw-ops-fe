@@ -37,6 +37,7 @@ export function useClaudeChat(
   const shellReadyRef = useRef(false);
   const lastOutputTimeRef = useRef(0);
   const toolInputAccum = useRef("");
+  const lastSnapshotRef = useRef("");
 
   /* ── Pre-populate messages (for loading history) ── */
   const setInitialMessages = useCallback((msgs: ChatMessage[]) => {
@@ -98,10 +99,21 @@ export function useClaudeChat(
 
       // Text snapshot — full text from poll (replaces current assistant message)
       if (evt.type === "text_snapshot") {
+        // Skip identical snapshots to prevent duplicate messages
+        if (evt.text === lastSnapshotRef.current) return;
+        lastSnapshotRef.current = evt.text;
+
         setMessages((prev) => {
+          // If currentAssistantRef was cleared (e.g. by tool_use_start), try to recover it
+          if (!currentAssistantRef.current) {
+            const match = prev.find(
+              (m) => m.role === "assistant" && m.type === "text" && evt.text.startsWith(m.content),
+            );
+            if (match) currentAssistantRef.current = match.id;
+          }
+
           const existing = prev.find((m) => m.id === currentAssistantRef.current);
           if (existing) {
-            // Only update if snapshot has more content (don't regress)
             if (evt.text.length > existing.content.length) {
               return prev.map((m) =>
                 m.id === currentAssistantRef.current ? { ...m, content: evt.text } : m,
@@ -109,7 +121,6 @@ export function useClaudeChat(
             }
             return prev;
           }
-          // Create new message from snapshot
           const id = crypto.randomUUID();
           currentAssistantRef.current = id;
           return [
@@ -269,6 +280,7 @@ export function useClaudeChat(
       if (evt.type === "result") {
         currentAssistantRef.current = null;
         currentThinkingRef.current = null;
+        lastSnapshotRef.current = "";
         setActiveTool(null);
         setStatus("idle");
         sessionIdRef.current = evt.sessionId || sessionIdRef.current;
@@ -449,6 +461,7 @@ export function useClaudeChat(
       // Reset streaming state
       currentAssistantRef.current = null;
       currentThinkingRef.current = null;
+      lastSnapshotRef.current = "";
       setActiveTool(null);
       bufferRef.current = "";
       setStatus("thinking");

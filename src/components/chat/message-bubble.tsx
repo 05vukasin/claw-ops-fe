@@ -305,7 +305,7 @@ function ToolResultBlock({ message }: { message: ChatMessage }) {
 /* ------------------------------------------------------------------ */
 
 function ThinkingBlock({ message }: { message: ChatMessage }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
 
   if (!message.content) return null;
 

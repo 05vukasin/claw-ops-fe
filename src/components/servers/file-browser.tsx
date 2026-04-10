@@ -14,6 +14,7 @@ import {
   FiPlay,
   FiTrash2,
   FiTerminal,
+  FiCopy,
 } from "react-icons/fi";
 import { listFilesApi, downloadFileApi, executeCommandApi, uploadFileApi, ApiError, type SftpFile } from "@/lib/api";
 
@@ -68,6 +69,10 @@ interface FileBrowserProps {
   onRunCommand?: (command: string) => void;
   /** When provided, component uses this fixed height and flex layout */
   height?: number;
+  /** When true, hides the "Run" context menu option for .sh files */
+  hideRunOption?: boolean;
+  /** When provided, adds a "Copy path" option to the context menu */
+  onCopyPath?: (path: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,7 +80,7 @@ interface FileBrowserProps {
 /* ------------------------------------------------------------------ */
 
 export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(function FileBrowser(
-  { serverId, onFileClick, onFileOpen, onRunCommand, height },
+  { serverId, onFileClick, onFileOpen, onRunCommand, height, hideRunOption, onCopyPath },
   ref,
 ) {
   const [currentPath, setCurrentPath] = useState("~");
@@ -311,6 +316,12 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
     setCtxMenu(null);
   }, [ctxMenu, onRunCommand, onFileClick]);
 
+  const handleCtxCopyPath = useCallback(() => {
+    if (!ctxMenu) return;
+    onCopyPath?.(ctxMenu.file.path);
+    setCtxMenu(null);
+  }, [ctxMenu, onCopyPath]);
+
   const handleCtxExtract = useCallback(async () => {
     if (!ctxMenu || ctxMenu.file.directory) return;
     const file = ctxMenu.file;
@@ -519,6 +530,16 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
             <FiTerminal size={11} className="text-canvas-muted" />
             Open
           </button>
+          {onCopyPath && (
+            <button
+              type="button"
+              onClick={handleCtxCopyPath}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-canvas-fg transition-colors hover:bg-canvas-surface-hover"
+            >
+              <FiCopy size={11} className="text-canvas-muted" />
+              Copy path
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCtxSave}
@@ -527,7 +548,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
             <FiDownload size={11} className="text-canvas-muted" />
             {ctxMenu.file.directory ? "Download as .zip" : "Save"}
           </button>
-          {!ctxMenu.file.directory && ctxMenu.file.name.endsWith(".sh") && (
+          {!hideRunOption && !ctxMenu.file.directory && ctxMenu.file.name.endsWith(".sh") && (
             <button
               type="button"
               onClick={handleCtxRun}

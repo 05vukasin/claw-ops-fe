@@ -64,6 +64,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
   );
   const { viewportHeight } = useVisualViewport();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
   const [loadingHistory, setLoadingHistory] = useState(!!resumeSessionId);
   const [permissionMode, setMode] = useState<string>(() => {
@@ -110,11 +111,8 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
   /* ── Auto-scroll to bottom on new messages ── */
   useEffect(() => {
     if (userScrolledUpRef.current) return;
-    const el = scrollRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [messages]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, infoMessages]);
 
   /* ── Detect if user scrolled up ── */
   const handleScroll = () => {
@@ -275,6 +273,7 @@ export function ChatView({ serverId, serverName, resumeSessionId, onBack, header
               ),
             );
           })()}
+          <div ref={bottomRef} />
         </div>
 
         {/* ── Permission modal overlay ── */}

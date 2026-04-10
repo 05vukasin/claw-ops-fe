@@ -247,41 +247,45 @@ export function ChatLayout({
   return (
     <>
       <div className="flex h-full">
-        {/* ── Left sidebar: Sessions (collapsible) ── */}
-        {sidebarCollapsed ? (
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed(false)}
-            className="flex h-full w-10 shrink-0 flex-col items-center justify-center border-r border-canvas-border text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
-            title="Show chats"
-          >
-            <FiMessageSquare size={16} />
-          </button>
-        ) : (
-          <aside className="flex w-[260px] shrink-0 flex-col border-r border-canvas-border bg-canvas-bg">
-            <div className="flex h-12 shrink-0 items-center justify-between border-b border-canvas-border px-3">
-              <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} />
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed(true)}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
-                title="Collapse sidebar"
-              >
-                <FiChevronsLeft size={14} />
-              </button>
-            </div>
-            {selectedServerId && (
-              <SessionList
-                selectedSessionId={selectedSessionId}
-                sessions={sessions}
-                loading={sessionsLoading}
-                onSelectSession={onSelectSession}
-                onNewChat={onNewChat}
-                onRefresh={onRefreshSessions}
-              />
-            )}
-          </aside>
-        )}
+        {/* ── Left sidebar: Sessions (animated collapse) ── */}
+        <aside className={`flex shrink-0 flex-col border-r border-canvas-border bg-canvas-bg overflow-hidden transition-all duration-200 ${
+          sidebarCollapsed ? "w-10" : "w-[260px]"
+        }`}>
+          {sidebarCollapsed ? (
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              className="flex h-full w-10 items-center justify-center text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+              title="Show chats"
+            >
+              <FiMessageSquare size={16} />
+            </button>
+          ) : (
+            <>
+              <div className="flex h-12 shrink-0 items-center justify-between border-b border-canvas-border px-3">
+                <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} />
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(true)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                  title="Collapse sidebar"
+                >
+                  <FiChevronsLeft size={14} />
+                </button>
+              </div>
+              {selectedServerId && (
+                <SessionList
+                  selectedSessionId={selectedSessionId}
+                  sessions={sessions}
+                  loading={sessionsLoading}
+                  onSelectSession={onSelectSession}
+                  onNewChat={onNewChat}
+                  onRefresh={onRefreshSessions}
+                />
+              )}
+            </>
+          )}
+        </aside>
 
         {/* ── Center: Chat ── */}
         <main className="flex min-w-0 flex-1 flex-col">
@@ -300,60 +304,71 @@ export function ChatLayout({
           )}
         </main>
 
-        {/* ── Right: File panel ── */}
-        {selectedServerId && !filesPanelOpen && (
-          <button
-            type="button"
-            onClick={() => setFilesPanelOpen(true)}
-            className="flex h-full w-10 shrink-0 items-center justify-center border-l border-canvas-border text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
-            title="Show files"
-          >
-            <FiFolder size={16} />
-          </button>
-        )}
+        {/* ── Right: File panel (animated collapse) ── */}
+        {selectedServerId && (
+          <aside className={`flex shrink-0 flex-col border-l border-canvas-border bg-canvas-bg overflow-hidden transition-all duration-200 ${
+            filesPanelOpen ? "w-[300px] h-full" : "w-10"
+          }`}>
+            {filesPanelOpen ? (
+              <>
+                {/* Panel header with upload button */}
+                <div className="flex h-12 shrink-0 items-center justify-between border-b border-canvas-border px-3">
+                  <span className="text-[12px] font-medium text-canvas-muted">Files</span>
+                  <div className="flex items-center gap-1">
+                    <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                      title="Upload files"
+                    >
+                      <FiUpload size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilesPanelOpen(false)}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                    >
+                      <FiX size={14} />
+                    </button>
+                  </div>
+                </div>
 
-        {selectedServerId && filesPanelOpen && (
-          <aside className="flex w-[300px] shrink-0 flex-col border-l border-canvas-border bg-canvas-bg">
-            {/* Panel header with upload button */}
-            <div className="flex h-12 shrink-0 items-center justify-between border-b border-canvas-border px-3">
-              <span className="text-[12px] font-medium text-canvas-muted">Files</span>
-              <div className="flex items-center gap-1">
-                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
-                  title="Upload files"
-                >
-                  <FiUpload size={12} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilesPanelOpen(false)}
-                  className="flex h-7 w-7 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
-                >
-                  <FiX size={14} />
-                </button>
-              </div>
-            </div>
+                {/* Copied toast */}
+                {copiedPath && (
+                  <div className="flex items-center gap-1.5 border-b border-canvas-border bg-green-500/10 px-3 py-1.5">
+                    <FiCheck size={11} className="text-green-400" />
+                    <span className="truncate text-[10px] text-green-400">Copied: {copiedPath}</span>
+                  </div>
+                )}
 
-            {/* Copied toast */}
-            {copiedPath && (
-              <div className="flex items-center gap-1.5 border-b border-canvas-border bg-green-500/10 px-3 py-1.5">
-                <FiCheck size={11} className="text-green-400" />
-                <span className="truncate text-[10px] text-green-400">Copied: {copiedPath}</span>
-              </div>
+                {/* File browser — full height */}
+                <div className="file-panel-fill min-h-0 flex-1">
+                  <FileBrowser
+                    ref={fileBrowserRef}
+                    serverId={selectedServerId}
+                    onFileClick={handleCopyPath}
+                    onFileOpen={handleFileOpen}
+                    hideRunOption
+                    onCopyPath={(path) => {
+                      navigator.clipboard.writeText(`@${path}`).then(() => {
+                        setCopiedPath(path);
+                        setTimeout(() => setCopiedPath(null), 1500);
+                      }).catch(() => {});
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setFilesPanelOpen(true)}
+                className="flex h-full w-10 items-center justify-center text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                title="Show files"
+              >
+                <FiFolder size={16} />
+              </button>
             )}
-
-            {/* File browser — full height with context menu + file open */}
-            <div className="file-panel-fill min-h-0 flex-1">
-              <FileBrowser
-                ref={fileBrowserRef}
-                serverId={selectedServerId}
-                onFileClick={handleCopyPath}
-                onFileOpen={handleFileOpen}
-              />
-            </div>
           </aside>
         )}
       </div>
