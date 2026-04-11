@@ -8,6 +8,8 @@ interface ServerSelectorProps {
   servers: Server[];
   selectedId: string | null;
   onChange: (serverId: string) => void;
+  /** Which edge of the button the dropdown aligns to. Default "left". */
+  align?: "left" | "right";
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -17,7 +19,7 @@ const STATUS_DOT: Record<string, string> = {
   UNKNOWN: "bg-yellow-500",
 };
 
-export function ServerSelector({ servers, selectedId, onChange }: ServerSelectorProps) {
+export function ServerSelector({ servers, selectedId, onChange, align = "left" }: ServerSelectorProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const selected = servers.find((s) => s.id === selectedId);
@@ -55,7 +57,7 @@ export function ServerSelector({ servers, selectedId, onChange }: ServerSelector
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 min-w-[220px] max-w-[min(280px,calc(100vw-24px))] rounded-lg border border-canvas-border bg-canvas-bg py-1 shadow-lg">
+        <div className={`absolute top-full z-50 mt-1 min-w-[220px] max-w-[min(280px,calc(100vw-24px))] rounded-lg border border-canvas-border bg-canvas-bg py-1 shadow-lg ${align === "right" ? "right-0" : "left-0"}`}>
           {servers.map((server) => (
             <button
               key={server.id}
