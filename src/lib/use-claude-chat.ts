@@ -29,6 +29,8 @@ export function useClaudeChat(
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ClaudeStatus>("disconnected");
   const [activeTool, setActiveTool] = useState<ActiveToolInfo | null>(null);
+  const [bridgeMode, setBridgeMode] = useState<string | null>(null);
+  const [backgroundPollReady, setBackgroundPollReady] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const bufferRef = useRef("");
@@ -276,6 +278,11 @@ export function useClaudeChat(
             },
           ];
         });
+        return;
+      }
+
+      if (evt.type === "mode_changed") {
+        if (typeof evt.mode === "string") setBridgeMode(evt.mode);
         return;
       }
 
@@ -549,21 +556,24 @@ export function useClaudeChat(
   const connectBackground = useCallback(async () => {
     if (!serverId || !backgroundSessionId) return;
     setStatus("connecting");
+    setBackgroundPollReady(false);
     try {
       await startBackgroundChatApi(serverId, backgroundSessionId, provider, resumeSessionId || undefined);
       // Wait a moment for bridge to start
       await new Promise((r) => setTimeout(r, 500));
       bgPollLineRef.current = 0;
+      setBackgroundPollReady(true);
       setStatus("idle");
       bridgeReadyRef.current = true;
     } catch {
+      setBackgroundPollReady(false);
       setStatus("disconnected");
     }
   }, [serverId, backgroundSessionId, provider, resumeSessionId]);
 
   /* ── Background: poll for output ── */
   useEffect(() => {
-    if (!isBackground || !serverId || !backgroundSessionId || !bridgeReadyRef.current) return;
+    if (!isBackground || !serverId || !backgroundSessionId || !backgroundPollReady) return;
 
     const interval = setInterval(async () => {
       try {
@@ -581,7 +591,7 @@ export function useClaudeChat(
     }, 500);
 
     return () => clearInterval(interval);
-  }, [isBackground, serverId, backgroundSessionId, handleBridgeEvent]);
+  }, [backgroundPollReady, isBackground, serverId, backgroundSessionId, handleBridgeEvent]);
 
   /* ── Reconnect ── */
   const reconnect = useCallback(() => {
@@ -630,6 +640,7 @@ export function useClaudeChat(
     respondQuestion,
     setPermissionMode,
     setEffort,
+    bridgeMode,
     reconnect,
     setInitialMessages,
   };

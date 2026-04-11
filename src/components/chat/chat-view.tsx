@@ -70,7 +70,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ serverId, serverName, provider, availableProviders = [], onProviderChange, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
-  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
+  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, bridgeMode, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     provider,
     resumeSessionId,
@@ -99,6 +99,12 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
   useEffect(() => {
     try { localStorage.setItem(modeStorageKey, permissionMode); } catch {}
   }, [modeStorageKey, permissionMode]);
+
+  useEffect(() => {
+    if (bridgeMode && bridgeMode !== permissionMode) {
+      setMode(bridgeMode);
+    }
+  }, [bridgeMode, permissionMode]);
 
   /* ── Sync stored mode to bridge when it first becomes ready ── */
   useEffect(() => {
@@ -322,15 +328,18 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
           if (!pending) return null;
           const toolName = pending.toolName ?? "Tool";
           const { icon: PermIcon, label: permLabel } = getToolDisplayForPermission(toolName);
-          const permDesc = pending.content || getPermDescForModal(toolName, pending.permissionInput);
+          const isCodexPlanApproval = provider === "codex" && permissionMode === "plan";
+          const permDesc = isCodexPlanApproval
+            ? "Codex needs approval to leave Plan Mode and continue in editing mode."
+            : pending.content || getPermDescForModal(toolName, pending.permissionInput);
           return (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
               <div className="mx-4 w-full max-w-sm rounded-xl border border-orange-500/30 bg-canvas-bg p-4 shadow-2xl">
                 <div className="mb-3 flex items-center gap-2">
                   <PermIcon size={16} className="shrink-0 text-orange-400" />
-                  <span className="text-[13px] font-semibold text-canvas-fg">Permission required</span>
+                  <span className="text-[13px] font-semibold text-canvas-fg">{isCodexPlanApproval ? "Plan approval required" : "Permission required"}</span>
                 </div>
-                <p className="mb-1 text-[13px] text-canvas-fg">{permLabel}</p>
+                <p className="mb-1 text-[13px] text-canvas-fg">{isCodexPlanApproval ? "Switch to editing mode" : permLabel}</p>
                 {permDesc && (
                   <p className="mb-4 break-all font-mono text-[11px] text-canvas-muted">{permDesc}</p>
                 )}
@@ -338,10 +347,21 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => respondPermission(pending.permissionId!, true)}
+                      onClick={() => {
+                        respondPermission(pending.permissionId!, true);
+                        if (isCodexPlanApproval) {
+                          setMode("default");
+                          setPermissionMode("default");
+                          setInfoMessages((prev) => [...prev, {
+                            id: crypto.randomUUID(),
+                            content: "Switched to Default mode",
+                            timestamp: Date.now(),
+                          }]);
+                        }
+                      }}
                       className="flex-1 rounded-lg bg-green-600 px-3 py-2.5 text-[13px] font-medium text-white active:bg-green-700"
                     >
-                      Allow
+                      {isCodexPlanApproval ? "Approve plan" : "Allow"}
                     </button>
                     <button
                       type="button"
@@ -365,7 +385,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
                     }}
                     className="w-full rounded-lg border border-green-600/30 bg-green-600/10 px-3 py-2 text-[12px] font-medium text-green-400 active:bg-green-600/20"
                   >
-                    Allow all {toolName} this session
+                    {isCodexPlanApproval ? "Approve plan and keep editing" : `Allow all ${toolName} this session`}
                   </button>
                 </div>
               </div>
