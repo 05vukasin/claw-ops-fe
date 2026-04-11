@@ -57,10 +57,14 @@ export default function ChatPage() {
     return map;
   }, [servers, claudeAccounts, codexAccounts]);
 
+  // Show all online servers — don't gate on provider detection completing
   const chatServers = useMemo(
-    () => servers.filter((server) => (providerMap.get(server.id) || []).length > 0),
-    [servers, providerMap],
+    () => servers.filter((server) => server.status === "ONLINE"),
+    [servers],
   );
+
+  // Track whether provider detection has finished (at least one result back)
+  const detectingProviders = chatServers.length > 0 && claudeAccounts.length === 0 && codexAccounts.length === 0;
 
   const getPreferredProvider = useCallback((serverId: string, preferred?: ChatProvider | null) => {
     const providers = providerMap.get(serverId) || [];
@@ -155,7 +159,10 @@ export default function ChatPage() {
     const restoredServer = last.serverId && chatServers.some((s) => s.id === last.serverId)
       ? last.serverId
       : chatServers[0].id;
-    const provider = getPreferredProvider(restoredServer, last.provider ?? null);
+    // Trust saved/URL provider even if detection hasn't completed yet
+    const provider = getPreferredProvider(restoredServer, last.provider ?? null)
+      || (last.provider as ChatProvider | null)
+      || "claude";
     if (!provider) return;
     startTransition(() => {
       setSelectedServerId(restoredServer);
@@ -270,7 +277,16 @@ export default function ChatPage() {
   if (chatServers.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center px-6">
-        <p className="text-center text-[13px] text-canvas-muted">No assigned servers support Claude or Codex chat.</p>
+        <p className="text-center text-[13px] text-canvas-muted">No online servers found.</p>
+      </div>
+    );
+  }
+
+  if (detectingProviders) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-canvas-border border-t-canvas-muted" />
+        <span className="ml-2 text-[13px] text-canvas-muted">Detecting providers...</span>
       </div>
     );
   }
