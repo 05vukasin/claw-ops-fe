@@ -171,7 +171,7 @@ export function ChatLayout({
           <div className="min-w-0 flex-1">
             <p className="truncate text-[14px] font-semibold text-canvas-fg">{providerLabel}</p>
           </div>
-          <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} />
+          <ServerSelector servers={servers} selectedId={selectedServerId} onChange={onServerChange} align="right" />
         </div>
 
         {/* Chat view */}

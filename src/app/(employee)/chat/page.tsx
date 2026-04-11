@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { fetchServersApi, fetchChatSessionsApi, listBackgroundSessionsApi } from "@/lib/api";
 import type { Server, BackgroundSession } from "@/lib/api";
 import type { ChatSession, ChatProvider } from "@/lib/types";
@@ -24,6 +25,8 @@ function saveLastChat(serverId: string, provider: ChatProvider, sessionId: strin
 }
 
 export default function ChatPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [servers, setServers] = useState<Server[]>([]);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ChatProvider | null>(null);
@@ -80,6 +83,16 @@ export default function ChatPage() {
     return map;
   }, [bgSessions]);
 
+  /* ── Update URL search params ── */
+  const updateUrl = useCallback((serverId: string | null, provider: ChatProvider | null, sessionId: string | null) => {
+    const sp = new URLSearchParams();
+    if (serverId) sp.set("server", serverId);
+    if (provider) sp.set("provider", provider);
+    if (sessionId) sp.set("session", sessionId);
+    const qs = sp.toString();
+    router.replace(qs ? `/chat?${qs}` : "/chat");
+  }, [router]);
+
   /* ── Load sessions for a server ── */
   const loadSessions = useCallback(async (serverId: string, provider: ChatProvider, preferredSessionId?: string) => {
     setSessionsLoading(true);
@@ -131,7 +144,14 @@ export default function ChatPage() {
     if (chatServers.length === 0) return;
     if (selectedServerId) return;
 
-    const last = loadLastChat();
+    // URL params take priority, then localStorage
+    const urlServer = searchParams.get("server");
+    const urlProvider = searchParams.get("provider") as ChatProvider | null;
+    const urlSession = searchParams.get("session");
+    const last = urlServer
+      ? { serverId: urlServer, provider: urlProvider, sessionId: urlSession }
+      : loadLastChat();
+
     const restoredServer = last.serverId && chatServers.some((s) => s.id === last.serverId)
       ? last.serverId
       : chatServers[0].id;
@@ -141,12 +161,13 @@ export default function ChatPage() {
       setSelectedServerId(restoredServer);
       setSelectedProvider(provider);
     });
+    const preferredSession = last.sessionId ?? undefined;
     const frame = requestAnimationFrame(() => {
-      loadSessions(restoredServer, provider, last.sessionId);
+      loadSessions(restoredServer, provider, preferredSession);
       loadBgSessions(restoredServer);
     });
     return () => cancelAnimationFrame(frame);
-  }, [loading, chatServers, selectedServerId, getPreferredProvider, loadSessions, loadBgSessions]);
+  }, [loading, chatServers, selectedServerId, getPreferredProvider, loadSessions, loadBgSessions, searchParams]);
 
   /* ── Poll background sessions (3s when actionable, 10s otherwise) ── */
   useEffect(() => {
@@ -159,12 +180,13 @@ export default function ChatPage() {
     return () => clearInterval(interval);
   }, [selectedServerId, loadBgSessions, bgSessions]);
 
-  /* ── Persist selection to localStorage ── */
+  /* ── Persist selection to localStorage + URL ── */
   useEffect(() => {
     if (selectedServerId && selectedProvider) {
       saveLastChat(selectedServerId, selectedProvider, selectedSessionId);
+      updateUrl(selectedServerId, selectedProvider, selectedSessionId);
     }
-  }, [selectedServerId, selectedProvider, selectedSessionId]);
+  }, [selectedServerId, selectedProvider, selectedSessionId, updateUrl]);
 
   useEffect(() => {
     if (!selectedServerId) return;
