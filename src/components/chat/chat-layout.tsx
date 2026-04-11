@@ -363,7 +363,7 @@ export function ChatLayout({
                 )}
 
                 {/* File browser — full height */}
-                <div className="file-panel-fill min-h-0 flex-1">
+                <div className="min-h-0 flex-1 overflow-hidden">
                   <FileBrowser
                     ref={fileBrowserRef}
                     serverId={selectedServerId}
