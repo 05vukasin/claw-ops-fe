@@ -191,7 +191,7 @@ function makeCodexSandboxPolicy(mode) {
 
 function makeCodexApprovalPolicy(mode) {
   if (mode === "acceptEdits") return "never";
-  if (mode === "plan") return "never";
+  if (mode === "plan") return "on-request";
   return "on-request";
 }
 
@@ -273,6 +273,11 @@ function respondToCodexApproval(id, allow, allowSession) {
   const req = codexApprovalRequests.get(id);
   if (!req || !codexServer) return;
   codexApprovalRequests.delete(id);
+
+  if (allow && currentPermissionMode === "plan") {
+    currentPermissionMode = allowSession ? "acceptEdits" : "default";
+    emit({ type: "mode_changed", mode: currentPermissionMode });
+  }
 
   let result;
   if (req.method === "item/permissions/requestApproval") {
