@@ -367,6 +367,7 @@ export function ChatLayout({
                   <FileBrowser
                     ref={fileBrowserRef}
                     serverId={selectedServerId}
+                    fillHeight
                     onFileClick={handleCopyPath}
                     onFileOpen={handleFileOpen}
                     hideRunOption
