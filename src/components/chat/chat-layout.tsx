@@ -30,7 +30,7 @@ interface ChatLayoutProps {
   onNewChat: () => void;
   onRefreshSessions: () => void;
   sessionsLoading: boolean;
-  sessionStatusMap?: Map<string, string>;
+  runningSessionIds?: Set<string>;
 }
 
 export function ChatLayout({
@@ -47,7 +47,7 @@ export function ChatLayout({
   onNewChat,
   onRefreshSessions,
   sessionsLoading,
-  sessionStatusMap,
+  runningSessionIds,
 }: ChatLayoutProps) {
   const isMobile = useIsMobile();
   const { viewportHeight } = useVisualViewport();
@@ -202,7 +202,7 @@ export function ChatLayout({
         <div className={`flex min-h-0 flex-1 flex-col ${filesPanelOpen ? "mobile-chat-freeze" : ""}`}>
           {selectedServerId ? (
             <ChatView
-              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}`}
+              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}-${backgroundSessionId ?? "bg-none"}`}
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               provider={selectedProvider ?? "claude"}
@@ -210,7 +210,6 @@ export function ChatLayout({
               onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
-
               headerless
               mobileOverlayOpen={filesPanelOpen}
               fileButton={
@@ -257,7 +256,7 @@ export function ChatLayout({
                     onSelectSession={(sid) => { onSelectSession(sid); closeSidebar(); }}
                     onNewChat={() => { onNewChat(); closeSidebar(); }}
                     onRefresh={onRefreshSessions}
-                    sessionStatusMap={sessionStatusMap}
+                    runningSessionIds={runningSessionIds}
                   />
                 )}
               </div>
@@ -331,7 +330,7 @@ export function ChatLayout({
                   onSelectSession={onSelectSession}
                   onNewChat={onNewChat}
                   onRefresh={onRefreshSessions}
-                  sessionStatusMap={sessionStatusMap}
+                  runningSessionIds={runningSessionIds}
                 />
               )}
             </>
@@ -342,7 +341,7 @@ export function ChatLayout({
         <main className="flex min-w-0 flex-1 flex-col">
           {selectedServerId ? (
             <ChatView
-              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}`}
+              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}-${backgroundSessionId ?? "bg-none"}`}
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               provider={selectedProvider ?? "claude"}
@@ -350,7 +349,6 @@ export function ChatLayout({
               onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
-
               headerless
             />
           ) : (

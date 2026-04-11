@@ -70,18 +70,71 @@ export default function ChatPage() {
     return null;
   }, [providerMap]);
 
-  // Session status map for sidebar indicators (sessionId → status string)
-  const sessionStatusMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const bg of bgSessions) {
-      if (bg.running) {
-        const status = bg.status || "running";
-        if (bg.providerSessionId) map.set(bg.providerSessionId, status);
-        map.set(bg.id, status);
-      }
+  const mergedSessions = useMemo(() => {
+    const merged = new Map<string, ChatSession>();
+    const activeProvider = selectedProvider ?? null;
+
+    for (const session of sessions) {
+      merged.set(session.sessionId, {
+        ...session,
+        provider: activeProvider,
+        running: false,
+        backgroundSessionId: null,
+        isBackgroundOnly: false,
+      });
     }
-    return map;
-  }, [bgSessions]);
+
+    for (const bg of bgSessions) {
+      if (activeProvider && bg.provider && bg.provider !== activeProvider) continue;
+      const sessionKey = bg.providerSessionId || bg.id;
+      const existing = merged.get(sessionKey);
+      if (existing) {
+        merged.set(sessionKey, {
+          ...existing,
+          running: bg.running || existing.running,
+          backgroundSessionId: bg.id,
+          timestamp: Math.max(existing.timestamp, bg.lastActivity || bg.startedAt || 0),
+        });
+        continue;
+      }
+
+      merged.set(sessionKey, {
+        sessionId: sessionKey,
+        display: bg.providerSessionId ? "Resume chat" : "New chat",
+        timestamp: bg.lastActivity || bg.startedAt || 0,
+        provider: bg.provider,
+        running: bg.running,
+        backgroundSessionId: bg.id,
+        isBackgroundOnly: !bg.providerSessionId,
+      });
+    }
+
+    if (backgroundSessionId && !merged.has(backgroundSessionId) && !selectedSessionId) {
+      merged.set(backgroundSessionId, {
+        sessionId: backgroundSessionId,
+        display: "New chat",
+        timestamp: Number.MAX_SAFE_INTEGER,
+        provider: activeProvider,
+        running: true,
+        backgroundSessionId,
+        isBackgroundOnly: true,
+      });
+    }
+
+    return [...merged.values()].sort((a, b) => {
+      const tsA = a.timestamp || 0;
+      const tsB = b.timestamp || 0;
+      return tsB - tsA;
+    });
+  }, [sessions, bgSessions, selectedProvider, backgroundSessionId, selectedSessionId]);
+
+  const runningSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const session of mergedSessions) {
+      if (session.running) ids.add(session.sessionId);
+    }
+    return ids;
+  }, [mergedSessions]);
 
   /* ── Update URL search params ── */
   const updateUrl = useCallback((serverId: string | null, provider: ChatProvider | null, sessionId: string | null) => {
@@ -189,6 +242,15 @@ export default function ChatPage() {
   }, [selectedServerId, selectedProvider, selectedSessionId, updateUrl]);
 
   useEffect(() => {
+    if (!selectedServerId || !selectedProvider || !selectedSessionId || backgroundSessionId || sessionsLoading) return;
+    const selected = mergedSessions.find((session) => session.sessionId === selectedSessionId);
+    if (!selected) return;
+    const nextBackgroundSessionId = selected.backgroundSessionId ?? crypto.randomUUID();
+    const id = requestAnimationFrame(() => setBackgroundSessionId(nextBackgroundSessionId));
+    return () => cancelAnimationFrame(id);
+  }, [selectedServerId, selectedProvider, selectedSessionId, backgroundSessionId, sessionsLoading, mergedSessions]);
+
+  useEffect(() => {
     if (!selectedServerId) return;
     const provider = getPreferredProvider(selectedServerId, selectedProvider);
     if (provider !== selectedProvider) {
@@ -242,14 +304,11 @@ export default function ChatPage() {
 
   /* ── Handle selecting an existing session ── */
   const handleSelectSession = useCallback((sessionId: string) => {
-    setSelectedSessionId(sessionId);
-    const bg = bgSessions.find((b) => b.providerSessionId === sessionId || b.id === sessionId);
-    if (bg?.running) {
-      setBackgroundSessionId(bg.id);
-    } else {
-      setBackgroundSessionId(null);
-    }
-  }, [bgSessions]);
+    const selected = mergedSessions.find((session) => session.sessionId === sessionId);
+    if (!selected) return;
+    setSelectedSessionId(selected.isBackgroundOnly ? null : selected.sessionId);
+    setBackgroundSessionId(selected.backgroundSessionId ?? crypto.randomUUID());
+  }, [mergedSessions]);
 
   /* ── Handle session refresh ── */
   const handleRefreshSessions = useCallback(() => {
@@ -283,14 +342,14 @@ export default function ChatPage() {
       selectedProvider={selectedProvider}
       availableProviders={selectedServerId ? (providerMap.get(selectedServerId) || []) : []}
       onProviderChange={handleProviderChange}
-      sessions={sessions}
+      sessions={mergedSessions}
       selectedSessionId={selectedSessionId}
       backgroundSessionId={backgroundSessionId}
       onSelectSession={handleSelectSession}
       onNewChat={handleNewChat}
       onRefreshSessions={handleRefreshSessions}
       sessionsLoading={sessionsLoading}
-      sessionStatusMap={sessionStatusMap}
+      runningSessionIds={runningSessionIds}
     />
   );
 }
