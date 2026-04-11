@@ -47,9 +47,14 @@
       "Bash(node ./node_modules/.bin/tsc --noEmit)",
       "Bash(npx --yes tsc --noEmit)",
       "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(git fetch:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(git merge:*)"
     ],
     "additionalDirectories": [
       "\\tmp"
