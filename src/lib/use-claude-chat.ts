@@ -29,6 +29,7 @@ export function useClaudeChat(
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ClaudeStatus>("disconnected");
   const [activeTool, setActiveTool] = useState<ActiveToolInfo | null>(null);
+  const [bridgeMode, setBridgeMode] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const bufferRef = useRef("");
@@ -276,6 +277,11 @@ export function useClaudeChat(
             },
           ];
         });
+        return;
+      }
+
+      if (evt.type === "mode_changed") {
+        if (typeof evt.mode === "string") setBridgeMode(evt.mode);
         return;
       }
 
@@ -630,6 +636,7 @@ export function useClaudeChat(
     respondQuestion,
     setPermissionMode,
     setEffort,
+    bridgeMode,
     reconnect,
     setInitialMessages,
   };
