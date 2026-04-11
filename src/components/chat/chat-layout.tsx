@@ -202,7 +202,7 @@ export function ChatLayout({
         <div className={`flex min-h-0 flex-1 flex-col ${filesPanelOpen ? "mobile-chat-freeze" : ""}`}>
           {selectedServerId ? (
             <ChatView
-              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}`}
+              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}-${backgroundSessionId ?? "bg-none"}`}
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               provider={selectedProvider ?? "claude"}
@@ -330,6 +330,7 @@ export function ChatLayout({
                   onSelectSession={onSelectSession}
                   onNewChat={onNewChat}
                   onRefresh={onRefreshSessions}
+                  runningSessionIds={runningSessionIds}
                 />
               )}
             </>
@@ -340,7 +341,7 @@ export function ChatLayout({
         <main className="flex min-w-0 flex-1 flex-col">
           {selectedServerId ? (
             <ChatView
-              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}`}
+              key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}-${backgroundSessionId ?? "bg-none"}`}
               serverId={selectedServerId}
               serverName={selectedServer?.name ?? "Server"}
               provider={selectedProvider ?? "claude"}

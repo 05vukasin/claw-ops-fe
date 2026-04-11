@@ -66,7 +66,7 @@ export function MobileFileSheet({ serverId, open, onClose, onCopyPath, onFileOpe
 
   const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files.length) return;
+    if (!files || files.length === 0) return;
     setUploading(true);
     try {
       for (let i = 0; i < files.length; i++) {

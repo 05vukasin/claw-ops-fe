@@ -85,7 +85,11 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
   const userScrolledUpRef = useRef(false);
   const [loadingHistory, setLoadingHistory] = useState(!!resumeSessionId);
   const modeStorageKey = `openclaw-chat-mode:${provider}:v1`;
-  const [permissionMode, setMode] = useState<string>(() => {
+  const [preferredMode, setPreferredMode] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem(`openclaw-chat-mode:${provider}:v1`) || "default";
+  });
+  const [sessionMode, setSessionMode] = useState<string>(() => {
     if (typeof window === "undefined") return "default";
     return localStorage.getItem(`openclaw-chat-mode:${provider}:v1`) || "default";
   });
@@ -109,25 +113,25 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
 
   /* ── Persist mode to localStorage ── */
   useEffect(() => {
-    try { localStorage.setItem(modeStorageKey, permissionMode); } catch {}
-  }, [modeStorageKey, permissionMode]);
+    try { localStorage.setItem(modeStorageKey, preferredMode); } catch {}
+  }, [modeStorageKey, preferredMode]);
 
   useEffect(() => {
-    if (bridgeMode && bridgeMode !== permissionMode) {
-      const id = window.requestAnimationFrame(() => setMode(bridgeMode));
+    if (bridgeMode && bridgeMode !== sessionMode) {
+      const id = window.requestAnimationFrame(() => setSessionMode(bridgeMode));
       return () => window.cancelAnimationFrame(id);
     }
-  }, [bridgeMode, permissionMode]);
+  }, [bridgeMode, sessionMode]);
 
   /* ── Sync stored mode to bridge when it first becomes ready ── */
   useEffect(() => {
     if (status === "idle" && !bridgeSyncedRef.current) {
       bridgeSyncedRef.current = true;
-      if (permissionMode !== "default") {
-        setPermissionMode(permissionMode);
+      if (preferredMode !== "default") {
+        setPermissionMode(preferredMode);
       }
     }
-  }, [status, permissionMode, setPermissionMode]);
+  }, [status, preferredMode, setPermissionMode]);
 
   /* ── Load message history when resuming a session ── */
   useEffect(() => {
@@ -214,7 +218,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
           className={`flex items-center gap-1.5 rounded-full border border-canvas-border px-2.5 py-1 text-canvas-muted hover:bg-canvas-surface-hover ${isMobile ? "shrink-0 bg-canvas-surface text-[10px] shadow-sm" : "text-[11px]"}`}
         >
           <FiShield size={11} />
-          <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
+          <span>{MODE_LABELS[sessionMode] ?? "Default"}</span>
           <FiChevronDown size={10} />
         </button>
 
@@ -258,19 +262,20 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
                 key={opt.value}
                 type="button"
                 onClick={() => {
-                  if (opt.value !== permissionMode) {
+                  if (opt.value !== sessionMode) {
                     setInfoMessages((prev) => [...prev, {
                       id: crypto.randomUUID(),
                       content: `Switched to ${opt.label} mode`,
                       timestamp: Date.now(),
                     }]);
                   }
-                  setMode(opt.value);
+                  setPreferredMode(opt.value);
+                  setSessionMode(opt.value);
                   setPermissionMode(opt.value);
                   setShowModeMenu(false);
                 }}
                 className={`flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-canvas-surface-hover ${
-                  permissionMode === opt.value ? "bg-canvas-surface-hover" : ""
+                  sessionMode === opt.value ? "bg-canvas-surface-hover" : ""
                 }`}
               >
                 <div>
@@ -350,7 +355,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
           if (!pending) return null;
           const toolName = pending.toolName ?? "Tool";
           const { icon: PermIcon, label: permLabel } = getToolDisplayForPermission(toolName);
-          const isCodexPlanApproval = provider === "codex" && permissionMode === "plan";
+          const isCodexPlanApproval = provider === "codex" && toolName === "ExitPlanMode";
           const permDesc = isCodexPlanApproval
             ? "Codex needs approval to leave Plan Mode and continue in editing mode."
             : pending.content || getPermDescForModal(toolName, pending.permissionInput);
@@ -372,7 +377,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
                       onClick={() => {
                         respondPermission(pending.permissionId!, true);
                         if (isCodexPlanApproval) {
-                          setMode("default");
+                          setSessionMode("default");
                           setPermissionMode("default");
                           setInfoMessages((prev) => [...prev, {
                             id: crypto.randomUUID(),
@@ -397,7 +402,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
                     type="button"
                     onClick={() => {
                       respondPermission(pending.permissionId!, true, true);
-                      setMode("acceptEdits");
+                      setSessionMode("acceptEdits");
                       setPermissionMode("acceptEdits");
                       setInfoMessages((prev) => [...prev, {
                         id: crypto.randomUUID(),

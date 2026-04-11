@@ -43,6 +43,8 @@ const codexApprovalRequests = new Map();
 let codexInitialized = false;
 let codexThreadId = resumeSessionId || null;
 let codexCurrentToolId = null;
+let codexPendingSyntheticApproval = null;
+let codexCurrentPrompt = null;
 
 function readArgValue(flag) {
   const index = args.indexOf(flag);
@@ -100,8 +102,71 @@ function getToolDescription(toolName, input) {
   return "";
 }
 
+function normalizeCodexErrorText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value.message === "string") return value.message;
+  if (typeof value.summary === "string") return value.summary;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function isCodexPermissionDeniedText(text) {
+  return /read[- ]only|sandbox|not (?:allowed|permitted)|permission|approval|cannot .*sandbox|can't .*sandbox/i.test(text || "");
+}
+
+function emitCodexSyntheticApprovalRequest({ toolName, description, nextModeOnAllow }) {
+  if (!codexCurrentPrompt || codexPendingSyntheticApproval) return false;
+  const requestId = `codex-req-${++requestCounter}`;
+  codexPendingSyntheticApproval = {
+    id: requestId,
+    prompt: codexCurrentPrompt,
+    toolName,
+    description,
+    nextModeOnAllow,
+  };
+  emit({
+    type: "permission_request",
+    id: requestId,
+    toolName,
+    input: {
+      prompt: codexCurrentPrompt,
+      mode: currentPermissionMode,
+    },
+    description,
+  });
+  emit({ type: "status", status: "awaiting_permission" });
+  updateMeta({ status: "awaiting_permission" });
+  return true;
+}
+
+function maybeEmitCodexSyntheticApproval(description) {
+  const text = (description || "").trim();
+  if (!text || !isCodexPermissionDeniedText(text)) return false;
+  if (currentPermissionMode === "plan") {
+    return emitCodexSyntheticApprovalRequest({
+      toolName: "ExitPlanMode",
+      description: text,
+      nextModeOnAllow: "default",
+    });
+  }
+  if (currentPermissionMode !== "acceptEdits") {
+    return emitCodexSyntheticApprovalRequest({
+      toolName: "Bash",
+      description: text,
+      nextModeOnAllow: null,
+    });
+  }
+  return false;
+}
+
 function flushQueue() {
   isProcessing = false;
+  codexCurrentPrompt = null;
+  codexPendingSyntheticApproval = null;
   updateMeta({ status: "idle" });
   if (messageQueue.length > 0) {
     const next = messageQueue.shift();
@@ -269,6 +334,34 @@ async function ensureCodexServer() {
 }
 
 function respondToCodexApproval(id, allow, allowSession) {
+  if (codexPendingSyntheticApproval?.id === id) {
+    const synthetic = codexPendingSyntheticApproval;
+    codexPendingSyntheticApproval = null;
+    if (!allow) {
+      emit({ type: "status", status: "idle" });
+      updateMeta({ status: "idle" });
+      flushQueue();
+      return;
+    }
+
+    if (synthetic.nextModeOnAllow) {
+      currentPermissionMode = allowSession ? "acceptEdits" : synthetic.nextModeOnAllow;
+      emit({ type: "mode_changed", mode: currentPermissionMode });
+    } else if (allowSession && currentPermissionMode !== "acceptEdits") {
+      currentPermissionMode = "acceptEdits";
+      emit({ type: "mode_changed", mode: currentPermissionMode });
+    }
+
+    emit({ type: "status", status: "thinking" });
+    updateMeta({ status: "running", providerSessionId: codexThreadId });
+    handleCodexMessage(synthetic.prompt, { storePrompt: false }).catch((err) => {
+      emit({ type: "error", message: err.message || "Failed to resume Codex turn" });
+      updateMeta({ status: "error" });
+      flushQueue();
+    });
+    return;
+  }
+
   const req = codexApprovalRequests.get(id);
   if (!req || !codexServer) return;
   codexApprovalRequests.delete(id);
@@ -469,18 +562,20 @@ function handleCodexNotification(msg) {
     codexCurrentToolId = null;
     const turn = params.turn || {};
     const failed = turn.status === "failed";
-    const errMsg = failed
-      ? typeof turn.error === "string"
-        ? turn.error
-        : JSON.stringify(turn.error || {})
-      : "";
+    const errMsg = failed ? normalizeCodexErrorText(turn.error) : "";
+    if (maybeEmitCodexSyntheticApproval(errMsg || accumulatedText)) {
+      return;
+    }
     emitResult({ text: errMsg, isError: failed });
     flushQueue();
     return;
   }
 
   if (method === "error") {
-    const message = params?.message || params?.summary || "Codex app-server error";
+    const message = normalizeCodexErrorText(params) || "Codex app-server error";
+    if (maybeEmitCodexSyntheticApproval(message)) {
+      return;
+    }
     emit({ type: "error", message });
     if (isProcessing) flushQueue();
     return;
@@ -665,7 +760,10 @@ async function handleClaudeMessage(text, resumeId) {
   }
 }
 
-async function handleCodexMessage(text) {
+async function handleCodexMessage(text, options = {}) {
+  if (options.storePrompt !== false) {
+    codexCurrentPrompt = text;
+  }
   await ensureCodexServer();
   await codexRequest("turn/start", {
     threadId: codexThreadId,

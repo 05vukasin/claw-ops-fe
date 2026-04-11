@@ -1666,7 +1666,7 @@ export async function startBackgroundChatApi(
   const safeProvider = provider === "codex" ? "codex" : "claude";
   const safeResumeId = resumeSessionId ? resumeSessionId.replace(/[^a-zA-Z0-9-]/g, "") : "";
   const resumeFlag = safeResumeId ? ` --resume-session ${safeResumeId}` : "";
-  const cmd = `mkdir -p ~/.claw-sessions/${safeSessionId} && export PATH="$HOME/.local/bin:$PATH" && nohup node ~/.local/share/claw-ops/chat-bridge.mjs --background --id ${safeSessionId} --provider ${safeProvider}${resumeFlag} > /dev/null 2>&1 < /dev/null & echo $!`;
+  const cmd = `if [ -f ~/.claw-sessions/${safeSessionId}/pid ] && kill -0 "$(cat ~/.claw-sessions/${safeSessionId}/pid)" 2>/dev/null; then echo RUNNING; else mkdir -p ~/.claw-sessions/${safeSessionId} && export PATH="$HOME/.local/bin:$PATH" && nohup node ~/.local/share/claw-ops/chat-bridge.mjs --background --id ${safeSessionId} --provider ${safeProvider}${resumeFlag} > /dev/null 2>&1 < /dev/null & echo $!; fi`;
   const result = await executeCommandApi(serverId, cmd, 10);
   if (result.exitCode !== 0) throw new ApiError(500, "Failed to start background chat");
 }

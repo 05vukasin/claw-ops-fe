@@ -53,4 +53,8 @@ export interface ChatSession {
   sessionId: string;
   display: string;
   timestamp: number;
+  provider?: ChatProvider | null;
+  running?: boolean;
+  backgroundSessionId?: string | null;
+  isBackgroundOnly?: boolean;
 }
