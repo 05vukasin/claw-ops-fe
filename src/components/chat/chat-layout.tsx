@@ -30,7 +30,7 @@ interface ChatLayoutProps {
   onNewChat: () => void;
   onRefreshSessions: () => void;
   sessionsLoading: boolean;
-  runningSessionIds?: Set<string>;
+  sessionStatusMap?: Map<string, string>;
 }
 
 export function ChatLayout({
@@ -47,7 +47,7 @@ export function ChatLayout({
   onNewChat,
   onRefreshSessions,
   sessionsLoading,
-  runningSessionIds,
+  sessionStatusMap,
 }: ChatLayoutProps) {
   const isMobile = useIsMobile();
   const { viewportHeight } = useVisualViewport();
@@ -67,6 +67,7 @@ export function ChatLayout({
 
   const selectedServer = servers.find((s) => s.id === selectedServerId);
   const providerLabel = selectedProvider === "codex" ? "Codex" : "Claude";
+  const bgAlreadyRunning = !!(backgroundSessionId && sessionStatusMap?.has(backgroundSessionId));
 
   const handleCopyPath = useCallback((command: string) => {
     // Track directory changes from cd commands
@@ -185,6 +186,7 @@ export function ChatLayout({
               onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
+              alreadyRunning={bgAlreadyRunning}
               headerless
               fileButton={
                 <button
@@ -223,7 +225,7 @@ export function ChatLayout({
                     onSelectSession={(sid) => { onSelectSession(sid); setSidebarOpen(false); }}
                     onNewChat={() => { onNewChat(); setSidebarOpen(false); }}
                     onRefresh={onRefreshSessions}
-                    runningSessionIds={runningSessionIds}
+                    sessionStatusMap={sessionStatusMap}
                   />
                 )}
               </div>
@@ -297,6 +299,7 @@ export function ChatLayout({
                   onSelectSession={onSelectSession}
                   onNewChat={onNewChat}
                   onRefresh={onRefreshSessions}
+                  sessionStatusMap={sessionStatusMap}
                 />
               )}
             </>
@@ -315,6 +318,7 @@ export function ChatLayout({
               onProviderChange={onProviderChange}
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
+              alreadyRunning={bgAlreadyRunning}
               headerless
             />
           ) : (

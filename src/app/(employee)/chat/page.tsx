@@ -67,14 +67,17 @@ export default function ChatPage() {
     return null;
   }, [providerMap]);
 
-  // Running session IDs for the sidebar indicator
-  const runningSessionIds = useMemo(() => {
-    const ids = new Set<string>();
+  // Session status map for sidebar indicators (sessionId → status string)
+  const sessionStatusMap = useMemo(() => {
+    const map = new Map<string, string>();
     for (const bg of bgSessions) {
-      if (bg.running && bg.providerSessionId) ids.add(bg.providerSessionId);
-      if (bg.running) ids.add(bg.id);
+      if (bg.running) {
+        const status = bg.status || "running";
+        if (bg.providerSessionId) map.set(bg.providerSessionId, status);
+        map.set(bg.id, status);
+      }
     }
-    return ids;
+    return map;
   }, [bgSessions]);
 
   /* ── Load sessions for a server ── */
@@ -145,12 +148,16 @@ export default function ChatPage() {
     return () => cancelAnimationFrame(frame);
   }, [loading, chatServers, selectedServerId, getPreferredProvider, loadSessions, loadBgSessions]);
 
-  /* ── Poll background sessions every 10s ── */
+  /* ── Poll background sessions (3s when actionable, 10s otherwise) ── */
   useEffect(() => {
     if (!selectedServerId) return;
-    const interval = setInterval(() => loadBgSessions(selectedServerId), 10000);
+    const hasActionable = bgSessions.some(
+      (bg) => bg.running && (bg.status === "awaiting_permission" || bg.status === "awaiting_input"),
+    );
+    const intervalMs = hasActionable ? 3000 : 10000;
+    const interval = setInterval(() => loadBgSessions(selectedServerId), intervalMs);
     return () => clearInterval(interval);
-  }, [selectedServerId, loadBgSessions]);
+  }, [selectedServerId, loadBgSessions, bgSessions]);
 
   /* ── Persist selection to localStorage ── */
   useEffect(() => {
@@ -261,7 +268,7 @@ export default function ChatPage() {
       onNewChat={handleNewChat}
       onRefreshSessions={handleRefreshSessions}
       sessionsLoading={sessionsLoading}
-      runningSessionIds={runningSessionIds}
+      sessionStatusMap={sessionStatusMap}
     />
   );
 }

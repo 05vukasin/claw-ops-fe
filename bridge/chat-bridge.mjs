@@ -34,6 +34,7 @@ const sessionAllowedTools = new Set();
 let currentPermissionMode = "default";
 let currentEffort = null;
 let accumulatedText = "";
+let cancelRequested = false;
 
 let codexServer = null;
 let codexBuffer = "";
@@ -299,15 +300,15 @@ function handleCodexServerRequest(msg) {
   codexApprovalRequests.set(requestId, { rpcId: msg.id, method, params });
 
   if (method === "item/commandExecution/requestApproval") {
+    const cmd = params.command || "";
+    const cwd = params.cwd || null;
+    const desc = params.reason || (cwd ? `[${cwd}] ${cmd}` : cmd) || "Command approval required";
     emit({
       type: "permission_request",
       id: requestId,
       toolName: "Bash",
-      input: {
-        command: params.command || "",
-        cwd: params.cwd || null,
-      },
-      description: params.reason || params.command || "Command approval required",
+      input: { command: cmd, cwd },
+      description: desc,
     });
     emit({ type: "status", status: "awaiting_permission" });
     updateMeta({ status: "awaiting_permission" });
@@ -315,14 +316,18 @@ function handleCodexServerRequest(msg) {
   }
 
   if (method === "item/fileChange/requestApproval") {
+    const filePath = params.filePath || params.grantRoot || "";
+    const files = params.files || params.paths || [];
+    const desc = params.reason
+      || (Array.isArray(files) && files.length > 0 ? files.join(", ") : "")
+      || filePath
+      || "File change approval required";
     emit({
       type: "permission_request",
       id: requestId,
       toolName: "Write",
-      input: {
-        file_path: params.grantRoot || "(file changes pending)",
-      },
-      description: params.reason || params.grantRoot || "File change approval required",
+      input: { file_path: filePath || "(file changes pending)" },
+      description: desc,
     });
     emit({ type: "status", status: "awaiting_permission" });
     updateMeta({ status: "awaiting_permission" });
@@ -578,7 +583,9 @@ async function handleClaudeMessage(text, resumeId) {
     queryParams.options.resume = currentSessionId;
   }
 
+  cancelRequested = false;
   for await (const message of query(queryParams)) {
+    if (cancelRequested) { cancelRequested = false; break; }
     if (message.type === "system" && message.subtype === "init") {
       currentSessionId = message.session_id;
       emit({ type: "session_init", sessionId: message.session_id });
@@ -756,6 +763,24 @@ function processIncomingMessage(msg) {
       messageQueue.push({ text: msg.text, sessionId: msg.sessionId });
     } else {
       handleUserMessage(msg.text, msg.sessionId);
+    }
+    return;
+  }
+
+  if (msg.type === "cancel_turn") {
+    if (isProcessing) {
+      if (provider === "codex") {
+        if (codexThreadId) {
+          codexRequest("turn/cancel", { threadId: codexThreadId }).catch(() => {});
+        }
+      } else {
+        cancelRequested = true;
+      }
+      pendingEvents = [];
+      accumulatedText = "";
+      messageQueue.length = 0;
+      emitResult({ text: "", isError: false });
+      flushQueue();
     }
     return;
   }

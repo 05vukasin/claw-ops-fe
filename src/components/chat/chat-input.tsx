@@ -2,20 +2,24 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
-import { FiSend } from "react-icons/fi";
+import { FiSend, FiSquare } from "react-icons/fi";
 import type { ClaudeStatus, ChatProvider } from "@/lib/types";
 
 interface ChatInputProps {
   status: ClaudeStatus;
   provider: ChatProvider;
   onSend: (text: string) => void;
+  onStop?: () => void;
   fileButton?: ReactNode;
 }
 
-export function ChatInput({ status, provider, onSend, fileButton }: ChatInputProps) {
+const ACTIVE_STATUSES: ClaudeStatus[] = ["thinking", "tool_running", "awaiting_permission", "awaiting_input"];
+
+export function ChatInput({ status, provider, onSend, onStop, fileButton }: ChatInputProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const isActive = ACTIVE_STATUSES.includes(status);
   const canSend = text.trim().length > 0 && status === "idle";
 
   const handleSend = useCallback(() => {
@@ -71,14 +75,24 @@ export function ChatInput({ status, provider, onSend, fileButton }: ChatInputPro
           className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] leading-normal text-canvas-fg placeholder:text-canvas-muted/60 focus:outline-none disabled:opacity-50"
           style={{ fontSize: "16px" }}
         />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!canSend}
-          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1f6feb] text-white transition-opacity disabled:opacity-20"
-        >
-          <FiSend size={15} />
-        </button>
+        {isActive && onStop ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500 text-white transition-opacity hover:bg-red-600 active:bg-red-700"
+          >
+            <FiSquare size={13} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!canSend}
+            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1f6feb] text-white transition-opacity disabled:opacity-20"
+          >
+            <FiSend size={15} />
+          </button>
+        )}
       </div>
     </div>
   );

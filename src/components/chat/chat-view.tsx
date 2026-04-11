@@ -64,17 +64,19 @@ interface ChatViewProps {
   onProviderChange?: (provider: ChatProvider) => void;
   resumeSessionId?: string | null;
   backgroundSessionId?: string | null;
+  alreadyRunning?: boolean;
   onBack?: () => void;
   headerless?: boolean;
   fileButton?: ReactNode;
 }
 
-export function ChatView({ serverId, serverName, provider, availableProviders = [], onProviderChange, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
-  const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
+export function ChatView({ serverId, serverName, provider, availableProviders = [], onProviderChange, resumeSessionId, backgroundSessionId, alreadyRunning, onBack, headerless, fileButton }: ChatViewProps) {
+  const { messages, status, activeTool, sendMessage, cancelTurn, respondPermission, respondQuestion, setPermissionMode, setEffort, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     provider,
     resumeSessionId,
     backgroundSessionId,
+    alreadyRunning,
   );
   const { viewportHeight } = useVisualViewport();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -375,7 +377,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
       </div>
 
       {/* ── Input ── */}
-      <ChatInput status={status} provider={provider} onSend={sendMessage} fileButton={fileButton} />
+      <ChatInput status={status} provider={provider} onSend={sendMessage} onStop={cancelTurn} fileButton={fileButton} />
     </div>
   );
 }
