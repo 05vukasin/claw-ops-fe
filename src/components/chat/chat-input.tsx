@@ -10,9 +10,11 @@ interface ChatInputProps {
   provider: ChatProvider;
   onSend: (text: string) => void;
   fileButton?: ReactNode;
+  mobile?: boolean;
+  overlayOpen?: boolean;
 }
 
-export function ChatInput({ status, provider, onSend, fileButton }: ChatInputProps) {
+export function ChatInput({ status, provider, onSend, fileButton, mobile = false, overlayOpen = false }: ChatInputProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -46,10 +48,10 @@ export function ChatInput({ status, provider, onSend, fileButton }: ChatInputPro
 
   return (
     <div
-      className="shrink-0 px-3 py-2"
+      className={`shrink-0 px-3 py-2 ${mobile ? "sticky bottom-0 z-20 border-t border-canvas-border/60 bg-canvas-bg/95 backdrop-blur-md" : ""} ${overlayOpen ? "pointer-events-none" : ""}`}
       style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 8px)" }}
     >
-      <div className="flex items-end gap-1.5 rounded-2xl border border-canvas-border/50 px-2 py-1">
+      <div className={`flex items-end gap-1.5 rounded-2xl border px-2 py-1 ${mobile ? "border-canvas-border bg-canvas-surface shadow-[0_-10px_30px_rgba(0,0,0,0.14)]" : "border-canvas-border/50"}`}>
         {fileButton}
         <textarea
           ref={textareaRef}

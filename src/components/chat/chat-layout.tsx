@@ -52,6 +52,8 @@ export function ChatLayout({
   const isMobile = useIsMobile();
   const { viewportHeight } = useVisualViewport();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarRendered, setSidebarRendered] = useState(false);
+  const [sidebarClosing, setSidebarClosing] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
@@ -132,9 +134,32 @@ export function ChatLayout({
     for (let i = 0; i < files.length; i++) {
       await uploadFileApi(selectedServerId, currentBrowserPath, files[i]);
     }
-    fileBrowserRef.current?.navigateTo(currentBrowserPath);
+    fileBrowserRef.current?.refresh();
     e.target.value = "";
   }, [selectedServerId, currentBrowserPath]);
+
+  useEffect(() => {
+    if (sidebarOpen) {
+      const id = window.requestAnimationFrame(() => {
+        setSidebarRendered(true);
+        setSidebarClosing(false);
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
+    if (!sidebarRendered) return;
+    const closeId = window.requestAnimationFrame(() => setSidebarClosing(true));
+    const timer = window.setTimeout(() => {
+      setSidebarRendered(false);
+      setSidebarClosing(false);
+    }, 220);
+    return () => {
+      window.cancelAnimationFrame(closeId);
+      window.clearTimeout(timer);
+    };
+  }, [sidebarOpen, sidebarRendered]);
+
+  const openSidebar = useCallback(() => setSidebarOpen(true), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
 
   /* ── File editor panels (rendered as portals above everything) ── */
   const fileEditors = openFiles.map((entry) => (
@@ -162,7 +187,7 @@ export function ChatLayout({
         >
           <button
             type="button"
-            onClick={() => setSidebarOpen(true)}
+            onClick={openSidebar}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover"
           >
             <FiMenu size={18} />
@@ -174,7 +199,7 @@ export function ChatLayout({
         </div>
 
         {/* Chat view */}
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className={`flex min-h-0 flex-1 flex-col ${filesPanelOpen ? "mobile-chat-freeze" : ""}`}>
           {selectedServerId ? (
             <ChatView
               key={`${selectedServerId}-${selectedProvider ?? "none"}-${selectedSessionId ?? "new"}`}
@@ -186,11 +211,12 @@ export function ChatLayout({
               resumeSessionId={selectedSessionId}
               backgroundSessionId={backgroundSessionId}
               headerless
+              mobileOverlayOpen={filesPanelOpen}
               fileButton={
                 <button
                   type="button"
                   onClick={() => setFilesPanelOpen(true)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-canvas-border bg-canvas-surface text-canvas-muted shadow-sm hover:bg-canvas-surface-hover hover:text-canvas-fg"
                 >
                   <FiFolder size={18} />
                 </button>
@@ -204,14 +230,21 @@ export function ChatLayout({
         </div>
 
         {/* Mobile session sidebar overlay */}
-        {sidebarOpen && (
+        {sidebarRendered && (
           <>
-            <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px]" style={{ zIndex: Z_INDEX.MODAL }} onClick={() => setSidebarOpen(false)} />
-            <div className="animate-sidebar-in fixed inset-y-0 left-0 w-[280px] border-r border-canvas-border bg-canvas-bg shadow-xl" style={{ zIndex: Z_INDEX.MODAL + 1 }}>
+            <div
+              className={`fixed inset-0 bg-black/30 backdrop-blur-[2px] ${sidebarClosing ? "animate-sheet-backdrop-out" : "animate-sheet-backdrop-in"}`}
+              style={{ zIndex: Z_INDEX.MODAL }}
+              onClick={closeSidebar}
+            />
+            <div
+              className={`${sidebarClosing ? "animate-sidebar-out" : "animate-sidebar-in"} fixed inset-y-0 left-0 w-[280px] border-r border-canvas-border bg-canvas-bg shadow-xl`}
+              style={{ zIndex: Z_INDEX.MODAL + 1 }}
+            >
               <div className="flex h-full flex-col">
                 <div className="flex items-center justify-between border-b border-canvas-border px-3 py-2.5">
                   <span className="text-[13px] font-semibold text-canvas-fg">Chats</span>
-                  <button type="button" onClick={() => setSidebarOpen(false)} className="flex h-7 w-7 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover">
+                  <button type="button" onClick={closeSidebar} className="flex h-7 w-7 items-center justify-center rounded-md text-canvas-muted hover:bg-canvas-surface-hover">
                     <FiX size={15} />
                   </button>
                 </div>
@@ -220,8 +253,8 @@ export function ChatLayout({
                     selectedSessionId={selectedSessionId}
                     sessions={sessions}
                     loading={sessionsLoading}
-                    onSelectSession={(sid) => { onSelectSession(sid); setSidebarOpen(false); }}
-                    onNewChat={() => { onNewChat(); setSidebarOpen(false); }}
+                    onSelectSession={(sid) => { onSelectSession(sid); closeSidebar(); }}
+                    onNewChat={() => { onNewChat(); closeSidebar(); }}
                     onRefresh={onRefreshSessions}
                     runningSessionIds={runningSessionIds}
                   />

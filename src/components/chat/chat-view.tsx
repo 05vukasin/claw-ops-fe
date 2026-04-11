@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { FiArrowLeft, FiShield, FiChevronDown, FiTerminal, FiFile, FiEdit } from "react-icons/fi";
 import { useClaudeChat } from "@/lib/use-claude-chat";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { fetchSessionMessagesApi } from "@/lib/api";
 import { StatusIndicator } from "./status-indicator";
@@ -67,9 +68,10 @@ interface ChatViewProps {
   onBack?: () => void;
   headerless?: boolean;
   fileButton?: ReactNode;
+  mobileOverlayOpen?: boolean;
 }
 
-export function ChatView({ serverId, serverName, provider, availableProviders = [], onProviderChange, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton }: ChatViewProps) {
+export function ChatView({ serverId, serverName, provider, availableProviders = [], onProviderChange, resumeSessionId, backgroundSessionId, onBack, headerless, fileButton, mobileOverlayOpen = false }: ChatViewProps) {
   const { messages, status, activeTool, sendMessage, respondPermission, respondQuestion, setPermissionMode, setEffort, bridgeMode, reconnect, setInitialMessages } = useClaudeChat(
     serverId,
     provider,
@@ -77,6 +79,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
     backgroundSessionId,
   );
   const { viewportHeight } = useVisualViewport();
+  const isMobile = useIsMobile();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);
@@ -94,6 +97,15 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
   const providerLabel = isClaude ? "Claude" : "Codex";
   const showProviderToggle = availableProviders.length > 1;
   const modeOptions = isClaude ? CLAUDE_MODE_OPTIONS : CODEX_MODE_OPTIONS;
+  const latestMessage = messages[messages.length - 1];
+  const showTrailingThinking = (status === "thinking" || status === "tool_running")
+    && !(
+      latestMessage?.role === "assistant"
+      && (
+        (latestMessage.type === "text" && latestMessage.content.trim().length > 0)
+        || latestMessage.type === "thinking"
+      )
+    );
 
   /* ── Persist mode to localStorage ── */
   useEffect(() => {
@@ -102,7 +114,8 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
 
   useEffect(() => {
     if (bridgeMode && bridgeMode !== permissionMode) {
-      setMode(bridgeMode);
+      const id = window.requestAnimationFrame(() => setMode(bridgeMode));
+      return () => window.cancelAnimationFrame(id);
     }
   }, [bridgeMode, permissionMode]);
 
@@ -136,8 +149,16 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
   /* ── Auto-scroll to bottom on new messages ── */
   useEffect(() => {
     if (userScrolledUpRef.current) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, infoMessages]);
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+    const id = window.requestAnimationFrame(() => {
+      if (isMobile) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+      }
+      bottomRef.current?.scrollIntoView({ behavior: isMobile ? "auto" : "smooth", block: "end" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [messages, infoMessages, status, isMobile]);
 
   /* ── Detect if user scrolled up ── */
   const handleScroll = () => {
@@ -176,12 +197,13 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
       )}
 
       {/* ── Mode & Effort bar ── */}
-      <div className="relative flex shrink-0 items-center gap-3 border-b border-canvas-border px-3 py-1.5">
+      <div className={`relative flex shrink-0 items-center border-b border-canvas-border px-3 ${isMobile ? "mobile-chat-toolbar gap-2 overflow-x-auto bg-canvas-bg/90 py-2.5 backdrop-blur-sm no-scrollbar" : "gap-3 py-1.5"}`}>
         {showProviderToggle && onProviderChange && (
           <ProviderToggle
             availableProviders={availableProviders}
             selectedProvider={provider}
             onChange={onProviderChange}
+            mobile={isMobile}
           />
         )}
 
@@ -189,7 +211,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
         <button
           type="button"
           onClick={() => setShowModeMenu((v) => !v)}
-          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-canvas-muted hover:bg-canvas-surface-hover"
+          className={`flex items-center gap-1.5 rounded-full border border-canvas-border px-2.5 py-1 text-canvas-muted hover:bg-canvas-surface-hover ${isMobile ? "shrink-0 bg-canvas-surface text-[10px] shadow-sm" : "text-[11px]"}`}
         >
           <FiShield size={11} />
           <span>{MODE_LABELS[permissionMode] ?? "Default"}</span>
@@ -197,7 +219,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
         </button>
 
         {/* Effort selector — segmented control */}
-        <div className="flex items-center gap-0.5 rounded-md bg-canvas-surface-hover p-0.5">
+        <div className={`flex items-center gap-0.5 rounded-full bg-canvas-surface p-0.5 ${isMobile ? "shrink-0 border border-canvas-border shadow-sm" : ""}`}>
           {EFFORT_OPTIONS.map((opt) => {
             const isActive = (opt.value === "" && !effortLevel) || opt.value === effortLevel;
             return (
@@ -209,7 +231,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
                   setEffortLevel(val);
                   setEffort(val);
                 }}
-                className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                className={`rounded-full px-2 py-0.5 font-medium transition-colors ${isMobile ? "text-[9px]" : "text-[10px]"} ${
                   isActive
                     ? "bg-canvas-bg text-canvas-fg"
                     : "text-canvas-muted hover:text-canvas-fg"
@@ -223,7 +245,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
 
         {/* Status (shown when headerless — since header status is hidden) */}
         {headerless && (
-          <div className="ml-auto">
+          <div className={`ml-auto ${isMobile ? "shrink-0" : ""}`}>
             <StatusIndicator status={status} activeTool={activeTool} onReconnect={reconnect} />
           </div>
         )}
@@ -262,11 +284,11 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
       </div>
 
       {/* ── Messages ── */}
-      <div className="relative flex-1">
+      <div className={`relative flex-1 ${mobileOverlayOpen ? "mobile-chat-freeze" : ""}`}>
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="absolute inset-0 overflow-y-auto overflow-x-hidden py-3"
+          className={`absolute inset-0 overflow-y-auto overflow-x-hidden py-3 ${isMobile ? "pb-28" : "pb-3"} ${mobileOverlayOpen ? "pointer-events-none" : ""}`}
         >
           {loadingHistory && (
             <div className="flex items-center justify-center py-8">
@@ -307,7 +329,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
             );
           })()}
           {/* ── Thinking indicator at end of messages ── */}
-          {(status === "thinking" || status === "tool_running") && (
+          {showTrailingThinking && (
             <div className="animate-msg-in flex items-center gap-2 px-5 py-2">
               <span className="thinking-dots flex items-center gap-0.5">
                 <span className="thinking-dot h-1.5 w-1.5 rounded-full bg-purple-400" />
@@ -395,7 +417,7 @@ export function ChatView({ serverId, serverName, provider, availableProviders = 
       </div>
 
       {/* ── Input ── */}
-      <ChatInput status={status} provider={provider} onSend={sendMessage} fileButton={fileButton} />
+      <ChatInput status={status} provider={provider} onSend={sendMessage} fileButton={fileButton} mobile={isMobile} overlayOpen={mobileOverlayOpen} />
     </div>
   );
 }
@@ -404,11 +426,12 @@ interface ProviderToggleProps {
   availableProviders: ChatProvider[];
   selectedProvider: ChatProvider;
   onChange: (provider: ChatProvider) => void;
+  mobile?: boolean;
 }
 
-function ProviderToggle({ availableProviders, selectedProvider, onChange }: ProviderToggleProps) {
+function ProviderToggle({ availableProviders, selectedProvider, onChange, mobile = false }: ProviderToggleProps) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-full border border-canvas-border bg-canvas-bg p-1">
+    <div className={`inline-flex items-center gap-1 rounded-full border border-canvas-border bg-canvas-bg p-1 ${mobile ? "shrink-0 bg-canvas-surface shadow-sm" : ""}`}>
       {availableProviders.map((provider) => {
         const active = provider === selectedProvider;
         const label = provider === "codex" ? "Codex" : "Claude";
@@ -419,16 +442,20 @@ function ProviderToggle({ availableProviders, selectedProvider, onChange }: Prov
             key={provider}
             type="button"
             onClick={() => onChange(provider)}
-            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+            className={`flex items-center justify-center rounded-full font-medium transition-colors ${
+              mobile ? "h-9 w-9 px-0 py-0" : "gap-1.5 px-2.5 py-1 text-[11px]"
+            } ${
               active
-                ? "bg-canvas-surface-hover text-canvas-fg"
+                ? "bg-canvas-bg text-canvas-fg shadow-sm"
                 : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
             }`}
+            aria-label={label}
+            title={label}
           >
             <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${circleBg}`}>
               <Image src={src} alt={label} width={13} height={13} className="h-[13px] w-[13px] rounded-full" />
             </span>
-            <span>{label}</span>
+            {!mobile && <span>{label}</span>}
           </button>
         );
       })}
