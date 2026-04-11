@@ -393,6 +393,7 @@ function ProviderToggle({ availableProviders, selectedProvider, onChange }: Prov
         const active = provider === selectedProvider;
         const label = provider === "codex" ? "Codex" : "Claude";
         const src = provider === "codex" ? "/images/codex.png" : "/images/claude.png";
+        const circleBg = provider === "codex" ? "bg-white" : "bg-[#C15F3C]";
         return (
           <button
             key={provider}
@@ -404,7 +405,9 @@ function ProviderToggle({ availableProviders, selectedProvider, onChange }: Prov
                 : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
             }`}
           >
-            <Image src={src} alt={label} width={14} height={14} className="h-3.5 w-3.5 rounded-sm" />
+            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${circleBg}`}>
+              <Image src={src} alt={label} width={13} height={13} className="h-[13px] w-[13px] rounded-full" />
+            </span>
             <span>{label}</span>
           </button>
         );

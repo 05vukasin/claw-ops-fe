@@ -59,6 +59,7 @@ export function MobileFileSheet({ serverId, open, onClose, onCopyPath, onFileOpe
         <div className="file-panel-fill min-h-0 flex-1">
           <FileBrowser
             serverId={serverId}
+            fillHeight
             onFileClick={onCopyPath}
             onFileOpen={onFileOpen}
           />

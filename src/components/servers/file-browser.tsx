@@ -69,6 +69,8 @@ interface FileBrowserProps {
   onRunCommand?: (command: string) => void;
   /** When provided, component uses this fixed height and flex layout */
   height?: number;
+  /** When true, component stretches to fill its parent height using flex layout */
+  fillHeight?: boolean;
   /** When true, hides the "Run" context menu option for .sh files */
   hideRunOption?: boolean;
   /** When provided, adds a "Copy path" option to the context menu */
@@ -80,7 +82,7 @@ interface FileBrowserProps {
 /* ------------------------------------------------------------------ */
 
 export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(function FileBrowser(
-  { serverId, onFileClick, onFileOpen, onRunCommand, height, hideRunOption, onCopyPath },
+  { serverId, onFileClick, onFileOpen, onRunCommand, height, fillHeight = false, hideRunOption, onCopyPath },
   ref,
 ) {
   const [currentPath, setCurrentPath] = useState("~");
@@ -405,9 +407,11 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
         return acc;
       }, [{ label: "/", path: "/" }]);
 
+  const usesFillLayout = height != null || fillHeight;
+
   return (
     <div
-      className={`relative ${height != null ? "flex flex-col overflow-hidden" : "border-b border-canvas-border"}`}
+      className={`relative ${usesFillLayout ? "flex h-full min-h-0 flex-col overflow-hidden" : "border-b border-canvas-border"}`}
       style={height != null ? { height } : undefined}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
@@ -463,7 +467,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
       </div>
 
       {/* File list */}
-      <div className={height != null ? "flex-1 min-h-0 overflow-y-auto" : "max-h-45 overflow-y-auto"}>
+      <div className={usesFillLayout ? "flex-1 min-h-0 overflow-y-auto" : "max-h-45 overflow-y-auto"}>
         {loading ? (
           <p className="px-5 py-3 text-center text-[10px] text-canvas-muted">Loading...</p>
         ) : error ? (
