@@ -24,7 +24,6 @@ export function useClaudeChat(
   provider: ChatProvider,
   resumeSessionId?: string | null,
   backgroundSessionId?: string | null,
-  alreadyRunning?: boolean,
 ) {
   const isBackground = !!backgroundSessionId;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -532,15 +531,6 @@ export function useClaudeChat(
     [sendToBridge],
   );
 
-  /* ── Cancel current turn ── */
-  const cancelTurn = useCallback(() => {
-    sendToBridge({ type: "cancel_turn" });
-    setStatus("idle");
-    setActiveTool(null);
-    currentAssistantRef.current = null;
-    currentThinkingRef.current = null;
-  }, [sendToBridge]);
-
   /* ── Respond to ask question ── */
   const respondQuestion = useCallback(
     (askId: string, answers: Record<string, string>) => {
@@ -563,17 +553,15 @@ export function useClaudeChat(
   );
 
   /* ── Background: start session and begin polling ── */
-  const connectBackground = useCallback(async (skipStart?: boolean) => {
+  const connectBackground = useCallback(async () => {
     if (!serverId || !backgroundSessionId) return;
     setStatus("connecting");
     setBackgroundPollReady(false);
-    bgPollLineRef.current = 0;
     try {
-      if (!skipStart && !alreadyRunning) {
-        await startBackgroundChatApi(serverId, backgroundSessionId, provider, resumeSessionId || undefined);
-        // Wait a moment for bridge to start
-        await new Promise((r) => setTimeout(r, 500));
-      }
+      await startBackgroundChatApi(serverId, backgroundSessionId, provider, resumeSessionId || undefined);
+      // Wait a moment for bridge to start
+      await new Promise((r) => setTimeout(r, 500));
+      bgPollLineRef.current = 0;
       setBackgroundPollReady(true);
       setStatus("idle");
       bridgeReadyRef.current = true;
@@ -581,7 +569,7 @@ export function useClaudeChat(
       setBackgroundPollReady(false);
       setStatus("disconnected");
     }
-  }, [serverId, backgroundSessionId, provider, resumeSessionId, alreadyRunning]);
+  }, [serverId, backgroundSessionId, provider, resumeSessionId]);
 
   /* ── Background: poll for output ── */
   useEffect(() => {
@@ -648,7 +636,6 @@ export function useClaudeChat(
     status,
     activeTool,
     sendMessage,
-    cancelTurn,
     respondPermission,
     respondQuestion,
     setPermissionMode,

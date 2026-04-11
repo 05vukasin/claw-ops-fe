@@ -2,24 +2,22 @@
 
 import type { ReactNode } from "react";
 import { useCallback, useRef, useState } from "react";
-import { FiSend, FiSquare } from "react-icons/fi";
+import { FiSend } from "react-icons/fi";
 import type { ClaudeStatus, ChatProvider } from "@/lib/types";
 
 interface ChatInputProps {
   status: ClaudeStatus;
   provider: ChatProvider;
   onSend: (text: string) => void;
-  onStop?: () => void;
   fileButton?: ReactNode;
+  mobile?: boolean;
+  overlayOpen?: boolean;
 }
 
-const ACTIVE_STATUSES: ClaudeStatus[] = ["thinking", "tool_running", "awaiting_permission", "awaiting_input"];
-
-export function ChatInput({ status, provider, onSend, onStop, fileButton }: ChatInputProps) {
+export function ChatInput({ status, provider, onSend, fileButton, mobile = false, overlayOpen = false }: ChatInputProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const isActive = ACTIVE_STATUSES.includes(status);
   const canSend = text.trim().length > 0 && status === "idle";
 
   const handleSend = useCallback(() => {
@@ -50,10 +48,10 @@ export function ChatInput({ status, provider, onSend, onStop, fileButton }: Chat
 
   return (
     <div
-      className="shrink-0 px-3 py-2"
+      className={`shrink-0 px-3 py-2 ${mobile ? "sticky bottom-0 z-20 border-t border-canvas-border/60 bg-canvas-bg/95 backdrop-blur-md" : ""} ${overlayOpen ? "pointer-events-none" : ""}`}
       style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 8px)" }}
     >
-      <div className="flex items-end gap-1.5 rounded-2xl border border-canvas-border/50 px-2 py-1">
+      <div className={`flex items-end gap-1.5 rounded-2xl border px-2 py-1 ${mobile ? "border-canvas-border bg-canvas-surface shadow-[0_-10px_30px_rgba(0,0,0,0.14)]" : "border-canvas-border/50"}`}>
         {fileButton}
         <textarea
           ref={textareaRef}
@@ -75,24 +73,14 @@ export function ChatInput({ status, provider, onSend, onStop, fileButton }: Chat
           className="flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] leading-normal text-canvas-fg placeholder:text-canvas-muted/60 focus:outline-none disabled:opacity-50"
           style={{ fontSize: "16px" }}
         />
-        {isActive && onStop ? (
-          <button
-            type="button"
-            onClick={onStop}
-            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500 text-white transition-opacity hover:bg-red-600 active:bg-red-700"
-          >
-            <FiSquare size={13} />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1f6feb] text-white transition-opacity disabled:opacity-20"
-          >
-            <FiSend size={15} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={!canSend}
+          className="mb-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1f6feb] text-white transition-opacity disabled:opacity-20"
+        >
+          <FiSend size={15} />
+        </button>
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import { listFilesApi, downloadFileApi, executeCommandApi, uploadFileApi, ApiErr
 
 export interface FileBrowserHandle {
   navigateTo: (path: string) => void;
+  refresh: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -75,6 +76,8 @@ interface FileBrowserProps {
   hideRunOption?: boolean;
   /** When provided, adds a "Copy path" option to the context menu */
   onCopyPath?: (path: string) => void;
+  /** Notifies parent whenever the visible directory changes */
+  onPathChange?: (path: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -82,7 +85,7 @@ interface FileBrowserProps {
 /* ------------------------------------------------------------------ */
 
 export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(function FileBrowser(
-  { serverId, onFileClick, onFileOpen, onRunCommand, height, fillHeight = false, hideRunOption, onCopyPath },
+  { serverId, onFileClick, onFileOpen, onRunCommand, height, fillHeight = false, hideRunOption, onCopyPath, onPathChange },
   ref,
 ) {
   const [currentPath, setCurrentPath] = useState("~");
@@ -119,6 +122,7 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
     setError(null);
     setCurrentPath(path);
     currentPathRef.current = path;
+    onPathChange?.(path);
     try {
       const result = await listFilesApi(serverId, path);
       result.sort((a, b) => {
@@ -131,13 +135,16 @@ export const FileBrowser = forwardRef<FileBrowserHandle, FileBrowserProps>(funct
       setFiles([]);
     }
     setLoading(false);
-  }, [serverId]);
+  }, [onPathChange, serverId]);
 
   /* ── Imperative handle: let parent navigate without triggering onFileClick ── */
   useImperativeHandle(ref, () => ({
     navigateTo(path: string) {
       if (path === currentPathRef.current) return;
       loadFiles(path);
+    },
+    refresh() {
+      loadFiles(currentPathRef.current);
     },
   }), [loadFiles]);
 
