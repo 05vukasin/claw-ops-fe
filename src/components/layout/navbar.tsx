@@ -21,7 +21,16 @@ interface NavItem {
   roles?: string[];
 }
 
-const NAV_ITEMS: NavItem[] = [
+interface NavGroup {
+  label: string;
+  roles?: string[];
+  children: NavItem[];
+}
+
+type NavEntry = NavItem | NavGroup;
+function isGroup(e: NavEntry): e is NavGroup { return "children" in e; }
+
+const NAV_ENTRIES: NavEntry[] = [
   { label: "Chat", href: "/chat" },
   { label: "Servers", href: "/" },
   { label: "Domains", href: "/domains", roles: ["ADMIN", "DEVOPS"] },
@@ -29,8 +38,14 @@ const NAV_ITEMS: NavItem[] = [
   { label: "ZIP Generator", href: "/zip-generator" },
   { label: "Notifications", href: "/notifications", roles: ["ADMIN"] },
   { label: "Users", href: "/users", roles: ["ADMIN"] },
-  { label: "Logs", href: "/logs", roles: ["ADMIN"] },
-  { label: "Processes", href: "/processes", roles: ["ADMIN"] },
+  {
+    label: "Audit",
+    roles: ["ADMIN"],
+    children: [
+      { label: "Logs", href: "/logs" },
+      { label: "Processes", href: "/processes" },
+    ],
+  },
 ];
 
 export function Navbar({ open, onClose }: NavbarProps) {
@@ -140,21 +155,32 @@ export function Navbar({ open, onClose }: NavbarProps) {
           {/* Nav links */}
           <nav className="flex-1 overflow-y-auto px-3 py-3">
             <ul className="space-y-0.5">
-              {NAV_ITEMS.filter((item) => !item.roles || (user?.role && item.roles.includes(user.role))).map((item, i) => {
-                const isActive = pathname === item.href;
+              {NAV_ENTRIES.filter((e) => !e.roles || (user?.role && e.roles.includes(user.role))).map((entry, i) => {
+                if (isGroup(entry)) {
+                  return (
+                    <NavGroupItem
+                      key={entry.label}
+                      group={entry}
+                      pathname={pathname}
+                      onNav={handleNav}
+                      delay={i * 40}
+                    />
+                  );
+                }
+                const isActive = pathname === entry.href;
                 return (
-                  <li key={item.href} className="animate-nav-item" style={{ animationDelay: `${i * 40}ms` }}>
+                  <li key={entry.href} className="animate-nav-item" style={{ animationDelay: `${i * 40}ms` }}>
                     <button
                       type="button"
-                      onClick={() => handleNav(item.href)}
+                      onClick={() => handleNav(entry.href)}
                       className={`flex w-full items-center rounded-md px-3 py-2 text-sm transition-colors ${
                         isActive
                           ? "bg-canvas-surface-hover font-medium text-canvas-fg"
                           : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
                       }`}
                     >
-                      <NavIcon name={item.label} />
-                      <span className="ml-2.5">{item.label}</span>
+                      <NavIcon name={entry.label} />
+                      <span className="ml-2.5">{entry.label}</span>
                     </button>
                   </li>
                 );
@@ -198,6 +224,65 @@ export function Navbar({ open, onClose }: NavbarProps) {
         </div>
       </div>
     </>
+  );
+}
+
+/* ── Collapsible nav group ── */
+
+function NavGroupItem({ group, pathname, onNav, delay }: {
+  group: NavGroup;
+  pathname: string;
+  onNav: (href: string) => void;
+  delay: number;
+}) {
+  const childActive = group.children.some((c) => pathname === c.href);
+  const [expanded, setExpanded] = useState(childActive);
+
+  return (
+    <li className="animate-nav-item" style={{ animationDelay: `${delay}ms` }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((p) => !p)}
+        className={`flex w-full items-center rounded-md px-3 py-2 text-sm transition-colors ${
+          childActive
+            ? "text-canvas-fg font-medium"
+            : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+        }`}
+      >
+        <NavIcon name={group.label} />
+        <span className="ml-2.5 flex-1 text-left">{group.label}</span>
+        <svg
+          width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          className={`text-canvas-muted transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+      {expanded && (
+        <ul className="ml-5 mt-0.5 space-y-0.5 border-l border-canvas-border pl-2.5">
+          {group.children.map((child) => {
+            const active = pathname === child.href;
+            return (
+              <li key={child.href}>
+                <button
+                  type="button"
+                  onClick={() => onNav(child.href)}
+                  className={`flex w-full items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${
+                    active
+                      ? "bg-canvas-surface-hover font-medium text-canvas-fg"
+                      : "text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                  }`}
+                >
+                  <NavIcon name={child.label} />
+                  <span className="ml-2">{child.label}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </li>
   );
 }
 
@@ -278,6 +363,23 @@ function NavIcon({ name }: { name: string }) {
         <svg {...props}>
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+      );
+    case "Audit":
+      return (
+        <svg {...props}>
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      );
+    case "Processes":
+      return (
+        <svg {...props}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <rect x="9" y="9" width="6" height="6" />
+          <path d="M15 2v2" /><path d="M15 20v2" />
+          <path d="M2 15h2" /><path d="M20 15h2" />
+          <path d="M9 2v2" /><path d="M9 20v2" />
+          <path d="M2 9h2" /><path d="M20 9h2" />
         </svg>
       );
     default:
