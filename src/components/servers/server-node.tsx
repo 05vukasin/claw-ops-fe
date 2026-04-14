@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useRef, useState } from "react";
 import type { ServerWithUI } from "@/lib/use-servers";
+import type { MonitoringState } from "@/lib/api";
 
 const NODE_SIZE = 60;
 const DRAG_THRESHOLD = 4;
@@ -13,9 +14,19 @@ const STATUS_DOT: Record<string, string> = {
   UNKNOWN: "bg-yellow-400",
 };
 
+const HEALTH_RING: Record<string, string> = {
+  HEALTHY: "border-green-400/60",
+  WARNING: "border-yellow-400/70 animate-pulse",
+  CRITICAL: "border-red-500/80 animate-pulse",
+  UNREACHABLE: "border-gray-400/40 border-dashed",
+  UNKNOWN: "",
+  MAINTENANCE: "border-blue-400/60",
+};
+
 interface ServerNodeProps {
   server: ServerWithUI;
   isActive: boolean;
+  healthState?: MonitoringState;
   onMoveEnd: (id: string, x: number, y: number) => void;
   onMove?: (id: string, x: number, y: number) => void;
   onFocus: (id: string) => void;
@@ -26,6 +37,7 @@ interface ServerNodeProps {
 export const ServerNode = memo(function ServerNode({
   server,
   isActive,
+  healthState,
   onMoveEnd,
   onMove,
   onFocus,
@@ -104,6 +116,14 @@ export const ServerNode = memo(function ServerNode({
         cursor: dragging ? "grabbing" : "grab",
       }}
     >
+      {/* Health ring (outer glow) */}
+      {healthState && HEALTH_RING[healthState] && (
+        <div
+          className={`absolute rounded-full border-2 ${HEALTH_RING[healthState]}`}
+          style={{ width: NODE_SIZE + 10, height: NODE_SIZE + 10, left: -5, top: -5 }}
+        />
+      )}
+
       {/* Circle with server icon */}
       <div
         className={`relative flex items-center justify-center rounded-full border bg-canvas-bg p-2.5 transition-shadow ${

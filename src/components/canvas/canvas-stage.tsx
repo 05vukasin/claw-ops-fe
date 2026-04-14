@@ -13,6 +13,7 @@ import type { AgentWithUI } from "@/lib/use-agents";
 import type { GitHubAccountWithUI } from "@/lib/use-github-accounts";
 import type { ClaudeAccountWithUI } from "@/lib/use-claude-accounts";
 import type { CodexAccountWithUI } from "@/lib/use-codex-accounts";
+import type { MonitoringState } from "@/lib/api";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 3;
@@ -54,9 +55,10 @@ interface CanvasStageProps {
   onMoveGitHub?: (serverId: string, offsetX: number, offsetY: number) => void;
   onMoveClaude?: (serverId: string, offsetX: number, offsetY: number) => void;
   onMoveCodex?: (serverId: string, offsetX: number, offsetY: number) => void;
+  healthMap?: Record<string, MonitoringState>;
 }
 
-export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeAccounts = [], codexAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub, onMoveClaude, onMoveCodex }: CanvasStageProps) {
+export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeAccounts = [], codexAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub, onMoveClaude, onMoveCodex, healthMap = {} }: CanvasStageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Multi-panel: read comma-separated servers param
@@ -481,6 +483,7 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
             key={s.id}
             server={s}
             isActive={openIds.includes(s.id)}
+            healthState={healthMap[s.id]}
             onMoveEnd={handleMoveEnd}
             onMove={handleMove}
             onFocus={handleFocus}

@@ -1087,6 +1087,142 @@ export async function deleteMaintenanceWindowApi(id: string): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Alerts                                                             */
+/* ------------------------------------------------------------------ */
+
+export type AlertRuleType = "THRESHOLD" | "CONSECUTIVE_FAILURE" | "DEADMAN";
+export type ConditionOperator = "GREATER_THAN" | "LESS_THAN" | "GREATER_THAN_OR_EQUAL" | "LESS_THAN_OR_EQUAL" | "EQUAL" | "NOT_EQUAL";
+export type AlertStatus = "ACTIVE" | "ACKNOWLEDGED" | "RESOLVED" | "SILENCED";
+export type IncidentSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type IncidentStatus = "OPEN" | "ACKNOWLEDGED" | "INVESTIGATING" | "RESOLVED" | "CLOSED";
+export type NotificationChannelType = "EMAIL" | "SLACK" | "DISCORD" | "TELEGRAM" | "WEBHOOK";
+
+export interface AlertRuleChannel { id: string; name: string; type: NotificationChannelType }
+export interface AlertRule {
+  id: string; name: string; description: string | null; serverId: string | null;
+  ruleType: AlertRuleType; metricType: string; conditionOperator: ConditionOperator;
+  thresholdValue: number; severity: IncidentSeverity;
+  consecutiveFailures: number; cooldownMinutes: number; enabled: boolean;
+  channels: AlertRuleChannel[]; createdAt: string; updatedAt: string;
+}
+export interface AlertEvent {
+  id: string; alertRuleId: string; ruleName: string; serverId: string;
+  incidentId: string | null; severity: IncidentSeverity; status: AlertStatus;
+  metricType: string | null; metricValue: number | null; message: string | null;
+  acknowledgedBy: string | null; acknowledgedAt: string | null;
+  resolvedAt: string | null; firedAt: string;
+}
+export interface Incident {
+  id: string; title: string; description: string | null; serverId: string;
+  severity: IncidentSeverity; status: IncidentStatus;
+  openedAt: string; acknowledgedAt: string | null; resolvedAt: string | null;
+  closedAt: string | null; resolvedBy: string | null; rootCause: string | null;
+}
+export interface NotificationChannel { id: string; name: string; channelType: NotificationChannelType; enabled: boolean; createdAt: string; updatedAt: string }
+export interface EndpointCheck {
+  id: string; name: string; url: string; checkType: string; serverId: string | null;
+  expectedStatusCode: number; enabled: boolean; intervalSeconds: number;
+  latestResult: EndpointCheckLatest | null; createdAt: string; updatedAt: string;
+}
+export interface EndpointCheckLatest { isUp: boolean; responseTimeMs: number | null; statusCode: number | null; sslExpiresAt: string | null; sslDaysRemaining: number | null; errorMessage: string | null; checkedAt: string }
+export interface MetricAggregation { metricType: string; min: number | null; max: number | null; avg: number | null; sampleCount: number }
+
+// ── Alert Rules API ──
+
+export async function fetchAlertRulesApi(serverId?: string): Promise<AlertRule[]> {
+  const qs = serverId ? `?serverId=${encodeURIComponent(serverId)}` : "";
+  const res = await apiFetch(`/api/v1/monitoring/alerts/rules${qs}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load alert rules.");
+  return res.json() as Promise<AlertRule[]>;
+}
+
+export async function createAlertRuleApi(body: {
+  name: string; description?: string; serverId?: string | null;
+  ruleType: AlertRuleType; metricType: string; conditionOperator: ConditionOperator;
+  thresholdValue: number; severity: IncidentSeverity;
+  consecutiveFailures?: number; cooldownMinutes?: number; channelIds?: string[];
+}): Promise<AlertRule> {
+  const res = await apiFetch("/api/v1/monitoring/alerts/rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) { const e = await res.json().catch(() => ({ message: "Failed" })); throw new ApiError(res.status, e.message || "Failed to create rule."); }
+  return res.json() as Promise<AlertRule>;
+}
+
+export async function deleteAlertRuleApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/monitoring/alerts/rules/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, "Failed to delete rule.");
+}
+
+// ── Alert Events API ──
+
+export async function fetchAlertEventsApi(serverId?: string, page = 0, size = 20): Promise<PageResponse<AlertEvent>> {
+  const params = new URLSearchParams({ page: String(page), size: String(size) });
+  if (serverId) params.set("serverId", serverId);
+  const res = await apiFetch(`/api/v1/monitoring/alerts/events?${params}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load alerts.");
+  return res.json() as Promise<PageResponse<AlertEvent>>;
+}
+
+export async function acknowledgeAlertApi(id: string): Promise<AlertEvent> {
+  const res = await apiFetch(`/api/v1/monitoring/alerts/events/${encodeURIComponent(id)}/acknowledge`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to acknowledge alert.");
+  return res.json() as Promise<AlertEvent>;
+}
+
+export async function resolveAlertApi(id: string): Promise<AlertEvent> {
+  const res = await apiFetch(`/api/v1/monitoring/alerts/events/${encodeURIComponent(id)}/resolve`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to resolve alert.");
+  return res.json() as Promise<AlertEvent>;
+}
+
+export async function silenceAlertApi(id: string): Promise<AlertEvent> {
+  const res = await apiFetch(`/api/v1/monitoring/alerts/events/${encodeURIComponent(id)}/silence`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to silence alert.");
+  return res.json() as Promise<AlertEvent>;
+}
+
+export async function fetchActiveAlertCountApi(): Promise<number> {
+  const res = await apiFetch("/api/v1/monitoring/alerts/events/count");
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.active ?? 0;
+}
+
+// ── Endpoint Checks API ──
+
+export async function fetchEndpointChecksApi(serverId?: string): Promise<EndpointCheck[]> {
+  const qs = serverId ? `?serverId=${encodeURIComponent(serverId)}` : "";
+  const res = await apiFetch(`/api/v1/monitoring/endpoints${qs}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load endpoint checks.");
+  return res.json() as Promise<EndpointCheck[]>;
+}
+
+export async function createEndpointCheckApi(body: { name: string; url: string; checkType: string; serverId?: string | null; expectedStatusCode?: number; intervalSeconds?: number }): Promise<EndpointCheck> {
+  const res = await apiFetch("/api/v1/monitoring/endpoints", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) { const e = await res.json().catch(() => ({ message: "Failed" })); throw new ApiError(res.status, e.message || "Failed to create check."); }
+  return res.json() as Promise<EndpointCheck>;
+}
+
+export async function deleteEndpointCheckApi(id: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/monitoring/endpoints/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, "Failed to delete check.");
+}
+
+export async function triggerEndpointCheckApi(id: string): Promise<EndpointCheckLatest> {
+  const res = await apiFetch(`/api/v1/monitoring/endpoints/${encodeURIComponent(id)}/check`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, "Failed to trigger check.");
+  return res.json() as Promise<EndpointCheckLatest>;
+}
+
+// ── Metric Aggregation API ──
+
+export async function fetchMetricAggregationApi(serverId: string, type: string, from: string, to: string): Promise<MetricAggregation> {
+  const params = new URLSearchParams({ type, from, to });
+  const res = await apiFetch(`/api/v1/monitoring/metrics/${encodeURIComponent(serverId)}/aggregate?${params}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load aggregation.");
+  return res.json() as Promise<MetricAggregation>;
+}
+
+/* ------------------------------------------------------------------ */
 /*  SSH Command Execution                                              */
 /* ------------------------------------------------------------------ */
 

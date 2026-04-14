@@ -8,7 +8,10 @@ import { useAgents } from "@/lib/use-agents";
 import { useGitHubAccounts } from "@/lib/use-github-accounts";
 import { useClaudeAccounts } from "@/lib/use-claude-accounts";
 import { useCodexAccounts } from "@/lib/use-codex-accounts";
+import { useServerHealth } from "@/lib/use-server-health";
 import { useIsMobile } from "@/lib/use-is-mobile";
+import { AlertBell } from "@/components/servers/alert-bell";
+import { ToastContainer } from "@/components/ui/toast";
 import { WorkspacePanel } from "./workspace-panel";
 import { NewServerButton } from "./new-server-button";
 
@@ -18,6 +21,7 @@ export default function ServersPage() {
   const { accounts: githubAccounts, moveGitHubNode } = useGitHubAccounts(servers);
   const { accounts: claudeAccounts, moveClaudeNode } = useClaudeAccounts(servers);
   const { accounts: codexAccounts, moveCodexNode } = useCodexAccounts(servers);
+  const healthMap = useServerHealth();
   const isMobile = useIsMobile();
 
   if (isMobile) {
@@ -31,8 +35,9 @@ export default function ServersPage() {
 
   return (
     <>
-      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} claudeAccounts={claudeAccounts} codexAccounts={codexAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} onMoveClaude={moveClaudeNode} onMoveCodex={moveCodexNode} />
+      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} claudeAccounts={claudeAccounts} codexAccounts={codexAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} onMoveClaude={moveClaudeNode} onMoveCodex={moveCodexNode} healthMap={healthMap} />
       <FleetSummaryBar />
+      <AlertBell />
 
       {servers.length === 0 && (
         <main className="pointer-events-none flex min-h-[calc(100vh-3rem)] flex-col items-center justify-center px-4">
@@ -56,6 +61,7 @@ export default function ServersPage() {
         <WorkspacePanel onRefresh={refresh} />
       </Suspense>
       <NewServerButton onCreated={refresh} />
+      <ToastContainer />
     </>
   );
 }
