@@ -55,7 +55,8 @@
       "Bash(git pull:*)",
       "Bash(git stash:*)",
       "Bash(git merge:*)",
-      "Bash(git revert:*)"
+      "Bash(git revert:*)",
+      "Bash(git commit:*)"
     ],
     "additionalDirectories": [
       "\\tmp"
