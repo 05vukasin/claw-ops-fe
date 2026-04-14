@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import type { CodexAccountWithUI } from "@/lib/use-codex-accounts";
 
@@ -21,7 +21,7 @@ interface CodexNodeProps {
   zoom: number;
 }
 
-export function CodexNode({ account, serverX, serverY, onMoveEnd, onSpringPos, onSelect, zoom }: CodexNodeProps) {
+export const CodexNode = memo(function CodexNode({ account, serverX, serverY, onMoveEnd, onSpringPos, onSelect, zoom }: CodexNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: account.offsetX, y: account.offsetY });
   const [dragging, setDragging] = useState(false);
@@ -189,4 +189,4 @@ export function CodexNode({ account, serverX, serverY, onMoveEnd, onSpringPos, o
       </p>
     </div>
   );
-}
+});

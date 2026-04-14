@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import type { AgentWithUI } from "@/lib/use-agents";
 
@@ -39,7 +39,7 @@ interface AgentNodeProps {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, onSpringPos, onSelect, zoom }: AgentNodeProps) {
+export const AgentNode = memo(function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, onSpringPos, onSelect, zoom }: AgentNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: agent.offsetX, y: agent.offsetY });
   const [dragging, setDragging] = useState(false);
@@ -232,4 +232,4 @@ export function AgentNode({ agent, serverX, serverY, serverDomain, onMoveEnd, on
         </p>
       </div>
   );
-}
+});

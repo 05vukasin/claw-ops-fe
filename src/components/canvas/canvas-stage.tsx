@@ -292,7 +292,7 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
         line.setAttribute("y1", String(sp.y));
       }
     }
-  });
+  }, [agents, githubAccounts, claudeAccounts, codexAccounts, livePos, serverMap]);
 
   /* ── Zoom (wheel) ── */
   useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { executeCommandApi } from "@/lib/api";
 import type { ServerWithUI } from "@/lib/use-servers";
 
@@ -26,10 +26,14 @@ export interface CodexAccountWithUI {
 const STORAGE_KEY = "openclaw-codex-ui:v1";
 const DEFAULT_OFFSET = { offsetX: 0, offsetY: -120 };
 
+const CACHE_TTL = 5 * 60 * 1000;
+const BATCH_SIZE = 3;
+
 let accounts: CodexAccountWithUI[] = [];
 const listeners = new Set<() => void>();
 let fetchGeneration = 0;
 let initialized = false;
+let lastFetchedAt = 0;
 
 function notify() { listeners.forEach((l) => l()); }
 function subscribe(listener: () => void) {
@@ -46,7 +50,12 @@ function loadCached(): CodexAccountWithUI[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const arr = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
+      lastFetchedAt = parsed.fetchedAt ?? 0;
+      return parsed.data.filter((e: CodexAccountWithUI) => e.serverId && typeof e.offsetX === "number");
+    }
+    const arr = parsed;
     if (!Array.isArray(arr)) return [];
     return arr.filter((e: CodexAccountWithUI) => e.serverId && typeof e.offsetX === "number");
   } catch { return []; }
@@ -54,7 +63,7 @@ function loadCached(): CodexAccountWithUI[] {
 
 function saveToStorage(list: CodexAccountWithUI[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ data: list, fetchedAt: lastFetchedAt }));
   } catch {}
 }
 
@@ -139,23 +148,32 @@ function parseDetection(stdout: string): {
   };
 }
 
-async function fetchCodexForServers(servers: ServerWithUI[]) {
+async function fetchCodexForServers(servers: ServerWithUI[], force = false) {
+  if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
+
   const gen = ++fetchGeneration;
   const onlineServers = servers.filter((s) => s.status === "ONLINE");
+  if (onlineServers.length === 0) return;
   const savedMap = new Map(accounts.map((a) => [a.serverId, a]));
 
-  const results = await Promise.allSettled(
-    onlineServers.map(async (s) => {
-      try {
-        const result = await executeCommandApi(s.id, DETECT_CMD, 15);
-        const parsed = parseDetection(result.stdout);
-        if (!parsed) return null;
-        return { serverId: s.id, ...parsed };
-      } catch {
-        return null;
-      }
-    }),
-  );
+  const results: PromiseSettledResult<{ serverId: string; version: string | null; executablePath: string | null; authStatus: "authenticated" | "unauthenticated" | "unknown"; diskUsage: string | null; projectCount: number } | null>[] = [];
+  for (let i = 0; i < onlineServers.length; i += BATCH_SIZE) {
+    if (gen !== fetchGeneration) return;
+    const batch = onlineServers.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (s) => {
+        try {
+          const result = await executeCommandApi(s.id, DETECT_CMD, 15);
+          const parsed = parseDetection(result.stdout);
+          if (!parsed) return null;
+          return { serverId: s.id, ...parsed };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    results.push(...batchResults);
+  }
 
   if (gen !== fetchGeneration) return;
 
@@ -184,6 +202,7 @@ async function fetchCodexForServers(servers: ServerWithUI[]) {
   }
 
   accounts = newAccounts;
+  lastFetchedAt = Date.now();
   saveToStorage(accounts);
   notify();
 }
@@ -209,13 +228,21 @@ export function useCodexAccounts(servers: ServerWithUI[]) {
 
   const list = useSyncExternalStore(subscribe, getSnapshot, () => []);
 
+  const serversRef = useRef(servers);
+  serversRef.current = servers;
+  const onlineIds = useMemo(
+    () => servers.filter((s) => s.status === "ONLINE").map((s) => s.id).sort().join(","),
+    [servers],
+  );
+
   useEffect(() => {
-    fetchCodexForServers(servers);
-  }, [servers]);
+    fetchCodexForServers(serversRef.current);
+  }, [onlineIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = useCallback(() => {
-    fetchCodexForServers(servers);
-  }, [servers]);
+    lastFetchedAt = 0;
+    fetchCodexForServers(serversRef.current, true);
+  }, []);
 
   const moveCodexNode = useCallback((serverId: string, offsetX: number, offsetY: number) => {
     moveCodexNodeStore(serverId, offsetX, offsetY);

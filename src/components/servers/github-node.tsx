@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { FiGithub } from "react-icons/fi";
 import type { GitHubAccountWithUI } from "@/lib/use-github-accounts";
 
@@ -35,7 +35,7 @@ interface GitHubNodeProps {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function GitHubNode({ account, serverX, serverY, onMoveEnd, onSpringPos, onSelect, zoom }: GitHubNodeProps) {
+export const GitHubNode = memo(function GitHubNode({ account, serverX, serverY, onMoveEnd, onSpringPos, onSelect, zoom }: GitHubNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: account.offsetX, y: account.offsetY });
   const [dragging, setDragging] = useState(false);
@@ -216,4 +216,4 @@ export function GitHubNode({ account, serverX, serverY, onMoveEnd, onSpringPos, 
       </p>
     </div>
   );
-}
+});

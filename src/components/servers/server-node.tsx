@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import type { ServerWithUI } from "@/lib/use-servers";
 
 const NODE_SIZE = 60;
@@ -23,7 +23,7 @@ interface ServerNodeProps {
   zoom: number;
 }
 
-export function ServerNode({
+export const ServerNode = memo(function ServerNode({
   server,
   isActive,
   onMoveEnd,
@@ -140,4 +140,4 @@ export function ServerNode({
       </p>
     </div>
   );
-}
+});

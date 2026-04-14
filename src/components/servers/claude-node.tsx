@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { ClaudeAccountWithUI } from "@/lib/use-claude-accounts";
 
 /* ------------------------------------------------------------------ */
@@ -49,7 +49,7 @@ interface ClaudeNodeProps {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function ClaudeNode({ account, serverX, serverY, onMoveEnd, onSpringPos, onSelect, zoom }: ClaudeNodeProps) {
+export const ClaudeNode = memo(function ClaudeNode({ account, serverX, serverY, onMoveEnd, onSpringPos, onSelect, zoom }: ClaudeNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: account.offsetX, y: account.offsetY });
   const [dragging, setDragging] = useState(false);
@@ -188,4 +188,4 @@ export function ClaudeNode({ account, serverX, serverY, onMoveEnd, onSpringPos, 
       </p>
     </div>
   );
-}
+});

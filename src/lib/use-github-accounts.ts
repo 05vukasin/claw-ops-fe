@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { executeCommandApi } from "@/lib/api";
 import type { ServerWithUI } from "@/lib/use-servers";
 
@@ -24,10 +24,14 @@ export interface GitHubAccountWithUI {
 const STORAGE_KEY = "openclaw-github-ui:v1";
 const DEFAULT_OFFSET = { offsetX: -110, offsetY: -70 };
 
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const BATCH_SIZE = 3;
+
 let accounts: GitHubAccountWithUI[] = [];
 const listeners = new Set<() => void>();
 let fetchGeneration = 0;
 let initialized = false;
+let lastFetchedAt = 0;
 
 function notify() { listeners.forEach((l) => l()); }
 function subscribe(listener: () => void) {
@@ -53,7 +57,13 @@ function loadCached(): GitHubAccountWithUI[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const arr = JSON.parse(raw) as SavedEntry[];
+    const parsed = JSON.parse(raw);
+    // Support new format { data, fetchedAt } and legacy array format
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
+      lastFetchedAt = parsed.fetchedAt ?? 0;
+      return parsed.data.filter((e: SavedEntry) => e.serverId && typeof e.offsetX === "number");
+    }
+    const arr = parsed as SavedEntry[];
     if (!Array.isArray(arr)) return [];
     return arr.filter((e) => e.serverId && typeof e.offsetX === "number");
   } catch { return []; }
@@ -69,7 +79,7 @@ function saveToStorage(list: GitHubAccountWithUI[]) {
       offsetX: a.offsetX,
       offsetY: a.offsetY,
     }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ data, fetchedAt: lastFetchedAt }));
   } catch {}
 }
 
@@ -105,26 +115,34 @@ function parseDetection(stdout: string): { username: string | null; email: strin
   return { username: null, email: null, authStatus: "unauthenticated" };
 }
 
-async function fetchGitHubForServers(servers: ServerWithUI[]) {
+async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
+  if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
+
   const gen = ++fetchGeneration;
   const onlineServers = servers.filter((s) => s.status === "ONLINE");
   if (onlineServers.length === 0) return;
 
   const savedMap = new Map(accounts.map((a) => [a.serverId, a]));
 
-  const results = await Promise.allSettled(
-    onlineServers.map(async (s) => {
-      try {
-        const result = await executeCommandApi(s.id, DETECT_CMD, 10);
-        const parsed = parseDetection(result.stdout);
-        // Only include if we got meaningful data
-        if (!parsed.username && !parsed.email) return null;
-        return { serverId: s.id, ...parsed };
-      } catch {
-        return null;
-      }
-    }),
-  );
+  // Batch SSH calls to avoid hammering the backend
+  const results: PromiseSettledResult<{ serverId: string; username: string | null; email: string | null; authStatus: "authenticated" | "unauthenticated" } | null>[] = [];
+  for (let i = 0; i < onlineServers.length; i += BATCH_SIZE) {
+    if (gen !== fetchGeneration) return; // Abort if superseded
+    const batch = onlineServers.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (s) => {
+        try {
+          const result = await executeCommandApi(s.id, DETECT_CMD, 10);
+          const parsed = parseDetection(result.stdout);
+          if (!parsed.username && !parsed.email) return null;
+          return { serverId: s.id, ...parsed };
+        } catch {
+          return null;
+        }
+      }),
+    );
+    results.push(...batchResults);
+  }
 
   if (gen !== fetchGeneration) return; // Stale
 
@@ -152,6 +170,7 @@ async function fetchGitHubForServers(servers: ServerWithUI[]) {
   }
 
   accounts = newAccounts;
+  lastFetchedAt = Date.now();
   saveToStorage(accounts);
   notify();
 }
@@ -178,13 +197,22 @@ export function useGitHubAccounts(servers: ServerWithUI[]) {
 
   const list = useSyncExternalStore(subscribe, getSnapshot, () => []);
 
+  // Stable dependency: only refetch when the set of online server IDs changes
+  const serversRef = useRef(servers);
+  serversRef.current = servers;
+  const onlineIds = useMemo(
+    () => servers.filter((s) => s.status === "ONLINE").map((s) => s.id).sort().join(","),
+    [servers],
+  );
+
   useEffect(() => {
-    fetchGitHubForServers(servers);
-  }, [servers]);
+    fetchGitHubForServers(serversRef.current);
+  }, [onlineIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = useCallback(() => {
-    fetchGitHubForServers(servers);
-  }, [servers]);
+    lastFetchedAt = 0; // Bypass TTL
+    fetchGitHubForServers(serversRef.current, true);
+  }, []);
 
   const moveGitHubNode = useCallback((serverId: string, offsetX: number, offsetY: number) => {
     moveGitHubNodeStore(serverId, offsetX, offsetY);
