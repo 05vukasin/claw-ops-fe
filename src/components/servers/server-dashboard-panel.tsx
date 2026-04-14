@@ -12,6 +12,7 @@ import {
   FiRefreshCw,
   FiWifi,
   FiPlay,
+  FiCheckCircle,
 } from "react-icons/fi";
 import { TerminalSection, type TerminalSectionHandle } from "./terminal-section";
 import { HealthSection } from "./health-section";
@@ -27,6 +28,9 @@ import {
   renewSslApi,
   fetchSslJobApi,
   retrySslJobApi,
+  checkSslStatusApi,
+  deleteSslCertificateApi,
+  cancelSslJobApi,
   deleteServerApi,
   checkClaudeCodeInstalledApi,
   checkDeployScriptApi,
@@ -75,7 +79,30 @@ const SSL_BADGE: Record<string, string> = {
   PROVISIONING: "text-yellow-600 dark:text-yellow-400",
   EXPIRED: "text-orange-600 dark:text-orange-400",
   PENDING: "text-yellow-600 dark:text-yellow-400",
+  REMOVING: "text-orange-600 dark:text-orange-400",
 };
+
+function makeSslStub(serverId: string, overrides: Partial<SslCertificate>): SslCertificate {
+  return {
+    id: "", serverId, assignmentId: null, hostname: null, status: "PENDING",
+    adminEmail: null, targetPort: null, expiresAt: null, lastRenewedAt: null,
+    lastError: null, provisioningJobId: null, createdAt: null, updatedAt: null,
+    ...overrides,
+  };
+}
+
+function formatSslExpiry(expiresAt: string | null): { text: string; className: string } {
+  if (!expiresAt) return { text: "—", className: "text-canvas-muted" };
+  const expiry = new Date(expiresAt);
+  if (isNaN(expiry.getTime())) return { text: "—", className: "text-canvas-muted" };
+  const days = Math.ceil((expiry.getTime() - Date.now()) / 86_400_000);
+  const dateStr = expiry.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  if (days < 0) return { text: `${dateStr} (Expired ${Math.abs(days)}d ago)`, className: "text-red-500 dark:text-red-400" };
+  if (days <= 7) return { text: `${dateStr} (${days}d left)`, className: "text-red-500 dark:text-red-400" };
+  if (days <= 14) return { text: `${dateStr} (${days}d left)`, className: "text-orange-600 dark:text-orange-400" };
+  if (days <= 30) return { text: `${dateStr} (${days}d left)`, className: "text-yellow-600 dark:text-yellow-400" };
+  return { text: `${dateStr} (${days}d left)`, className: "text-green-600 dark:text-green-400" };
+}
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
@@ -161,6 +188,7 @@ export function ServerDashboardPanel({
   const [sslLoading, setSslLoading] = useState(false);
   const [sslJob, setSslJob] = useState<SslJob | null>(null);
   const [showLog, setShowLog] = useState(false);
+  const [sslTargetPort, setSslTargetPort] = useState("443");
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ---- drag ---- */
@@ -317,16 +345,16 @@ export function ServerDashboardPanel({
           try {
             const updated = await fetchSslForServer(server.id);
             if (updated) setSsl(updated);
-            else setSsl({ id: "", serverId: server.id, status: "ACTIVE", lastError: null, provisioningJobId: jobId });
+            else setSsl(makeSslStub(server.id, { status: "ACTIVE", provisioningJobId: jobId }));
           } catch {
-            setSsl({ id: "", serverId: server.id, status: "ACTIVE", lastError: null, provisioningJobId: jobId });
+            setSsl(makeSslStub(server.id, { status: "ACTIVE", provisioningJobId: jobId }));
           }
           return;
         }
         if (job.status === "FAILED") {
           setSsl((prev) => prev
             ? { ...prev, status: "FAILED", lastError: job.errorMessage, provisioningJobId: jobId }
-            : { id: "", serverId: server.id, status: "FAILED", lastError: job.errorMessage, provisioningJobId: jobId },
+            : makeSslStub(server.id, { status: "FAILED", lastError: job.errorMessage, provisioningJobId: jobId }),
           );
           return;
         }
@@ -341,15 +369,10 @@ export function ServerDashboardPanel({
   const handleProvisionSsl = useCallback(async () => {
     setSslLoading(true);
     try {
-      const job = await provisionSslApi(server.id);
+      const port = parseInt(sslTargetPort, 10) || undefined;
+      const job = await provisionSslApi(server.id, port);
       if (job) {
-        setSsl({
-          id: "",
-          serverId: server.id,
-          status: "PROVISIONING",
-          lastError: null,
-          provisioningJobId: job.id,
-        });
+        setSsl(makeSslStub(server.id, { status: "PROVISIONING", provisioningJobId: job.id }));
         setSslJob(job);
         setShowLog(true);
         setSslExpanded(true);
@@ -357,16 +380,15 @@ export function ServerDashboardPanel({
       }
     } catch (err) {
       if (err instanceof ApiError) {
-        // "already running" — show as PROVISIONING, not FAILED
         const isAlreadyRunning = err.status === 422 || err.status === 409;
         setSsl((prev) => prev
           ? { ...prev, status: isAlreadyRunning ? "PROVISIONING" : "FAILED", lastError: err.message }
-          : { id: "", serverId: server.id, status: isAlreadyRunning ? "PROVISIONING" : "FAILED", lastError: err.message, provisioningJobId: null },
+          : makeSslStub(server.id, { status: isAlreadyRunning ? "PROVISIONING" : "FAILED", lastError: err.message }),
         );
       }
     }
     setSslLoading(false);
-  }, [server.id, pollSslJob]);
+  }, [server.id, sslTargetPort, pollSslJob]);
 
   const handleRenewSsl = useCallback(async () => {
     if (!ssl) return;
@@ -411,6 +433,55 @@ export function ServerDashboardPanel({
       }
     }
   }, [sslJob, pollSslJob]);
+
+  const handleCheckSsl = useCallback(async () => {
+    if (!ssl) return;
+    setSslLoading(true);
+    try {
+      const updated = await checkSslStatusApi(ssl.id);
+      setSsl(updated);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setSsl((prev) => prev ? { ...prev, lastError: err.message } : prev);
+      }
+    }
+    setSslLoading(false);
+  }, [ssl]);
+
+  const handleDeleteSsl = useCallback(async () => {
+    if (!ssl) return;
+    if (!window.confirm("Remove SSL certificate? This will delete the certificate from the server and revoke it.")) return;
+    setSslLoading(true);
+    try {
+      await deleteSslCertificateApi(ssl.id);
+      setSsl(null);
+      setSslJob(null);
+      setShowLog(false);
+      if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setSsl((prev) => prev ? { ...prev, lastError: err.message } : prev);
+      }
+    }
+    setSslLoading(false);
+  }, [ssl]);
+
+  const handleCancelJob = useCallback(async () => {
+    if (!sslJob) return;
+    if (!window.confirm("Cancel SSL provisioning? This will stop the current job.")) return;
+    try {
+      await cancelSslJobApi(sslJob.id);
+      if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
+      const cert = await fetchSslForServer(server.id);
+      setSsl(cert);
+      setSslJob(null);
+      setShowLog(false);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setSslJob((prev) => prev ? { ...prev, errorMessage: err.message } : prev);
+      }
+    }
+  }, [sslJob, server.id]);
 
   /* ---- load SSL on mount (run once) ---- */
   const pollSslJobRef = useRef(pollSslJob);
@@ -630,31 +701,97 @@ export function ServerDashboardPanel({
                     <div className="border-t border-canvas-border px-5 py-4">
                     {ssl ? (
                       <div className="space-y-3">
+                        {/* Status row */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <p className={`text-xs font-medium ${SSL_BADGE[ssl.status] ?? "text-canvas-muted"}`}>{ssl.status}</p>
-                            {ssl.status === "PROVISIONING" && <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-400" />}
+                            {(ssl.status === "PROVISIONING" || ssl.status === "REMOVING") && <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-400" />}
                             {ssl.status === "PROVISIONING" && sslJob && <span className="text-[10px] text-canvas-muted">{STEP_LABELS[sslJob.currentStep] ?? sslJob.currentStep}</span>}
                           </div>
+                          {/* Actions */}
                           <div className="flex items-center gap-1">
-                            {ssl.status === "ACTIVE" && <ActionBtn onClick={handleRenewSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Renew</ActionBtn>}
-                            {ssl.provisioningJobId && <ActionBtn onClick={() => handleViewLog(ssl.provisioningJobId!)}>View Log</ActionBtn>}
-                            {ssl.status === "FAILED" && <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Retry</ActionBtn>}
+                            {ssl.status === "ACTIVE" && (
+                              <>
+                                <ActionBtn onClick={handleCheckSsl} disabled={sslLoading} icon={<FiCheckCircle size={11} />}>Check</ActionBtn>
+                                <ActionBtn onClick={handleRenewSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Renew</ActionBtn>
+                              </>
+                            )}
+                            {ssl.status === "EXPIRED" && (
+                              <>
+                                <ActionBtn onClick={handleRenewSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Renew</ActionBtn>
+                                <ActionBtn onClick={handleCheckSsl} disabled={sslLoading} icon={<FiCheckCircle size={11} />}>Check</ActionBtn>
+                              </>
+                            )}
+                            {ssl.status === "PROVISIONING" && (
+                              <>
+                                {ssl.provisioningJobId && <ActionBtn onClick={() => handleViewLog(ssl.provisioningJobId!)}>View Log</ActionBtn>}
+                                <ActionBtn onClick={handleCancelJob} disabled={!sslJob}>Cancel</ActionBtn>
+                              </>
+                            )}
+                            {ssl.status === "FAILED" && (
+                              <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Retry</ActionBtn>
+                            )}
+                            {ssl.status !== "PROVISIONING" && ssl.status !== "REMOVING" && (
+                              <ActionBtn onClick={handleDeleteSsl} disabled={sslLoading} icon={<FiTrash2 size={11} className="text-red-500/70" />}>Remove</ActionBtn>
+                            )}
                           </div>
                         </div>
+
+                        {/* Certificate details */}
+                        {ssl.hostname && (
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                            <div>
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Hostname</p>
+                              <p className="mt-0.5 truncate font-mono text-xs text-canvas-fg">{ssl.hostname}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Expires</p>
+                              {(() => { const exp = formatSslExpiry(ssl.expiresAt); return <p className={`mt-0.5 text-xs ${exp.className}`}>{exp.text}</p>; })()}
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Target Port</p>
+                              <p className="mt-0.5 text-xs text-canvas-fg">{ssl.targetPort ?? "443"}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-medium uppercase tracking-wider text-canvas-muted">Last Renewed</p>
+                              <p className="mt-0.5 text-xs text-canvas-fg">
+                                {ssl.lastRenewedAt
+                                  ? new Date(ssl.lastRenewedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+                                  : "Never"}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Error */}
                         {ssl.lastError && <p className="text-[11px] text-red-500 dark:text-red-400">{ssl.lastError}</p>}
+
+                        {/* Log panel */}
                         {showLog && (
                           sslJob ? (
-                            <SslLogPanel job={sslJob} onRetry={handleRetryJob} onClose={() => { setShowLog(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } }} />
+                            <SslLogPanel job={sslJob} onRetry={handleRetryJob} onCancel={handleCancelJob} onClose={() => { setShowLog(false); if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; } }} />
                           ) : (
                             <div className="mt-2 rounded-md border border-canvas-border bg-[#0d1117] px-3 py-4 text-center text-[11px] text-gray-500">Loading job logs...</div>
                           )
                         )}
                       </div>
                     ) : server.assignedDomain ? (
-                      <div className="flex items-center justify-between">
+                      <div className="space-y-3">
                         <p className="text-[11px] text-canvas-muted">No certificate provisioned</p>
-                        <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiShield size={11} />}>{sslLoading ? "Provisioning..." : "Provision"}</ActionBtn>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-[10px] font-medium text-canvas-muted">Port</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={65535}
+                              value={sslTargetPort}
+                              onChange={(e) => setSslTargetPort(e.target.value)}
+                              className="w-16 rounded-md border border-canvas-border bg-transparent px-2 py-1 text-xs text-canvas-fg focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10"
+                            />
+                          </div>
+                          <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiShield size={11} />}>{sslLoading ? "Provisioning..." : "Provision SSL"}</ActionBtn>
+                        </div>
                       </div>
                     ) : (
                       <p className="text-[11px] text-canvas-muted">No domain assigned — SSL not available</p>
@@ -807,10 +944,12 @@ const STEP_LABELS: Record<string, string> = {
 function SslLogPanel({
   job,
   onRetry,
+  onCancel,
   onClose,
 }: {
   job: SslJob;
   onRetry: () => void;
+  onCancel?: () => void;
   onClose: () => void;
 }) {
   const logRef = useRef<HTMLPreElement>(null);
@@ -872,11 +1011,18 @@ function SslLogPanel({
         {job.logs || "Waiting for logs..."}
       </pre>
 
-      {/* Retry button */}
+      {/* Footer actions */}
       {job.status === "FAILED" && job.currentStep === "FAILED_RETRYABLE" && (
         <div className="flex justify-end border-t border-canvas-border px-3 py-2">
           <ActionBtn onClick={onRetry} icon={<FiRefreshCw size={11} />}>
             Retry
+          </ActionBtn>
+        </div>
+      )}
+      {(job.status === "PENDING" || job.status === "RUNNING") && onCancel && (
+        <div className="flex justify-end border-t border-canvas-border px-3 py-2">
+          <ActionBtn onClick={onCancel} icon={<FiX size={11} />}>
+            Cancel
           </ActionBtn>
         </div>
       )}

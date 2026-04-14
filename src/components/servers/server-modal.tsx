@@ -224,7 +224,7 @@ export function ServerModal({ open, server, onClose, onSaved }: ServerModalProps
                   className={inputBase}
                 />
               </Field>
-              {!isEdit && (
+              {!isEdit ? (
                 <Field label="Domain" optional className="flex-1">
                   <select
                     value={zoneId}
@@ -238,6 +238,25 @@ export function ServerModal({ open, server, onClose, onSaved }: ServerModalProps
                       </option>
                     ))}
                   </select>
+                  <p className="mt-1 text-[10px] text-canvas-muted/70">
+                    {zoneId
+                      ? "A subdomain will be auto-assigned. SSL can be provisioned after creation."
+                      : "Without a domain, SSL certificates cannot be provisioned."}
+                  </p>
+                </Field>
+              ) : (
+                <Field label="Domain" className="flex-1">
+                  {server?.assignedDomain ? (
+                    <div className="flex items-center gap-2 py-1.5">
+                      <p className="truncate font-mono text-xs text-canvas-fg">{server.assignedDomain}</p>
+                      <span className="shrink-0 rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-600 dark:text-green-400">Assigned</span>
+                    </div>
+                  ) : (
+                    <div className="py-1.5">
+                      <p className="text-[11px] text-canvas-muted">No domain assigned</p>
+                      <p className="mt-0.5 text-[10px] text-canvas-muted/60">Domain assignment is set during server creation</p>
+                    </div>
+                  )}
                 </Field>
               )}
             </div>

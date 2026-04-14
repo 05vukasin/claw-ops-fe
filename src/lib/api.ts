@@ -121,9 +121,17 @@ export interface PageResponse<T> {
 export interface SslCertificate {
   id: string;
   serverId: string;
+  assignmentId: string | null;
+  hostname: string | null;
   status: SslStatus;
+  adminEmail: string | null;
+  targetPort: number | null;
+  expiresAt: string | null;
+  lastRenewedAt: string | null;
   lastError: string | null;
   provisioningJobId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export type SslJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
@@ -310,7 +318,7 @@ export async function fetchAssignmentForServer(serverId: string): Promise<{ id: 
  * Find the active domain assignment for a server, then provision SSL.
  * The backend expects { assignmentId }, not { serverId }.
  */
-export async function provisionSslApi(serverId: string): Promise<SslJob | null> {
+export async function provisionSslApi(serverId: string, targetPort?: number): Promise<SslJob | null> {
   // Step 1: find the server's active domain assignment
   const assignRes = await apiFetch(`/api/v1/domain-assignments?resourceId=${encodeURIComponent(serverId)}`);
   if (!assignRes.ok) {
@@ -327,7 +335,7 @@ export async function provisionSslApi(serverId: string): Promise<SslJob | null> 
   const res = await apiFetch("/api/v1/ssl-certificates", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ assignmentId: active.id }),
+    body: JSON.stringify({ assignmentId: active.id, ...(targetPort != null ? { targetPort } : {}) }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: "SSL provisioning failed" }));
@@ -370,6 +378,37 @@ export async function retrySslJobApi(jobId: string): Promise<SslJob> {
     throw new ApiError(res.status, err.message || "Retry failed");
   }
   return res.json() as Promise<SslJob>;
+}
+
+export async function checkSslStatusApi(certId: string): Promise<SslCertificate> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/${encodeURIComponent(certId)}/check`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "SSL status check failed" }));
+    throw new ApiError(res.status, err.message || "SSL status check failed");
+  }
+  return res.json() as Promise<SslCertificate>;
+}
+
+export async function deleteSslCertificateApi(certId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/${encodeURIComponent(certId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to remove SSL certificate" }));
+    throw new ApiError(res.status, err.message || "Failed to remove SSL certificate");
+  }
+}
+
+export async function cancelSslJobApi(jobId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to cancel job" }));
+    throw new ApiError(res.status, err.message || "Failed to cancel job");
+  }
 }
 
 /* ------------------------------------------------------------------ */
