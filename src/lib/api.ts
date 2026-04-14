@@ -1223,6 +1223,35 @@ export async function fetchMetricAggregationApi(serverId: string, type: string, 
 }
 
 /* ------------------------------------------------------------------ */
+/*  Process Monitor                                                    */
+/* ------------------------------------------------------------------ */
+
+export interface ActiveSessionInfo {
+  sessionId: string; serverId: string; serverName: string; userId: string;
+  type: "TERMINAL" | "PERSISTENT" | "DEPLOYMENT"; status: "CONNECTED" | "BUFFERING" | "DISCONNECTED";
+  createdAt: string; lastActivityAt: string; durationSeconds: number;
+  sshConnected: boolean; hasWebSocket: boolean; deploymentJobId: string | null; bufferSize: number;
+}
+
+export interface ProcessMonitorResponse {
+  activeSessions: ActiveSessionInfo[];
+  runningJobs: DeploymentJob[];
+  totalSessions: number;
+  totalRunningJobs: number;
+}
+
+export async function fetchActiveProcessesApi(): Promise<ProcessMonitorResponse> {
+  const res = await apiFetch("/api/v1/admin/processes");
+  if (!res.ok) throw new ApiError(res.status, "Failed to load processes.");
+  return res.json() as Promise<ProcessMonitorResponse>;
+}
+
+export async function killProcessApi(sessionId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/admin/processes/${encodeURIComponent(sessionId)}/kill`, { method: "POST" });
+  if (!res.ok && res.status !== 204) throw new ApiError(res.status, "Failed to kill process.");
+}
+
+/* ------------------------------------------------------------------ */
 /*  SSH Command Execution                                              */
 /* ------------------------------------------------------------------ */
 

@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Notifications", href: "/notifications", roles: ["ADMIN"] },
   { label: "Users", href: "/users", roles: ["ADMIN"] },
   { label: "Logs", href: "/logs", roles: ["ADMIN"] },
+  { label: "Processes", href: "/processes", roles: ["ADMIN"] },
 ];
 
 export function Navbar({ open, onClose }: NavbarProps) {
