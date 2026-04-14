@@ -91,20 +91,6 @@ export function AlertBell() {
     }
   }, [loadAlerts, loadCount]);
 
-  // SSE real-time updates
-  useEffect(() => {
-    let es: EventSource | null = null;
-    try {
-      const origin = (typeof window !== "undefined" && (window as unknown as Record<string, string>).__CLAWOPS_API_ORIGIN__) || process.env.NEXT_PUBLIC_API_ORIGIN || "";
-      if (!origin) return;
-      es = new EventSource(`${origin}/api/v1/monitoring/events/stream`);
-      es.addEventListener("alert_fired", () => { loadCount(); if (open) loadAlerts(); });
-      es.addEventListener("alert_resolved", () => { loadCount(); if (open) loadAlerts(); });
-      es.onerror = () => { es?.close(); };
-    } catch { /* SSE not available */ }
-    return () => { es?.close(); };
-  }, [loadCount, loadAlerts, open]);
-
   if (count === 0 && !open) return null;
 
   return (
