@@ -690,7 +690,7 @@ export function ServerDashboardPanel({
               </div>
 
               {/* HEALTH */}
-              <HealthSection serverId={server.id} />
+              <HealthSection serverId={server.id} initialTab={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("healthTab") === "alerts" ? "alerts" : undefined} />
 
               {/* SSL */}
               <div className="border-b border-canvas-border">

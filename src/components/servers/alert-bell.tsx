@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FiBell, FiCheck, FiCheckCircle, FiVolumeX, FiX } from "react-icons/fi";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FiBell, FiCheck, FiCheckCircle, FiExternalLink, FiVolumeX, FiX } from "react-icons/fi";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   fetchActiveAlertCountApi,
@@ -29,6 +30,8 @@ function timeAgo(iso: string): string {
 }
 
 export function AlertBell() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
@@ -77,6 +80,16 @@ export function AlertBell() {
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [open]);
+
+  const handleNavigate = useCallback((serverId: string) => {
+    const sp = new URLSearchParams(searchParams);
+    const existing = (sp.get("servers") ?? "").split(",").filter(Boolean);
+    if (!existing.includes(serverId)) existing.push(serverId);
+    sp.set("servers", existing.join(","));
+    sp.set("healthTab", "alerts");
+    router.push(`/?${sp.toString()}`);
+    setOpen(false);
+  }, [router, searchParams]);
 
   const handleAction = useCallback(async (id: string, action: "acknowledge" | "resolve" | "silence") => {
     try {
@@ -142,12 +155,13 @@ export function AlertBell() {
                 {alerts.map((a) => (
                   <div key={a.id} className="px-4 py-3 hover:bg-canvas-surface-hover/50 transition-colors">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => handleNavigate(a.serverId)}>
                         <div className="flex items-center gap-2">
                           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ${SEVERITY_BADGE[a.severity] ?? "bg-canvas-surface-hover text-canvas-muted"}`}>
                             {a.severity}
                           </span>
                           <span className="truncate text-xs font-medium text-canvas-fg">{a.ruleName}</span>
+                          <FiExternalLink size={10} className="shrink-0 text-canvas-muted opacity-0 group-hover:opacity-100 transition-opacity" />
                         </div>
                         {a.message && (
                           <p className="mt-1 truncate text-[11px] text-canvas-muted">{a.message}</p>

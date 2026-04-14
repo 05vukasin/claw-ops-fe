@@ -218,11 +218,11 @@ function TabBtn({ active, onClick, children, badge }: { active: boolean; onClick
 
 /* ── Main Health Section ── */
 
-interface HealthSectionProps { serverId: string }
+interface HealthSectionProps { serverId: string; initialTab?: HealthTab }
 
-export function HealthSection({ serverId }: HealthSectionProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [tab, setTab] = useState<HealthTab>("overview");
+export function HealthSection({ serverId, initialTab }: HealthSectionProps) {
+  const [expanded, setExpanded] = useState(!!initialTab);
+  const [tab, setTab] = useState<HealthTab>(initialTab ?? "overview");
   const [detailExpanded, setDetailExpanded] = useState(false);
 
   // Overview data
