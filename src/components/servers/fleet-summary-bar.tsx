@@ -1,34 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { Z_INDEX } from "@/lib/z-index";
-import {
-  fetchFleetHealthApi,
-  type FleetHealthSummary,
-} from "@/lib/api";
+import { useFleetHealth } from "@/lib/use-server-health";
 
 /**
  * Fixed bar that floats above the canvas (below the header)
  * showing fleet-wide server counts and health summary.
- * Always visible regardless of scroll / pan.
+ * Uses shared health store to avoid duplicate API calls.
  */
 export function FleetSummaryBar() {
-  const [data, setData] = useState<FleetHealthSummary | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const d = await fetchFleetHealthApi();
-      setData(d);
-    } catch {
-      /* silent — bar just shows stale or nothing */
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 30_000);
-    return () => clearInterval(id);
-  }, [load]);
+  const data = useFleetHealth();
 
   if (!data) return null;
 

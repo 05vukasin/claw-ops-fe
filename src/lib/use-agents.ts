@@ -31,6 +31,8 @@ const listeners = new Set<() => void>();
 let fetchGeneration = 0;
 let initialized = false;
 let lastFetchedAt = 0;
+const failedServers = new Map<string, number>();
+const FAIL_COOLDOWN = 5 * 60 * 1000;
 
 function notify() { listeners.forEach((l) => l()); }
 function subscribe(cb: () => void) { listeners.add(cb); return () => { listeners.delete(cb); }; }
@@ -115,7 +117,13 @@ async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
   if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
 
   const gen = ++fetchGeneration;
-  const onlineServers = servers.filter((s) => s.status === "ONLINE");
+  const now = Date.now();
+  const onlineServers = servers.filter((s) => {
+    if (s.status !== "ONLINE") return false;
+    if (force) return true;
+    const failedAt = failedServers.get(s.id);
+    return !failedAt || now - failedAt > FAIL_COOLDOWN;
+  });
 
   // Build lookup of existing saved positions
   const savedMap = new Map<string, { offsetX: number; offsetY: number }>();
@@ -132,8 +140,10 @@ async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
       batch.map(async (server) => {
         try {
           const files = await listFilesApi(server.id, AGENTS_PATH);
+          failedServers.delete(server.id);
           return { serverId: server.id, dirs: files.filter((f: { directory: boolean; name: string }) => f.directory && f.name !== "." && f.name !== "..") };
         } catch {
+          failedServers.set(server.id, Date.now());
           return { serverId: server.id, dirs: [] as { name: string; directory: boolean }[] };
         }
       }),

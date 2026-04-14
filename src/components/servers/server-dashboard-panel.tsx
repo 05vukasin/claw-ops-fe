@@ -491,6 +491,9 @@ export function ServerDashboardPanel({
   useEffect(() => {
     if (sslLoadedRef.current) return;
     sslLoadedRef.current = true;
+    // Skip SSL fetch for offline servers or servers without domains
+    if (server.status !== "ONLINE" && server.status !== "UNKNOWN") return;
+    if (!server.assignedDomain) return;
     let cancelled = false;
 
     fetchSslForServer(server.id).then((cert) => {

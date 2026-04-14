@@ -34,6 +34,8 @@ const listeners = new Set<() => void>();
 let fetchGeneration = 0;
 let initialized = false;
 let lastFetchedAt = 0;
+const failedServers = new Map<string, number>();
+const FAIL_COOLDOWN = 5 * 60 * 1000;
 
 function notify() { listeners.forEach((l) => l()); }
 function subscribe(listener: () => void) {
@@ -152,7 +154,13 @@ async function fetchCodexForServers(servers: ServerWithUI[], force = false) {
   if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
 
   const gen = ++fetchGeneration;
-  const onlineServers = servers.filter((s) => s.status === "ONLINE");
+  const now = Date.now();
+  const onlineServers = servers.filter((s) => {
+    if (s.status !== "ONLINE") return false;
+    if (force) return true;
+    const failedAt = failedServers.get(s.id);
+    return !failedAt || now - failedAt > FAIL_COOLDOWN;
+  });
   if (onlineServers.length === 0) return;
   const savedMap = new Map(accounts.map((a) => [a.serverId, a]));
 
@@ -164,10 +172,12 @@ async function fetchCodexForServers(servers: ServerWithUI[], force = false) {
       batch.map(async (s) => {
         try {
           const result = await executeCommandApi(s.id, DETECT_CMD, 15);
+          failedServers.delete(s.id);
           const parsed = parseDetection(result.stdout);
           if (!parsed) return null;
           return { serverId: s.id, ...parsed };
         } catch {
+          failedServers.set(s.id, Date.now());
           return null;
         }
       }),
