@@ -44,8 +44,9 @@ const CODEX_CMD = [
 ].join("; ");
 
 const GOOGLE_CMD = [
-  // Check if workspace-mcp is installed
-  'pip show workspace-mcp 2>/dev/null | grep -q Name && echo "INSTALLED" || echo "NOT_FOUND"',
+  'export PATH="$HOME/.local/bin:$PATH"',
+  // Check if uvx/workspace-mcp is available
+  '(command -v uvx >/dev/null 2>&1 && echo "INSTALLED" || echo "NOT_FOUND")',
   'echo "---GOOG_SEP---"',
   // Check for OAuth tokens
   'ls ~/.workspace-mcp/cli-tokens/ 2>/dev/null | head -1 || echo "NO_TOKENS"',
@@ -66,8 +67,10 @@ const GOOGLE_SETUP_SCRIPT = [
   'if [ -f /etc/clawops/google-oauth.env ]; then . /etc/clawops/google-oauth.env; fi',
   // Verify credentials are set
   'if [ -z "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -z "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then echo "ERROR: Google OAuth credentials not configured on this server."; echo "Create /etc/clawops/google-oauth.env with:"; echo "  export GOOGLE_OAUTH_CLIENT_ID=your-client-id"; echo "  export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret"; exit 1; fi',
-  // Install if needed
-  'if ! pip show workspace-mcp >/dev/null 2>&1; then echo "Installing Google Workspace MCP..."; pip install workspace-mcp; fi',
+  // Install uv (Python package manager) if needed
+  'if ! command -v uvx >/dev/null 2>&1; then echo "Installing uv package manager..."; curl -LsSf https://astral.sh/uv/install.sh | sh; export PATH="$HOME/.local/bin:$PATH"; fi',
+  // Verify uvx works
+  'if ! command -v uvx >/dev/null 2>&1; then echo "ERROR: Failed to install uv. Install manually: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; fi',
   // Add MCP config to ~/.claude.json if not present
   `python3 -c "
 import json, os
@@ -91,12 +94,12 @@ if 'google_workspace' not in d['mcpServers']:
 else:
     print('MCP config already exists')
 "`,
-  // Run interactive OAuth
+  // Run interactive OAuth — triggering a tool call initiates the auth flow
   'echo ""',
   'echo "Starting Google OAuth..."',
   'echo "A URL will appear — open it in your browser and paste the code back here."',
   'echo ""',
-  'workspace-cli auth',
+  'uvx workspace-cli list',
 ].join(" && ");
 
 /* ------------------------------------------------------------------ */
