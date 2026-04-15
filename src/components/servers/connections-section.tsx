@@ -113,6 +113,7 @@ from auth.google_auth import get_default_credentials_dir
 from auth.credential_store import get_credential_store
 
 scopes = [
+    "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
