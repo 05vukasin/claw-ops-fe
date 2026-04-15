@@ -43,6 +43,62 @@ const CODEX_CMD = [
   'codex auth status 2>/dev/null || echo "NOT_AUTHENTICATED"',
 ].join("; ");
 
+const GOOGLE_CMD = [
+  // Check if workspace-mcp is installed
+  'pip show workspace-mcp 2>/dev/null | grep -q Name && echo "INSTALLED" || echo "NOT_FOUND"',
+  'echo "---GOOG_SEP---"',
+  // Check for OAuth tokens
+  'ls ~/.workspace-mcp/cli-tokens/ 2>/dev/null | head -1 || echo "NO_TOKENS"',
+  'echo "---GOOG_SEP---"',
+  // Check if configured in Claude Code MCP
+  `python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.claude.json'))); print('CONFIGURED' if any('workspace' in k.lower() or 'google' in k.lower() for k in d.get('mcpServers',{})) else 'NOT_CONFIGURED')" 2>/dev/null || echo "NOT_CONFIGURED"`,
+].join("; ");
+
+/**
+ * Google Workspace setup script for interactive terminal.
+ * Reads GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET from
+ * /etc/clawops/google-oauth.env on the managed server.
+ * Set these during server provisioning.
+ */
+const GOOGLE_SETUP_SCRIPT = [
+  'export PATH="$HOME/.local/bin:$PATH"',
+  // Load org OAuth credentials from server config
+  'if [ -f /etc/clawops/google-oauth.env ]; then . /etc/clawops/google-oauth.env; fi',
+  // Verify credentials are set
+  'if [ -z "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -z "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then echo "ERROR: Google OAuth credentials not configured on this server."; echo "Create /etc/clawops/google-oauth.env with:"; echo "  export GOOGLE_OAUTH_CLIENT_ID=your-client-id"; echo "  export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret"; exit 1; fi',
+  // Install if needed
+  'if ! pip show workspace-mcp >/dev/null 2>&1; then echo "Installing Google Workspace MCP..."; pip install workspace-mcp; fi',
+  // Add MCP config to ~/.claude.json if not present
+  `python3 -c "
+import json, os
+p = os.path.expanduser('~/.claude.json')
+d = json.load(open(p)) if os.path.exists(p) else {}
+if 'mcpServers' not in d:
+    d['mcpServers'] = {}
+if 'google_workspace' not in d['mcpServers']:
+    cid = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+    csec = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
+    d['mcpServers']['google_workspace'] = {
+        'command': 'uvx',
+        'args': ['workspace-mcp', '--tool-tier', 'core'],
+        'env': {
+            'GOOGLE_OAUTH_CLIENT_ID': cid,
+            'GOOGLE_OAUTH_CLIENT_SECRET': csec
+        }
+    }
+    json.dump(d, open(p, 'w'), indent=2)
+    print('MCP config added to ~/.claude.json')
+else:
+    print('MCP config already exists')
+"`,
+  // Run interactive OAuth
+  'echo ""',
+  'echo "Starting Google OAuth..."',
+  'echo "A URL will appear — open it in your browser and paste the code back here."',
+  'echo ""',
+  'workspace-cli auth',
+].join(" && ");
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -52,6 +108,7 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
   const [github, setGithub] = useState<ConnectionStatus>(EMPTY);
   const [claude, setClaude] = useState<ConnectionStatus>(EMPTY);
   const [codex, setCodex] = useState<ConnectionStatus>(EMPTY);
+  const [google, setGoogle] = useState<ConnectionStatus>(EMPTY);
 
   /* ---- overlay for interactive auth ---- */
   const [overlay, setOverlay] = useState<{ command: string; title: string } | null>(null);
@@ -61,12 +118,14 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
     setGithub((s) => ({ ...s, loading: true }));
     setClaude((s) => ({ ...s, loading: true }));
     setCodex((s) => ({ ...s, loading: true }));
+    setGoogle((s) => ({ ...s, loading: true }));
 
-    // Run all three in parallel
-    const [ghResult, ccResult, cxResult] = await Promise.allSettled([
+    // Run all four in parallel
+    const [ghResult, ccResult, cxResult, googResult] = await Promise.allSettled([
       executeCommandApi(serverId, GH_CMD, 10),
       executeCommandApi(serverId, CLAUDE_CMD, 15),
       executeCommandApi(serverId, CODEX_CMD, 15),
+      executeCommandApi(serverId, GOOGLE_CMD, 15),
     ]);
 
     // Parse GitHub
@@ -126,12 +185,32 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
     } else {
       setCodex({ installed: false, authenticated: false, info: null, loading: false });
     }
+
+    // Parse Google Workspace
+    if (googResult.status === "fulfilled") {
+      const parts = googResult.value.stdout.split("---GOOG_SEP---");
+      const installRaw = (parts[0] ?? "").trim();
+      const tokensRaw = (parts[1] ?? "").trim();
+      const configRaw = (parts[2] ?? "").trim();
+      const installed = installRaw === "INSTALLED";
+      const hasTokens = tokensRaw !== "NO_TOKENS" && tokensRaw.length > 0;
+      const configured = configRaw === "CONFIGURED";
+      if (installed && hasTokens) {
+        setGoogle({ installed: true, authenticated: true, info: configured ? "MCP configured" : "Tokens present", loading: false });
+      } else if (installed) {
+        setGoogle({ installed: true, authenticated: false, info: configured ? "MCP configured, no tokens" : null, loading: false });
+      } else {
+        setGoogle({ installed: false, authenticated: false, info: null, loading: false });
+      }
+    } else {
+      setGoogle({ installed: false, authenticated: false, info: null, loading: false });
+    }
   }, [serverId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   /* ---- disconnect handlers ---- */
-  const handleDisconnect = useCallback(async (service: "github" | "claude" | "codex") => {
+  const handleDisconnect = useCallback(async (service: "github" | "claude" | "codex" | "google") => {
     if (service === "github") {
       // gh auth logout is interactive (prompts for account selection)
       setOverlay({ command: "gh auth logout", title: "GitHub Logout" });
@@ -140,10 +219,12 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
     const cmds: Record<string, string> = {
       claude: 'export PATH="$HOME/.local/bin:$PATH" && claude auth logout 2>&1',
       codex: 'export PATH="$HOME/.local/bin:$PATH" && codex auth logout 2>&1',
+      google: 'rm -rf ~/.workspace-mcp/cli-tokens/ 2>/dev/null && echo "Google tokens removed"',
     };
     const confirmMsgs: Record<string, string> = {
       claude: "Disconnect Claude Code on this server?",
       codex: "Disconnect Codex on this server?",
+      google: "Disconnect Google Workspace on this server? This removes stored OAuth tokens.",
     };
     if (!window.confirm(confirmMsgs[service])) return;
     try {
@@ -159,7 +240,8 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
   }, [fetchAll]);
 
   /* ---- status helpers ---- */
-  const allLoading = github.loading && claude.loading && codex.loading;
+  const allLoading = github.loading && claude.loading && codex.loading && google.loading;
+  const allConnections = [github, claude, codex, google];
 
   return (
     <>
@@ -173,7 +255,7 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
           <span className="flex-1 text-xs font-medium text-canvas-muted">Connections</span>
           {!allLoading && (
             <span className="text-[10px] text-canvas-muted">
-              {[github, claude, codex].filter((c) => c.authenticated).length}/3
+              {allConnections.filter((c) => c.authenticated).length}/{allConnections.length}
             </span>
           )}
           <FiChevronRight size={14} className={`text-canvas-muted chevron-rotate ${expanded ? "open" : ""}`} />
@@ -226,6 +308,16 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
                 status={codex}
                 onConnect={() => setOverlay({ command: 'export PATH="$HOME/.local/bin:$PATH" && codex auth login', title: "Codex Auth" })}
                 onDisconnect={() => handleDisconnect("codex")}
+              />
+
+              {/* Google Workspace */}
+              <ConnectionRow
+                icon={<GoogleIcon />}
+                iconBg="bg-white dark:bg-white"
+                name="Google Workspace"
+                status={google}
+                onConnect={() => setOverlay({ command: GOOGLE_SETUP_SCRIPT, title: "Google Workspace Setup" })}
+                onDisconnect={() => handleDisconnect("google")}
               />
 
               <div className="h-2" />
@@ -357,6 +449,17 @@ function CodexIcon() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
       <polyline points="16 18 22 12 16 6" />
       <polyline points="8 6 2 12 8 18" />
+    </svg>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
     </svg>
   );
 }
