@@ -53,7 +53,7 @@ function loadCached(): ClaudeAccountWithUI[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
-      lastFetchedAt = parsed.fetchedAt ?? 0;
+      // Don't restore lastFetchedAt — always re-fetch on page load to pick up changes
       return parsed.data.filter((e: ClaudeAccountWithUI) => e.serverId && typeof e.offsetX === "number");
     }
     const arr = parsed;

@@ -62,7 +62,7 @@ function loadCached(): GitHubAccountWithUI[] {
     const parsed = JSON.parse(raw);
     // Support new format { data, fetchedAt } and legacy array format
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
-      lastFetchedAt = parsed.fetchedAt ?? 0;
+      // Don't restore lastFetchedAt — always re-fetch on page load to pick up changes
       return parsed.data.filter((e: SavedEntry) => e.serverId && typeof e.offsetX === "number");
     }
     const arr = parsed as SavedEntry[];
