@@ -109,9 +109,9 @@ function parseDetection(stdout: string): { username: string | null; email: strin
     return { username: match[1], email: gitEmail, authStatus: "authenticated" };
   }
 
-  // Fallback to git config
+  // Fallback to git config — if name/email are configured, git credentials likely work
   if (gitName || gitEmail) {
-    return { username: gitName, email: gitEmail, authStatus: "unauthenticated" };
+    return { username: gitName, email: gitEmail, authStatus: "authenticated" };
   }
 
   return { username: null, email: null, authStatus: "unauthenticated" };
