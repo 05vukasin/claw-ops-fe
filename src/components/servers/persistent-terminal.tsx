@@ -27,7 +27,17 @@ interface PersistentTerminalProps {
   initialCommand?: string;
   /** Called when a persistent session is created or found, so the parent can track it */
   onSessionChange?: (sessionId: string | null) => void;
+  /** When true, always create a fresh session instead of reconnecting to an existing one */
+  forceNew?: boolean;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY_MS = 1_000;
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -37,6 +47,7 @@ export function PersistentTerminal({
   serverId,
   initialCommand,
   onSessionChange,
+  forceNew,
 }: PersistentTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -48,6 +59,9 @@ export function PersistentTerminal({
   const sessionIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const initialCommandSentRef = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── Initialize xterm.js ── */
   useEffect(() => {
@@ -158,6 +172,8 @@ export function PersistentTerminal({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -167,23 +183,28 @@ export function PersistentTerminal({
   const discoverAndConnect = useCallback(async () => {
     if (!mountedRef.current) return;
     setStatus("loading");
-    xtermRef.current?.writeln("\x1b[90mChecking for existing session...\x1b[0m");
 
     try {
-      // Check for existing persistent sessions on this server
-      const sessions = await listPersistentSessionsApi(serverId);
-      const alive = sessions.find((s) => s.connected);
-
-      if (alive) {
-        // Reconnect to existing session
-        sessionIdRef.current = alive.sessionId;
-        onSessionChange?.(alive.sessionId);
-        xtermRef.current?.writeln("\x1b[90mReconnecting to running session...\x1b[0m");
-        setStatus("reconnecting");
-        await connectToSession(alive.sessionId, false);
-      } else {
-        // Create new persistent session
+      if (forceNew) {
+        // Skip session discovery — always create a fresh session
         await createAndConnect();
+      } else {
+        // Check for existing persistent sessions on this server
+        xtermRef.current?.writeln("\x1b[90mChecking for existing session...\x1b[0m");
+        const sessions = await listPersistentSessionsApi(serverId);
+        const alive = sessions.find((s) => s.connected);
+
+        if (alive) {
+          // Reconnect to existing session
+          sessionIdRef.current = alive.sessionId;
+          onSessionChange?.(alive.sessionId);
+          xtermRef.current?.writeln("\x1b[90mReconnecting to running session...\x1b[0m");
+          setStatus("reconnecting");
+          await connectToSession(alive.sessionId, false);
+        } else {
+          // Create new persistent session
+          await createAndConnect();
+        }
       }
     } catch (err) {
       if (!mountedRef.current) return;
@@ -222,9 +243,42 @@ export function PersistentTerminal({
     [serverId], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  /* ── Schedule an auto-reconnect attempt ── */
+  const scheduleReconnect = useCallback((sessionId: string) => {
+    if (!mountedRef.current) return;
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      xtermRef.current?.writeln(
+        "\r\n\x1b[31m--- Auto-reconnect failed after multiple attempts. Click Reconnect to try again. ---\x1b[0m",
+      );
+      setStatus("error");
+      reconnectAttemptsRef.current = 0;
+      return;
+    }
+    const attempt = reconnectAttemptsRef.current;
+    const delay = BASE_RECONNECT_DELAY_MS * Math.pow(2, attempt); // 1s, 2s, 4s, 8s, 16s
+    reconnectAttemptsRef.current = attempt + 1;
+    setStatus("reconnecting");
+    xtermRef.current?.writeln(
+      `\r\n\x1b[90m--- Reconnecting in ${(delay / 1000).toFixed(0)}s (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})... ---\x1b[0m`,
+    );
+    reconnectTimerRef.current = setTimeout(async () => {
+      if (!mountedRef.current) return;
+      try {
+        const token = await getPersistentSessionTokenApi(serverId, sessionId);
+        openWebSocket(token, sessionId, false);
+      } catch {
+        // Token fetch failed — try again
+        scheduleReconnect(sessionId);
+      }
+    }, delay);
+  }, [serverId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Open WebSocket with persistent mode ── */
   const openWebSocket = useCallback(
     (token: string, sessionId: string, isNew: boolean) => {
+      // Clean up previous connection
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+      if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
       wsRef.current?.close();
       wsRef.current = null;
 
@@ -238,11 +292,25 @@ export function PersistentTerminal({
 
       let lastOutputTime = Date.now();
       let promptInjected = !isNew; // Only inject PROMPT_COMMAND on new sessions
+      // Track whether this socket was intentionally closed (session ended / killed)
+      let sessionEnded = false;
 
       ws.onopen = () => {
         if (!mountedRef.current) return;
         setStatus("connected");
+        reconnectAttemptsRef.current = 0; // Reset on successful connection
         xtermRef.current?.focus();
+
+        // Start heartbeat — sends a small message periodically to detect dead connections
+        heartbeatRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(JSON.stringify({ type: "PING" }));
+            } catch {
+              // send failed — connection is dead, onclose will fire
+            }
+          }
+        }, HEARTBEAT_INTERVAL_MS);
 
         if (!isNew) {
           // Reconnected — no need to inject prompt or send initial command
@@ -290,38 +358,44 @@ export function PersistentTerminal({
         } else if (msg.type === "ERROR") {
           xtermRef.current?.writeln(`\r\n\x1b[31m[ERROR] ${msg.data}\x1b[0m`);
         } else if (msg.type === "CLOSED") {
+          sessionEnded = true;
           xtermRef.current?.writeln("\r\n\x1b[90m--- Session ended ---\x1b[0m");
           if (mountedRef.current) setStatus("closed");
           sessionIdRef.current = null;
           onSessionChange?.(null);
           wsRef.current = null;
+          if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
         }
       };
 
       ws.onclose = () => {
-        if (wsRef.current === ws && mountedRef.current) {
-          // WebSocket closed but persistent session still lives on the backend
-          xtermRef.current?.writeln(
-            "\r\n\x1b[90m--- Disconnected (session still running on server) ---\x1b[0m",
-          );
+        if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+        if (wsRef.current !== ws || !mountedRef.current) return;
+        wsRef.current = null;
+
+        // Don't auto-reconnect if session ended normally or was killed
+        if (sessionEnded || !sessionIdRef.current) {
           setStatus("closed");
-          wsRef.current = null;
+          return;
         }
+
+        // Unexpected disconnect — auto-reconnect
+        scheduleReconnect(sessionId);
       };
 
       ws.onerror = () => {
+        // onerror is always followed by onclose — let onclose handle reconnect
         if (!mountedRef.current) return;
-        xtermRef.current?.writeln("\r\n\x1b[31m--- Connection error ---\x1b[0m");
-        setStatus("error");
-        wsRef.current = null;
       };
     },
-    [initialCommand, onSessionChange],
+    [initialCommand, onSessionChange, scheduleReconnect],
   );
 
-  /* ── Reconnect action ── */
+  /* ── Reconnect action (manual) ── */
   const handleReconnect = useCallback(async () => {
     if (!mountedRef.current) return;
+    reconnectAttemptsRef.current = 0;
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
     setStatus("reconnecting");
     try {
       if (sessionIdRef.current) {

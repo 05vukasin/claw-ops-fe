@@ -30,7 +30,17 @@ interface MobilePersistentTerminalProps {
   serverName: string;
   initialCommand?: string;
   onClose: () => void;
+  /** When true, always create a fresh terminal session instead of reconnecting */
+  forceNew?: boolean;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+const HEARTBEAT_INTERVAL_MS = 20_000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY_MS = 1_000;
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -41,6 +51,7 @@ export function MobilePersistentTerminal({
   serverName,
   initialCommand,
   onClose,
+  forceNew,
 }: MobilePersistentTerminalProps) {
   const outerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,6 +68,9 @@ export function MobilePersistentTerminal({
   const sessionIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   const initialCommandSentRef = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── Lock body scroll ── */
   useEffect(() => {
@@ -91,9 +105,41 @@ export function MobilePersistentTerminal({
     }
   }, []);
 
+  /* ── Schedule an auto-reconnect attempt ── */
+  const scheduleReconnect = useCallback((sessionId: string) => {
+    if (!mountedRef.current) return;
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      xtermRef.current?.writeln(
+        "\r\n\x1b[31m--- Auto-reconnect failed after multiple attempts. Tap Reconnect to try again. ---\x1b[0m",
+      );
+      setStatus("error");
+      reconnectAttemptsRef.current = 0;
+      return;
+    }
+    const attempt = reconnectAttemptsRef.current;
+    const delay = BASE_RECONNECT_DELAY_MS * Math.pow(2, attempt);
+    reconnectAttemptsRef.current = attempt + 1;
+    setStatus("reconnecting");
+    xtermRef.current?.writeln(
+      `\r\n\x1b[90m--- Reconnecting in ${(delay / 1000).toFixed(0)}s (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})... ---\x1b[0m`,
+    );
+    reconnectTimerRef.current = setTimeout(async () => {
+      if (!mountedRef.current) return;
+      try {
+        const token = await getPersistentSessionTokenApi(serverId, sessionId);
+        openWebSocket(token, sessionId, false);
+      } catch {
+        scheduleReconnect(sessionId);
+      }
+    }, delay);
+  }, [serverId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Open WebSocket with persistent mode ── */
   const openWebSocket = useCallback(
     (token: string, sessionId: string, isNew: boolean) => {
+      // Clean up previous connection
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+      if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
       wsRef.current?.close();
       wsRef.current = null;
 
@@ -108,11 +154,24 @@ export function MobilePersistentTerminal({
 
       let lastOutputTime = Date.now();
       let injected = !isNew;
+      let sessionEnded = false;
 
       ws.onopen = () => {
         if (!mountedRef.current) return;
         setStatus("connected");
+        reconnectAttemptsRef.current = 0;
         xtermRef.current?.focus();
+
+        // Start heartbeat to detect dead connections
+        heartbeatRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(JSON.stringify({ type: "PING" }));
+            } catch {
+              // send failed — connection is dead, onclose will fire
+            }
+          }
+        }, HEARTBEAT_INTERVAL_MS);
 
         if (!isNew) return;
 
@@ -146,29 +205,35 @@ export function MobilePersistentTerminal({
         } else if (msg.type === "ERROR") {
           xtermRef.current?.writeln(`\r\n\x1b[31m[ERROR] ${msg.data}\x1b[0m`);
         } else if (msg.type === "CLOSED") {
+          sessionEnded = true;
           xtermRef.current?.writeln("\r\n\x1b[90m--- Session ended ---\x1b[0m");
           if (mountedRef.current) setStatus("closed");
           sessionIdRef.current = null;
           wsRef.current = null;
+          if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
         }
       };
 
       ws.onclose = () => {
-        if (wsRef.current === ws && mountedRef.current) {
-          xtermRef.current?.writeln("\r\n\x1b[90m--- Disconnected (session still running) ---\x1b[0m");
+        if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+        if (wsRef.current !== ws || !mountedRef.current) return;
+        wsRef.current = null;
+
+        if (sessionEnded || !sessionIdRef.current) {
           setStatus("closed");
-          wsRef.current = null;
+          return;
         }
+
+        // Unexpected disconnect — auto-reconnect
+        scheduleReconnect(sessionId);
       };
 
       ws.onerror = () => {
+        // onerror is always followed by onclose — let onclose handle reconnect
         if (!mountedRef.current) return;
-        xtermRef.current?.writeln("\r\n\x1b[31m--- Connection error ---\x1b[0m");
-        setStatus("error");
-        wsRef.current = null;
       };
     },
-    [initialCommand],
+    [initialCommand, scheduleReconnect],
   );
 
   /* ── Discover existing session or create new ── */
@@ -177,15 +242,8 @@ export function MobilePersistentTerminal({
     setStatus("loading");
 
     try {
-      const sessions = await listPersistentSessionsApi(serverId);
-      const alive = sessions.find((s) => s.connected);
-
-      if (alive) {
-        sessionIdRef.current = alive.sessionId;
-        setStatus("reconnecting");
-        const token = await getPersistentSessionTokenApi(serverId, alive.sessionId);
-        openWebSocket(token, alive.sessionId, false);
-      } else {
+      if (forceNew) {
+        // Skip session discovery — always create a fresh session
         setStatus("connecting");
         xtermRef.current?.clear();
         const cols = xtermRef.current?.cols ?? 80;
@@ -193,6 +251,24 @@ export function MobilePersistentTerminal({
         const { sessionId, token } = await createPersistentSessionApi(serverId, cols, rows);
         sessionIdRef.current = sessionId;
         openWebSocket(token, sessionId, true);
+      } else {
+        const sessions = await listPersistentSessionsApi(serverId);
+        const alive = sessions.find((s) => s.connected);
+
+        if (alive) {
+          sessionIdRef.current = alive.sessionId;
+          setStatus("reconnecting");
+          const token = await getPersistentSessionTokenApi(serverId, alive.sessionId);
+          openWebSocket(token, alive.sessionId, false);
+        } else {
+          setStatus("connecting");
+          xtermRef.current?.clear();
+          const cols = xtermRef.current?.cols ?? 80;
+          const rows = xtermRef.current?.rows ?? 24;
+          const { sessionId, token } = await createPersistentSessionApi(serverId, cols, rows);
+          sessionIdRef.current = sessionId;
+          openWebSocket(token, sessionId, true);
+        }
       }
     } catch (err) {
       if (!mountedRef.current) return;
@@ -203,9 +279,11 @@ export function MobilePersistentTerminal({
     }
   }, [serverId, openWebSocket]);
 
-  /* ── Reconnect ── */
+  /* ── Reconnect (manual) ── */
   const handleReconnect = useCallback(async () => {
     if (!mountedRef.current) return;
+    reconnectAttemptsRef.current = 0;
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
     setStatus("reconnecting");
     try {
       if (sessionIdRef.current) {
@@ -331,6 +409,8 @@ export function MobilePersistentTerminal({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
       wsRef.current = null;
     };

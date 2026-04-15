@@ -75,7 +75,7 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
       const ghStatus = (parts[0] ?? "").trim();
       const gitName = (parts[1] ?? "").trim() || null;
       const gitEmail = (parts[2] ?? "").trim() || null;
-      const ghMatch = ghStatus.match(/Logged in to github\.com as (\S+)/i);
+      const ghMatch = ghStatus.match(/Logged in to github\.com (?:as |account )(\S+)/i);
       const hasGh = !ghStatus.includes("command not found") && !ghStatus.includes("not found");
       if (ghMatch) {
         // gh CLI authenticated
@@ -241,6 +241,7 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
           onClose={handleOverlayClose}
           initialCommand={overlay.command}
           title={overlay.title}
+          forceNew
         />
       )}
     </>

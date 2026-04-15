@@ -16,9 +16,11 @@ interface ClaudeCodeOverlayProps {
   initialCommand?: string;
   /** Title shown in overlay header (default: "Claude Code") */
   title?: string;
+  /** When true, always create a fresh terminal session instead of reconnecting */
+  forceNew?: boolean;
 }
 
-export function ClaudeCodeOverlay({ serverId, serverName, onClose, initialCommand = "claude", title = "Claude Code" }: ClaudeCodeOverlayProps) {
+export function ClaudeCodeOverlay({ serverId, serverName, onClose, initialCommand = "claude", title = "Claude Code", forceNew }: ClaudeCodeOverlayProps) {
   const isMobile = useIsMobile();
 
   /* Lock body scroll while overlay is open */
@@ -45,6 +47,7 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose, initialComman
         serverName={serverName}
         initialCommand={initialCommand}
         onClose={onClose}
+        forceNew={forceNew}
       />,
       document.body,
     );
@@ -83,7 +86,7 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose, initialComman
         className="flex flex-1 flex-col min-h-0"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <PersistentTerminal serverId={serverId} initialCommand={initialCommand} />
+        <PersistentTerminal serverId={serverId} initialCommand={initialCommand} forceNew={forceNew} />
       </div>
     </div>,
     document.body,

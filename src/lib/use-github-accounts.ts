@@ -104,7 +104,7 @@ function parseDetection(stdout: string): { username: string | null; email: strin
   const gitEmail = (parts[2] ?? "").trim() || null;
 
   // Parse "Logged in to github.com as USERNAME" from gh auth status
-  const match = ghStatus.match(/Logged in to github\.com as (\S+)/i);
+  const match = ghStatus.match(/Logged in to github\.com (?:as |account )(\S+)/i);
   if (match) {
     return { username: match[1], email: gitEmail, authStatus: "authenticated" };
   }

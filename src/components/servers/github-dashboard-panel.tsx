@@ -155,7 +155,7 @@ export function GitHubDashboardPanel({ serverId, serverName, onClose, zIndex, on
       const gitEmail = (parts[2] ?? "").trim() || null;
       const ghToken = (parts[3] ?? "").trim() || null;
 
-      const match = ghStatus.match(/Logged in to github\.com as (\S+)/i);
+      const match = ghStatus.match(/Logged in to github\.com (?:as |account )(\S+)/i);
       if (match) {
         setUsername(match[1]);
         setAuthStatus("authenticated");
