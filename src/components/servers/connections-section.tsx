@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { FiChevronRight, FiGithub, FiLink, FiRefreshCw } from "react-icons/fi";
-import { executeCommandApi, ApiError } from "@/lib/api";
+import { executeCommandApi } from "@/lib/api";
 import { ClaudeCodeOverlay } from "./claude-code-overlay";
 
 /* ------------------------------------------------------------------ */
@@ -411,15 +411,9 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
                 iconBg="bg-white dark:bg-white"
                 name="Google Workspace"
                 status={google}
-                onConnect={async () => {
-                  try {
-                    // Base64-encode the script to avoid shell escaping issues
-                    const b64 = btoa(unescape(encodeURIComponent(GOOGLE_AUTH_SCRIPT)));
-                    await executeCommandApi(serverId, `printf '%s' '${b64}' | base64 -d > /tmp/clawops-goog-auth.sh && chmod +x /tmp/clawops-goog-auth.sh`, 30);
-                    setOverlay({ command: "bash /tmp/clawops-goog-auth.sh", title: "Google Workspace Setup" });
-                  } catch (err) {
-                    window.alert("Failed to prepare setup script: " + (err instanceof ApiError ? err.message : String(err)));
-                  }
+                onConnect={() => {
+                  const b64 = btoa(unescape(encodeURIComponent(GOOGLE_AUTH_SCRIPT)));
+                  setOverlay({ command: `echo '${b64}' | base64 -d > /tmp/clawops-goog-auth.sh && chmod +x /tmp/clawops-goog-auth.sh && bash /tmp/clawops-goog-auth.sh`, title: "Google Workspace Setup" });
                 }}
                 onDisconnect={() => handleDisconnect("google")}
               />
