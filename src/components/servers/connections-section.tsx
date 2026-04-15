@@ -413,9 +413,9 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
                 status={google}
                 onConnect={async () => {
                   try {
-                    // Write auth script to server via SSH API, then open interactive terminal
-                    const escaped = GOOGLE_AUTH_SCRIPT.replace(/\\/g, "\\\\");
-                    await executeCommandApi(serverId, `cat > /tmp/clawops-goog-auth.sh << 'CLAWOPS_EOF'\n${escaped}\nCLAWOPS_EOF\nchmod +x /tmp/clawops-goog-auth.sh`, 15);
+                    // Base64-encode the script to avoid shell escaping issues
+                    const b64 = btoa(GOOGLE_AUTH_SCRIPT);
+                    await executeCommandApi(serverId, `echo '${b64}' | base64 -d > /tmp/clawops-goog-auth.sh && chmod +x /tmp/clawops-goog-auth.sh`, 15);
                     setOverlay({ command: "bash /tmp/clawops-goog-auth.sh", title: "Google Workspace Setup" });
                   } catch {
                     window.alert("Failed to prepare setup script. Check server connection.");
