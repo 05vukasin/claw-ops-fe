@@ -99,7 +99,7 @@ else:
   'echo "Starting Google OAuth..."',
   'echo "A URL will appear — open it in your browser and paste the code back here."',
   'echo ""',
-  'uvx workspace-cli list',
+  'uvx --from workspace-cli workspace list',
 ].join(" && ");
 
 /* ------------------------------------------------------------------ */
