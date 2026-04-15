@@ -56,53 +56,24 @@ const GOOGLE_CMD = [
 ].join("; ");
 
 /**
- * Google Workspace setup script content.
- * Written to /tmp/clawops-goog-setup.sh via executeCommandApi before
- * opening the interactive terminal overlay to run it.
+ * Google Workspace setup command (non-interactive).
+ * Installs uv, writes MCP config to ~/.claude.json.
+ * OAuth happens automatically when Claude Code first calls a Google tool.
  */
-const GOOGLE_SETUP_SH = `#!/bin/bash
-set -e
-export PATH="$HOME/.local/bin:$PATH"
-
-# Load org OAuth credentials
-if [ -f /etc/clawops/google-oauth.env ]; then . /etc/clawops/google-oauth.env; fi
-if [ -z "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -z "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
-  echo "ERROR: Google OAuth credentials not configured."
-  echo "Create /etc/clawops/google-oauth.env with:"
-  echo "  export GOOGLE_OAUTH_CLIENT_ID=your-client-id"
-  echo "  export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret"
-  exit 1
-fi
-
-# Install uv if needed
-if ! command -v uvx >/dev/null 2>&1; then
-  echo "Installing uv package manager..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  export PATH="$HOME/.local/bin:$PATH"
-fi
-
-# Write MCP config to ~/.claude.json
-python3 -c "
-import json, os
-p = os.path.expanduser(chr(126) + '/.claude.json')
-d = json.load(open(p)) if os.path.exists(p) else {}
-if 'mcpServers' not in d: d['mcpServers'] = {}
-if 'google_workspace' not in d['mcpServers']:
-    d['mcpServers']['google_workspace'] = {
-        'command': 'uvx', 'args': ['workspace-mcp', '--tool-tier', 'core'],
-        'env': {'GOOGLE_OAUTH_CLIENT_ID': os.environ['GOOGLE_OAUTH_CLIENT_ID'],
-                'GOOGLE_OAUTH_CLIENT_SECRET': os.environ['GOOGLE_OAUTH_CLIENT_SECRET']}
-    }
-    json.dump(d, open(p, 'w'), indent=2); print('MCP config added to ~/.claude.json')
-else: print('MCP config already exists')
-"
-
-echo ""
-echo "Starting Google OAuth..."
-echo "A URL will appear - open it in your browser and paste the code back here."
-echo ""
-uvx --from workspace-cli workspace list
-`;
+const GOOGLE_SETUP_CMD = [
+  'export PATH="$HOME/.local/bin:$PATH"',
+  // Load org OAuth credentials
+  '. /etc/clawops/google-oauth.env 2>/dev/null || true',
+  // Verify credentials
+  'if [ -z "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -z "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then echo "ERROR: Google OAuth credentials not found in /etc/clawops/google-oauth.env"; exit 1; fi',
+  // Install uv if needed
+  'if ! command -v uvx >/dev/null 2>&1; then curl -LsSf https://astral.sh/uv/install.sh | sh; export PATH="$HOME/.local/bin:$PATH"; fi',
+  // Write MCP config
+  `python3 -c "import json,os;p=os.path.expanduser('~/.claude.json');d=json.load(open(p)) if os.path.exists(p) else {};s=d.setdefault('mcpServers',{});changed=False
+if 'google_workspace' not in s:
+ s['google_workspace']={'command':'uvx','args':['workspace-mcp','--tool-tier','core'],'env':{'GOOGLE_OAUTH_CLIENT_ID':os.environ['GOOGLE_OAUTH_CLIENT_ID'],'GOOGLE_OAUTH_CLIENT_SECRET':os.environ['GOOGLE_OAUTH_CLIENT_SECRET']}};changed=True
+json.dump(d,open(p,'w'),indent=2) if changed else None;print('SETUP_OK' if changed else 'ALREADY_CONFIGURED')"`,
+].join(" && ");
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -322,12 +293,20 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
                 name="Google Workspace"
                 status={google}
                 onConnect={async () => {
+                  setGoogle((s) => ({ ...s, loading: true }));
                   try {
-                    // Write setup script to server, then open interactive terminal to run it
-                    await executeCommandApi(serverId, `cat > /tmp/clawops-goog-setup.sh << 'CLAWOPS_SCRIPT_EOF'\n${GOOGLE_SETUP_SH}CLAWOPS_SCRIPT_EOF\nchmod +x /tmp/clawops-goog-setup.sh`, 10);
-                    setOverlay({ command: "bash /tmp/clawops-goog-setup.sh", title: "Google Workspace Setup" });
-                  } catch {
-                    setOverlay({ command: "echo 'Failed to prepare setup script. Check server connection.' && exit 1", title: "Google Workspace Setup" });
+                    const result = await executeCommandApi(serverId, GOOGLE_SETUP_CMD, 60);
+                    const ok = result.stdout.includes("SETUP_OK") || result.stdout.includes("ALREADY_CONFIGURED");
+                    if (ok) {
+                      setGoogle({ installed: true, authenticated: false, info: "MCP configured — open Claude Code to complete OAuth", loading: false });
+                      window.alert("Google Workspace MCP configured! Open Claude Code on this server and use any Google tool (e.g. 'list my emails') to complete the OAuth sign-in.");
+                    } else {
+                      window.alert("Setup failed: " + result.stdout.trim().split("\n").pop());
+                      setGoogle((s) => ({ ...s, loading: false }));
+                    }
+                  } catch (err) {
+                    window.alert("Setup failed: " + (err instanceof ApiError ? err.message : "Unknown error"));
+                    setGoogle((s) => ({ ...s, loading: false }));
                   }
                 }}
                 onDisconnect={() => handleDisconnect("google")}
