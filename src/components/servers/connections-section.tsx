@@ -128,7 +128,13 @@ print("Open this URL in your browser:")
 print()
 print(auth_url)
 print()
-code = input("Paste the authorization code here: ").strip()
+import sys
+# Read from terminal directly (stdin is consumed by heredoc)
+tty = open("/dev/tty", "r")
+sys.stdout.write("Paste the authorization code here: ")
+sys.stdout.flush()
+code = tty.readline().strip()
+tty.close()
 
 flow.fetch_token(code=code)
 creds = flow.credentials
