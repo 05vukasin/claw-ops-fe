@@ -212,10 +212,11 @@ export function GitHubDashboardPanel({ serverId, serverName, onClose, zIndex, on
   const handleLogout = useCallback(async () => {
     if (!window.confirm("Logout from GitHub on this server?")) return;
     try {
-      await executeCommandApi(serverId, "gh auth logout --hostname github.com -y 2>&1", 10);
+      const userFlag = username ? ` --user ${username}` : "";
+      await executeCommandApi(serverId, `gh auth logout --hostname github.com${userFlag} 2>&1`, 10);
       fetchData();
     } catch {}
-  }, [serverId, fetchData]);
+  }, [serverId, username, fetchData]);
 
   /* ---- save git config ---- */
   const handleSaveConfig = useCallback(async () => {

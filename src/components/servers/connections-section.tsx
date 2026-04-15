@@ -132,13 +132,16 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
 
   /* ---- disconnect handlers ---- */
   const handleDisconnect = useCallback(async (service: "github" | "claude" | "codex") => {
+    if (service === "github") {
+      // gh auth logout is interactive (prompts for account selection)
+      setOverlay({ command: "gh auth logout", title: "GitHub Logout" });
+      return;
+    }
     const cmds: Record<string, string> = {
-      github: "gh auth logout --hostname github.com -y 2>&1",
       claude: 'export PATH="$HOME/.local/bin:$PATH" && claude auth logout 2>&1',
       codex: 'export PATH="$HOME/.local/bin:$PATH" && codex auth logout 2>&1',
     };
     const confirmMsgs: Record<string, string> = {
-      github: "Disconnect GitHub on this server?",
       claude: "Disconnect Claude Code on this server?",
       codex: "Disconnect Codex on this server?",
     };
@@ -209,11 +212,8 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
                 status={claude}
                 onConnect={() => setOverlay({ command: 'export PATH="$HOME/.local/bin:$PATH" && claude auth login', title: "Claude Code Auth" })}
                 onDisconnect={() => handleDisconnect("claude")}
-                onUpdate={claude.installed ? async () => {
-                  try {
-                    await executeCommandApi(serverId, "npm update -g @anthropic-ai/claude-code 2>&1", 120);
-                    fetchAll();
-                  } catch {}
+                onUpdate={claude.installed ? () => {
+                  setOverlay({ command: 'export PATH="$HOME/.local/bin:$PATH" && claude update', title: "Claude Code Update" });
                 } : undefined}
               />
 

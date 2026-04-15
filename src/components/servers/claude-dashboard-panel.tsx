@@ -204,7 +204,7 @@ export function ClaudeDashboardPanel({ serverId, serverName, onClose, zIndex, on
     setUpdating(true);
     setUpdateResult(null);
     try {
-      const result = await executeCommandApi(serverId, "npm update -g @anthropic-ai/claude-code 2>&1", 120);
+      const result = await executeCommandApi(serverId, 'export PATH="$HOME/.local/bin:$PATH" && claude update 2>&1', 120);
       setUpdateResult({ ok: result.exitCode === 0, text: result.stdout.trim().split("\n").slice(-3).join("\n") });
       fetchData();
     } catch (err) {
