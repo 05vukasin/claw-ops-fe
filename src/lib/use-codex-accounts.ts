@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { executeCommandApi } from "@/lib/api";
 import type { ServerWithUI } from "@/lib/use-servers";
 
@@ -11,10 +11,8 @@ import type { ServerWithUI } from "@/lib/use-servers";
 export interface CodexAccountWithUI {
   serverId: string;
   version: string | null;
-  executablePath: string | null;
   authStatus: "authenticated" | "unauthenticated" | "unknown";
-  diskUsage: string | null;
-  projectCount: number;
+  email: string | null;
   offsetX: number;
   offsetY: number;
 }
@@ -24,18 +22,12 @@ export interface CodexAccountWithUI {
 /* ------------------------------------------------------------------ */
 
 const STORAGE_KEY = "openclaw-codex-ui:v1";
-const DEFAULT_OFFSET = { offsetX: 0, offsetY: -120 };
-
-const CACHE_TTL = 5 * 60 * 1000;
-const BATCH_SIZE = 3;
+const DEFAULT_OFFSET = { offsetX: 0, offsetY: 110 };
 
 let accounts: CodexAccountWithUI[] = [];
 const listeners = new Set<() => void>();
 let fetchGeneration = 0;
 let initialized = false;
-let lastFetchedAt = 0;
-const failedServers = new Map<string, number>();
-const FAIL_COOLDOWN = 5 * 60 * 1000;
 
 function notify() { listeners.forEach((l) => l()); }
 function subscribe(listener: () => void) {
@@ -52,12 +44,7 @@ function loadCached(): CodexAccountWithUI[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
-      lastFetchedAt = parsed.fetchedAt ?? 0;
-      return parsed.data.filter((e: CodexAccountWithUI) => e.serverId && typeof e.offsetX === "number");
-    }
-    const arr = parsed;
+    const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
     return arr.filter((e: CodexAccountWithUI) => e.serverId && typeof e.offsetX === "number");
   } catch { return []; }
@@ -65,7 +52,7 @@ function loadCached(): CodexAccountWithUI[] {
 
 function saveToStorage(list: CodexAccountWithUI[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ data: list, fetchedAt: lastFetchedAt }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
   } catch {}
 }
 
@@ -81,109 +68,53 @@ function initFromCache() {
 
 const DETECT_CMD = [
   'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:$PATH"',
-  'CODEX_BIN="$(command -v codex 2>/dev/null || true)"',
-  'if [ -z "$CODEX_BIN" ]; then NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"; if [ -n "$NPM_PREFIX" ] && [ -x "$NPM_PREFIX/bin/codex" ]; then CODEX_BIN="$NPM_PREFIX/bin/codex"; fi; fi',
-  'if [ -z "$CODEX_BIN" ]; then for p in "$HOME/.nvm/versions/node"/*/bin/codex "$HOME/.local/bin/codex" "$HOME/.npm-global/bin/codex" "/usr/local/bin/codex"; do if [ -x "$p" ]; then CODEX_BIN="$p"; break; fi; done; fi',
-  'if [ -z "$CODEX_BIN" ]; then echo "NOT_FOUND"; exit 0; fi',
-  '"$CODEX_BIN" --version 2>/dev/null || echo "UNKNOWN_VERSION"',
-  'echo "---CODEX_SEP---"',
-  'printf "%s\\n" "$CODEX_BIN"',
-  'echo "---CODEX_SEP---"',
-  '("$CODEX_BIN" auth status 2>/dev/null || echo "AUTH_UNKNOWN")',
-  'echo "---CODEX_SEP---"',
-  'du -sh "$HOME/.codex" 2>/dev/null | cut -f1 || echo "0"',
-  'echo "---CODEX_SEP---"',
-  'ls -1 "$HOME/.codex/projects" 2>/dev/null | head -20 || echo ""',
+  'codex --version 2>/dev/null || echo "NOT_FOUND"',
+  'echo "---CX_SEP---"',
+  'codex auth status 2>/dev/null || echo "NOT_AUTHENTICATED"',
 ].join("; ");
-
-function parseAuthStatus(authRaw: string): "authenticated" | "unauthenticated" | "unknown" {
-  const lower = authRaw.toLowerCase();
-  if (!authRaw || authRaw === "AUTH_UNKNOWN") return "unknown";
-  if (
-    (lower.includes("authenticated") || lower.includes("logged in") || lower.includes("authorized")) &&
-    !lower.includes("not authenticated") &&
-    !lower.includes("unauthenticated") &&
-    !lower.includes("not logged")
-  ) {
-    return "authenticated";
-  }
-  if (
-    lower.includes("unauthenticated") ||
-    lower.includes("not authenticated") ||
-    lower.includes("not logged in") ||
-    lower.includes("login required")
-  ) {
-    return "unauthenticated";
-  }
-  return "unknown";
-}
 
 function parseDetection(stdout: string): {
   version: string | null;
-  executablePath: string | null;
-  authStatus: "authenticated" | "unauthenticated" | "unknown";
-  diskUsage: string | null;
-  projectCount: number;
+  authStatus: "authenticated" | "unauthenticated";
+  email: string | null;
 } | null {
-  const parts = stdout.split("---CODEX_SEP---");
+  const parts = stdout.split("---CX_SEP---");
   const versionRaw = (parts[0] ?? "").trim();
-  const executablePathRaw = (parts[1] ?? "").trim();
-  const authRaw = (parts[2] ?? "").trim();
-  const diskRaw = (parts[3] ?? "").trim();
-  const projectsRaw = (parts[4] ?? "").trim();
+  const authRaw = (parts[1] ?? "").trim();
 
   if (versionRaw === "NOT_FOUND" || !versionRaw) return null;
 
   const version = versionRaw.split("\n")[0].trim() || null;
-  const executablePath = executablePathRaw || null;
-  const diskUsage = diskRaw && diskRaw !== "0" ? diskRaw : null;
-  const projectCount = projectsRaw
-    ? projectsRaw.split("\n").filter((line) => line.trim().length > 0).length
-    : 0;
 
-  return {
-    version,
-    executablePath,
-    authStatus: parseAuthStatus(authRaw),
-    diskUsage,
-    projectCount,
-  };
+  const isAuth = authRaw.toLowerCase().includes("authenticated") && !authRaw.includes("NOT_AUTHENTICATED");
+  const authStatus = isAuth ? "authenticated" as const : "unauthenticated" as const;
+
+  // Try to extract email from auth output
+  const emailMatch = authRaw.match(/[\w.-]+@[\w.-]+\.\w+/);
+  const email = emailMatch ? emailMatch[0] : null;
+
+  return { version, authStatus, email };
 }
 
-async function fetchCodexForServers(servers: ServerWithUI[], force = false) {
-  if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
-
+async function fetchCodexForServers(servers: ServerWithUI[]) {
   const gen = ++fetchGeneration;
-  const now = Date.now();
-  const onlineServers = servers.filter((s) => {
-    if (s.status !== "ONLINE") return false;
-    if (force) return true;
-    const failedAt = failedServers.get(s.id);
-    return !failedAt || now - failedAt > FAIL_COOLDOWN;
-  });
+  const onlineServers = servers.filter((s) => s.status === "ONLINE");
   if (onlineServers.length === 0) return;
+
   const savedMap = new Map(accounts.map((a) => [a.serverId, a]));
 
-  const results: PromiseSettledResult<{ serverId: string; version: string | null; executablePath: string | null; authStatus: "authenticated" | "unauthenticated" | "unknown"; diskUsage: string | null; projectCount: number } | null>[] = [];
-  for (let i = 0; i < onlineServers.length; i += BATCH_SIZE) {
-    if (gen !== fetchGeneration) return;
-    const batch = onlineServers.slice(i, i + BATCH_SIZE);
-    const batchResults = await Promise.allSettled(
-      batch.map(async (s) => {
-        try {
-          const result = await executeCommandApi(s.id, DETECT_CMD, 15);
-          failedServers.delete(s.id);
-          const parsed = parseDetection(result.stdout);
-          if (!parsed) return null;
-          return { serverId: s.id, ...parsed };
-        } catch {
-          failedServers.set(s.id, Date.now());
-          return null;
-        }
-      }),
-    );
-    results.push(...batchResults);
-  }
+  const results = await Promise.allSettled(
+    onlineServers.map(async (s) => {
+      try {
+        const result = await executeCommandApi(s.id, DETECT_CMD, 15);
+        const parsed = parseDetection(result.stdout);
+        if (!parsed) return null;
+        return { serverId: s.id, ...parsed };
+      } catch {
+        return null;
+      }
+    }),
+  );
 
   if (gen !== fetchGeneration) return;
 
@@ -191,20 +122,19 @@ async function fetchCodexForServers(servers: ServerWithUI[], force = false) {
 
   for (const r of results) {
     if (r.status !== "fulfilled" || !r.value) continue;
-    const { serverId, version, executablePath, authStatus, diskUsage, projectCount } = r.value;
+    const { serverId, version, authStatus, email } = r.value;
     const saved = savedMap.get(serverId);
     newAccounts.push({
       serverId,
       version,
-      executablePath,
       authStatus,
-      diskUsage,
-      projectCount,
+      email,
       offsetX: saved?.offsetX ?? DEFAULT_OFFSET.offsetX,
       offsetY: saved?.offsetY ?? DEFAULT_OFFSET.offsetY,
     });
   }
 
+  // Preserve cached entries for offline servers
   for (const cached of accounts) {
     if (!onlineServers.some((s) => s.id === cached.serverId) && !newAccounts.some((a) => a.serverId === cached.serverId)) {
       newAccounts.push(cached);
@@ -212,7 +142,6 @@ async function fetchCodexForServers(servers: ServerWithUI[], force = false) {
   }
 
   accounts = newAccounts;
-  lastFetchedAt = Date.now();
   saveToStorage(accounts);
   notify();
 }
@@ -238,21 +167,13 @@ export function useCodexAccounts(servers: ServerWithUI[]) {
 
   const list = useSyncExternalStore(subscribe, getSnapshot, () => []);
 
-  const serversRef = useRef(servers);
-  serversRef.current = servers;
-  const onlineIds = useMemo(
-    () => servers.filter((s) => s.status === "ONLINE").map((s) => s.id).sort().join(","),
-    [servers],
-  );
-
   useEffect(() => {
-    fetchCodexForServers(serversRef.current);
-  }, [onlineIds]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetchCodexForServers(servers);
+  }, [servers]);
 
   const refresh = useCallback(() => {
-    lastFetchedAt = 0;
-    fetchCodexForServers(serversRef.current, true);
-  }, []);
+    fetchCodexForServers(servers);
+  }, [servers]);
 
   const moveCodexNode = useCallback((serverId: string, offsetX: number, offsetY: number) => {
     moveCodexNodeStore(serverId, offsetX, offsetY);

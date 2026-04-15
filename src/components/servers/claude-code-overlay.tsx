@@ -12,9 +12,13 @@ interface ClaudeCodeOverlayProps {
   serverId: string;
   serverName: string;
   onClose: () => void;
+  /** Command to run on terminal open (default: "claude") */
+  initialCommand?: string;
+  /** Title shown in overlay header (default: "Claude Code") */
+  title?: string;
 }
 
-export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeOverlayProps) {
+export function ClaudeCodeOverlay({ serverId, serverName, onClose, initialCommand = "claude", title = "Claude Code" }: ClaudeCodeOverlayProps) {
   const isMobile = useIsMobile();
 
   /* Lock body scroll while overlay is open */
@@ -39,7 +43,7 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
       <MobilePersistentTerminal
         serverId={serverId}
         serverName={serverName}
-        initialCommand="claude"
+        initialCommand={initialCommand}
         onClose={onClose}
       />,
       document.body,
@@ -59,7 +63,7 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
       >
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-[#e6edf3]">
-            Claude Code
+            {title}
           </p>
           <p className="truncate text-[11px] text-gray-500">
             {serverName} — persistent session
@@ -79,7 +83,7 @@ export function ClaudeCodeOverlay({ serverId, serverName, onClose }: ClaudeCodeO
         className="flex flex-1 flex-col min-h-0"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <PersistentTerminal serverId={serverId} initialCommand="claude" />
+        <PersistentTerminal serverId={serverId} initialCommand={initialCommand} />
       </div>
     </div>,
     document.body,

@@ -19,3 +19,4 @@ export { ClaudeDashboardPanel } from "./claude-dashboard-panel";
 export { CodexNode } from "./codex-node";
 export { CodexDashboardPanel } from "./codex-dashboard-panel";
 export { AlertBell } from "./alert-bell";
+export { ConnectionsSection } from "./connections-section";

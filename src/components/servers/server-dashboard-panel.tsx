@@ -16,6 +16,7 @@ import {
 } from "react-icons/fi";
 import { TerminalSection, type TerminalSectionHandle } from "./terminal-section";
 import { HealthSection } from "./health-section";
+import { ConnectionsSection } from "./connections-section";
 import { ScriptsSection } from "./scripts-section";
 import { FileBrowser, type FileBrowserHandle } from "./file-browser";
 import { DeployPopup } from "./deploy-popup";
@@ -691,6 +692,9 @@ export function ServerDashboardPanel({
 
               {/* HEALTH */}
               <HealthSection serverId={server.id} initialTab={typeof window !== "undefined" && new URLSearchParams(window.location.search).get("healthTab") === "alerts" ? "alerts" : undefined} />
+
+              {/* CONNECTIONS */}
+              <ConnectionsSection serverId={server.id} serverName={server.name} />
 
               {/* SSL */}
               <div className="border-b border-canvas-border">
