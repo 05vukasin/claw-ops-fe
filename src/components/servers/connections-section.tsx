@@ -56,51 +56,60 @@ const GOOGLE_CMD = [
 ].join("; ");
 
 /**
- * Google Workspace setup script for interactive terminal.
- * Reads GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET from
- * /etc/clawops/google-oauth.env on the managed server.
- * Set these during server provisioning.
+ * Google Workspace setup — writes a temp script and executes it.
+ * This avoids issues with embedded newlines/quotes in terminal input.
+ * OAuth credentials come from /etc/clawops/google-oauth.env on each server.
  */
-const GOOGLE_SETUP_SCRIPT = [
-  'export PATH="$HOME/.local/bin:$PATH"',
-  // Load org OAuth credentials from server config
-  'if [ -f /etc/clawops/google-oauth.env ]; then . /etc/clawops/google-oauth.env; fi',
-  // Verify credentials are set
-  'if [ -z "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -z "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then echo "ERROR: Google OAuth credentials not configured on this server."; echo "Create /etc/clawops/google-oauth.env with:"; echo "  export GOOGLE_OAUTH_CLIENT_ID=your-client-id"; echo "  export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret"; exit 1; fi',
-  // Install uv (Python package manager) if needed
-  'if ! command -v uvx >/dev/null 2>&1; then echo "Installing uv package manager..."; curl -LsSf https://astral.sh/uv/install.sh | sh; export PATH="$HOME/.local/bin:$PATH"; fi',
-  // Verify uvx works
-  'if ! command -v uvx >/dev/null 2>&1; then echo "ERROR: Failed to install uv. Install manually: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; fi',
-  // Add MCP config to ~/.claude.json if not present
-  `python3 -c "
+const GOOGLE_SETUP_SCRIPT = `cat > /tmp/goog-setup.sh << 'CLAWOPS_EOF'
+#!/bin/bash
+set -e
+export PATH="$HOME/.local/bin:$PATH"
+
+# Load org OAuth credentials
+if [ -f /etc/clawops/google-oauth.env ]; then . /etc/clawops/google-oauth.env; fi
+if [ -z "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -z "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+  echo "ERROR: Google OAuth credentials not configured."
+  echo "Create /etc/clawops/google-oauth.env with:"
+  echo '  export GOOGLE_OAUTH_CLIENT_ID=your-client-id'
+  echo '  export GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret'
+  exit 1
+fi
+
+# Install uv if needed
+if ! command -v uvx >/dev/null 2>&1; then
+  echo "Installing uv package manager..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Write MCP config to ~/.claude.json
+python3 << 'PYEOF'
 import json, os
-p = os.path.expanduser('~/.claude.json')
+p = os.path.expanduser("~/.claude.json")
 d = json.load(open(p)) if os.path.exists(p) else {}
-if 'mcpServers' not in d:
-    d['mcpServers'] = {}
-if 'google_workspace' not in d['mcpServers']:
-    cid = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
-    csec = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
-    d['mcpServers']['google_workspace'] = {
-        'command': 'uvx',
-        'args': ['workspace-mcp', '--tool-tier', 'core'],
-        'env': {
-            'GOOGLE_OAUTH_CLIENT_ID': cid,
-            'GOOGLE_OAUTH_CLIENT_SECRET': csec
+if "mcpServers" not in d: d["mcpServers"] = {}
+if "google_workspace" not in d["mcpServers"]:
+    d["mcpServers"]["google_workspace"] = {
+        "command": "uvx",
+        "args": ["workspace-mcp", "--tool-tier", "core"],
+        "env": {
+            "GOOGLE_OAUTH_CLIENT_ID": os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+            "GOOGLE_OAUTH_CLIENT_SECRET": os.environ["GOOGLE_OAUTH_CLIENT_SECRET"]
         }
     }
-    json.dump(d, open(p, 'w'), indent=2)
-    print('MCP config added to ~/.claude.json')
+    json.dump(d, open(p, "w"), indent=2)
+    print("MCP config added to ~/.claude.json")
 else:
-    print('MCP config already exists')
-"`,
-  // Run interactive OAuth — triggering a tool call initiates the auth flow
-  'echo ""',
-  'echo "Starting Google OAuth..."',
-  'echo "A URL will appear — open it in your browser and paste the code back here."',
-  'echo ""',
-  'uvx --from workspace-cli workspace list',
-].join(" && ");
+    print("MCP config already exists")
+PYEOF
+
+echo ""
+echo "Starting Google OAuth..."
+echo "A URL will appear - open it in your browser and paste the code back here."
+echo ""
+uvx --from workspace-cli workspace list
+CLAWOPS_EOF
+chmod +x /tmp/goog-setup.sh && bash /tmp/goog-setup.sh`;
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
