@@ -652,6 +652,14 @@ export function ServerDashboardPanel({
                     Deploy
                   </ActionBtn>
                 )}
+                {server.assignedDomain && (
+                  <ActionBtn
+                    onClick={() => window.open(`https://${server.assignedDomain}/chat`, "_blank")}
+                    icon={<svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>}
+                  >
+                    Chat
+                  </ActionBtn>
+                )}
               </div>
 
               {/* Test result */}

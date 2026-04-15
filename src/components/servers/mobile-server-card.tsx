@@ -203,6 +203,18 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
             </span>
           )}
 
+          {server.assignedDomain && (
+            <a
+              href={`https://${server.assignedDomain}/chat`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-canvas-border bg-canvas-surface-hover px-4 py-2.5 text-xs font-medium text-canvas-fg transition-colors hover:bg-canvas-border active:bg-canvas-border"
+            >
+              <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+              Chat
+            </a>
+          )}
+
           {claudeInstalled === "installed" && (
             <button
               type="button"
