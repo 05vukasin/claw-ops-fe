@@ -414,11 +414,11 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
                 onConnect={async () => {
                   try {
                     // Base64-encode the script to avoid shell escaping issues
-                    const b64 = btoa(GOOGLE_AUTH_SCRIPT);
-                    await executeCommandApi(serverId, `echo '${b64}' | base64 -d > /tmp/clawops-goog-auth.sh && chmod +x /tmp/clawops-goog-auth.sh`, 15);
+                    const b64 = btoa(unescape(encodeURIComponent(GOOGLE_AUTH_SCRIPT)));
+                    await executeCommandApi(serverId, `printf '%s' '${b64}' | base64 -d > /tmp/clawops-goog-auth.sh && chmod +x /tmp/clawops-goog-auth.sh`, 30);
                     setOverlay({ command: "bash /tmp/clawops-goog-auth.sh", title: "Google Workspace Setup" });
-                  } catch {
-                    window.alert("Failed to prepare setup script. Check server connection.");
+                  } catch (err) {
+                    window.alert("Failed to prepare setup script: " + (err instanceof ApiError ? err.message : String(err)));
                   }
                 }}
                 onDisconnect={() => handleDisconnect("google")}
