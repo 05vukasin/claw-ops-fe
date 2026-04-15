@@ -103,13 +103,12 @@ echo ""
 echo "Starting Google OAuth..."
 echo ""
 
-# Run OAuth flow with local redirect server
+# Run OAuth flow using Google's standard Desktop app flow
 uvx --from workspace-mcp python3 << 'PYEOF'
-import os, sys, json, threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+import os, sys, json
 
-from auth.google_auth import create_oauth_flow, get_default_credentials_dir
+from google_auth_oauthlib.flow import InstalledAppFlow
+from auth.google_auth import get_default_credentials_dir
 from auth.credential_store import get_credential_store
 
 scopes = [
@@ -123,74 +122,47 @@ scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-REDIRECT_PORT = 8439
-REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}"
+# Build client config for Desktop app (Google auto-allows localhost redirects)
+client_config = {
+    "installed": {
+        "client_id": os.environ["GOOGLE_OAUTH_CLIENT_ID"],
+        "client_secret": os.environ["GOOGLE_OAUTH_CLIENT_SECRET"],
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "redirect_uris": ["http://localhost"]
+    }
+}
 
-flow = create_oauth_flow(scopes, redirect_uri=REDIRECT_URI)
-auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes)
 
-# Tiny server to catch the OAuth callback
-auth_code = None
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        global auth_code
-        qs = parse_qs(urlparse(self.path).query)
-        auth_code = qs.get("code", [None])[0]
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html")
-        self.end_headers()
-        if auth_code:
-            self.wfile.write(b"<h2>Authorized! You can close this tab.</h2>")
-        else:
-            err = qs.get("error", ["unknown"])[0]
-            self.wfile.write(f"<h2>Error: {err}</h2>".encode())
-    def log_message(self, *a): pass
-
-server = HTTPServer(("0.0.0.0", REDIRECT_PORT), Handler)
-
-print("Open this URL in your browser:")
+print("A browser window would normally open for Google sign-in.")
+print("Since this is a remote server, follow these steps:")
 print()
+print("1. Copy the URL below and open it in your browser")
+print("2. Sign in and authorize the app")
+print("3. Your browser will redirect to http://localhost:PORT/?code=...")
+print("4. The page won't load (that's normal)")
+print("5. Copy the FULL URL from your browser's address bar")
+print("6. Paste it below")
+print()
+
+# Generate auth URL (Google allows any localhost port for Desktop apps)
+flow.redirect_uri = "http://localhost:1"
+auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
 print(auth_url)
 print()
-print(f"Waiting for authorization (listening on port {REDIRECT_PORT})...")
-print()
-print("NOTE: If your browser can't reach this server's localhost,")
-print("copy the URL your browser redirects to after authorizing")
-print("(starts with http://localhost:...) and paste it below.")
-print()
 
-# Run server in background, also accept manual paste
-srv_thread = threading.Thread(target=server.handle_request, daemon=True)
-srv_thread.start()
-
-# Also allow manual URL paste as fallback
 tty = open("/dev/tty", "r")
-sys.stdout.write("Or paste the redirect URL here (leave empty if auto-captured): ")
+sys.stdout.write("Paste the redirect URL here: ")
 sys.stdout.flush()
-
-# Wait for either: server callback or manual input
-import select
-while auth_code is None:
-    if not srv_thread.is_alive():
-        break
-    # Check if user typed something
-    r, _, _ = select.select([tty], [], [], 1.0)
-    if r:
-        line = tty.readline().strip()
-        if line:
-            if "code=" in line:
-                auth_code = parse_qs(urlparse(line).query).get("code", [None])[0]
-            else:
-                auth_code = line
-            break
+redirect_url = tty.readline().strip()
 tty.close()
-server.server_close()
 
-if not auth_code:
-    print("ERROR: No authorization code received.")
+if not redirect_url:
+    print("ERROR: No URL provided.")
     sys.exit(1)
 
-flow.fetch_token(code=auth_code)
+flow.fetch_token(authorization_response=redirect_url)
 creds = flow.credentials
 
 # Get user email
