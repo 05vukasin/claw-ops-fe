@@ -103,9 +103,11 @@ echo ""
 echo "Starting Google OAuth..."
 echo ""
 
-# Run OAuth flow using workspace-mcp's own auth libraries
+# Run OAuth flow with local redirect server
 uvx --from workspace-mcp python3 << 'PYEOF'
-import os, json
+import os, sys, json, threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 
 from auth.google_auth import create_oauth_flow, get_default_credentials_dir
 from auth.credential_store import get_credential_store
@@ -121,36 +123,88 @@ scopes = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-flow = create_oauth_flow(scopes, redirect_uri="urn:ietf:wg:oauth:2.0:oob")
+REDIRECT_PORT = 8439
+REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}"
+
+flow = create_oauth_flow(scopes, redirect_uri=REDIRECT_URI)
 auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+
+# Tiny server to catch the OAuth callback
+auth_code = None
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        global auth_code
+        qs = parse_qs(urlparse(self.path).query)
+        auth_code = qs.get("code", [None])[0]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        if auth_code:
+            self.wfile.write(b"<h2>Authorized! You can close this tab.</h2>")
+        else:
+            err = qs.get("error", ["unknown"])[0]
+            self.wfile.write(f"<h2>Error: {err}</h2>".encode())
+    def log_message(self, *a): pass
+
+server = HTTPServer(("0.0.0.0", REDIRECT_PORT), Handler)
 
 print("Open this URL in your browser:")
 print()
 print(auth_url)
 print()
-import sys
-# Read from terminal directly (stdin is consumed by heredoc)
-tty = open("/dev/tty", "r")
-sys.stdout.write("Paste the authorization code here: ")
-sys.stdout.flush()
-code = tty.readline().strip()
-tty.close()
+print(f"Waiting for authorization (listening on port {REDIRECT_PORT})...")
+print()
+print("NOTE: If your browser can't reach this server's localhost,")
+print("copy the URL your browser redirects to after authorizing")
+print("(starts with http://localhost:...) and paste it below.")
+print()
 
-flow.fetch_token(code=code)
+# Run server in background, also accept manual paste
+srv_thread = threading.Thread(target=server.handle_request, daemon=True)
+srv_thread.start()
+
+# Also allow manual URL paste as fallback
+tty = open("/dev/tty", "r")
+sys.stdout.write("Or paste the redirect URL here (leave empty if auto-captured): ")
+sys.stdout.flush()
+
+# Wait for either: server callback or manual input
+import select
+while auth_code is None:
+    if not srv_thread.is_alive():
+        break
+    # Check if user typed something
+    r, _, _ = select.select([tty], [], [], 1.0)
+    if r:
+        line = tty.readline().strip()
+        if line:
+            if "code=" in line:
+                auth_code = parse_qs(urlparse(line).query).get("code", [None])[0]
+            else:
+                auth_code = line
+            break
+tty.close()
+server.server_close()
+
+if not auth_code:
+    print("ERROR: No authorization code received.")
+    sys.exit(1)
+
+flow.fetch_token(code=auth_code)
 creds = flow.credentials
 
-# Get user email from token
+# Get user email
 from googleapiclient.discovery import build
 svc = build("oauth2", "v2", credentials=creds)
 info = svc.userinfo().get().execute()
 email = info.get("email", "default")
 print(f"Authenticated as: {email}")
 
-# Save credentials using workspace-mcp's credential store
+# Save credentials
 os.makedirs(get_default_credentials_dir(), exist_ok=True)
 store = get_credential_store()
 store.store_credential(email, creds)
-print(f"Credentials saved. Google Workspace is now connected!")
+print("Credentials saved. Google Workspace is now connected!")
 PYEOF
 `;
 
