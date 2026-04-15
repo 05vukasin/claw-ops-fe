@@ -63,6 +63,7 @@ const GOOGLE_CMD = [
 const GOOGLE_AUTH_SCRIPT = `#!/usr/bin/env bash
 set -e
 export PATH="$HOME/.local/bin:$PATH"
+export OAUTHLIB_INSECURE_TRANSPORT=1
 
 # Load org OAuth credentials
 if [ -f /etc/clawops/google-oauth.env ]; then . /etc/clawops/google-oauth.env; fi
