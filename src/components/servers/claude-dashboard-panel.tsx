@@ -158,7 +158,9 @@ export function ClaudeDashboardPanel({ serverId, serverName, onClose, zIndex, on
       setVersion(vRaw !== "NOT_FOUND" ? vRaw.split("\n")[0].trim() || null : null);
 
       const authRaw = (parts[1] ?? "").trim();
-      const isAuth = authRaw.toLowerCase().includes("authenticated") && !authRaw.includes("NOT_AUTHENTICATED");
+      // claude auth status outputs JSON: {"loggedIn": true, ...}
+      const isAuth = authRaw.includes('"loggedIn": true') || authRaw.includes('"loggedIn":true') ||
+        (authRaw.toLowerCase().includes("authenticated") && !authRaw.includes("NOT_AUTHENTICATED"));
       setAuthStatus(isAuth ? "authenticated" : "unauthenticated");
 
       setDiskUsage((parts[2] ?? "").trim() || null);

@@ -110,8 +110,9 @@ function parseDetection(stdout: string): {
 
   const version = versionRaw.split("\n")[0].trim() || null;
 
-  // Auth: look for indicators of authentication
-  const isAuth = authRaw.toLowerCase().includes("authenticated") && !authRaw.includes("NOT_AUTHENTICATED");
+  // claude auth status outputs JSON: {"loggedIn": true, ...}
+  const isAuth = authRaw.includes('"loggedIn": true') || authRaw.includes('"loggedIn":true') ||
+    (authRaw.toLowerCase().includes("authenticated") && !authRaw.includes("NOT_AUTHENTICATED"));
   const authStatus = isAuth ? "authenticated" as const : "unauthenticated" as const;
 
   const diskUsage = diskRaw && diskRaw !== "0" ? diskRaw : null;

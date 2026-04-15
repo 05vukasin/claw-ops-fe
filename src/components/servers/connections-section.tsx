@@ -95,8 +95,12 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
         setClaude({ installed: false, authenticated: false, info: null, loading: false });
       } else {
         const version = vRaw.split("\n")[0].trim();
-        const isAuth = authRaw.toLowerCase().includes("authenticated") && !authRaw.includes("NOT_AUTHENTICATED");
-        setClaude({ installed: true, authenticated: isAuth, info: version || null, loading: false });
+        // claude auth status outputs JSON: {"loggedIn": true, "email": "..."}
+        const isAuth = authRaw.includes('"loggedIn": true') || authRaw.includes('"loggedIn":true') ||
+          (authRaw.toLowerCase().includes("authenticated") && !authRaw.includes("NOT_AUTHENTICATED"));
+        const emailMatch = authRaw.match(/"email"\s*:\s*"([^"]+)"/);
+        const info = emailMatch ? `${version} — ${emailMatch[1]}` : version || null;
+        setClaude({ installed: true, authenticated: isAuth, info, loading: false });
       }
     } else {
       setClaude({ installed: false, authenticated: false, info: null, loading: false });
