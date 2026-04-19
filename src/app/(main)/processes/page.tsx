@@ -2,20 +2,34 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiActivity, FiRefreshCw, FiSquare, FiTerminal, FiServer, FiPlay } from "react-icons/fi";
+import Link from "next/link";
+import {
+  FiActivity,
+  FiRefreshCw,
+  FiSquare,
+  FiTerminal,
+  FiPlay,
+  FiGlobe,
+  FiShield,
+} from "react-icons/fi";
 import { getUser } from "@/lib/auth";
-import { useIsMobile } from "@/lib/use-is-mobile";
 import {
   fetchActiveProcessesApi,
   killProcessApi,
   stopDeploymentJobApi,
   cancelDeploymentJobApi,
-  type ActiveSessionInfo,
+  fetchActiveSslJobsApi,
+  retrySslJobApi,
+  cancelSslJobApi,
+  retryDomainJobApi,
+  cancelDomainJobApi,
   type ProcessMonitorResponse,
-  type DeploymentJob,
+  type SslJob,
 } from "@/lib/api";
-import { showToast } from "@/components/ui/toast";
-import { ToastContainer } from "@/components/ui/toast";
+import { useDomainJobs } from "@/lib/use-domain-jobs";
+import { useServers } from "@/lib/use-servers";
+import { DOMAIN_STEP_LABELS, SSL_STEP_LABELS } from "@/lib/ssl-labels";
+import { showToast, ToastContainer } from "@/components/ui/toast";
 
 const TYPE_BADGE: Record<string, string> = {
   TERMINAL: "bg-blue-500/10 text-blue-500",
@@ -55,11 +69,13 @@ function formatAgo(iso: string | null): string {
 
 export default function ProcessesPage() {
   const router = useRouter();
-  const isMobile = useIsMobile();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof getUser>>(null);
   const [data, setData] = useState<ProcessMonitorResponse | null>(null);
+  const [sslJobs, setSslJobs] = useState<SslJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { jobs: domainJobs, track, refresh: refreshDomainJobs } = useDomainJobs();
+  const { servers } = useServers();
 
   useEffect(() => {
     const u = getUser();
@@ -70,7 +86,12 @@ export default function ProcessesPage() {
   const load = useCallback(async (showSpinner = false) => {
     if (showSpinner) setRefreshing(true);
     try {
-      setData(await fetchActiveProcessesApi());
+      const [processes, ssl] = await Promise.all([
+        fetchActiveProcessesApi().catch(() => null),
+        fetchActiveSslJobsApi().catch(() => [] as SslJob[]),
+      ]);
+      if (processes) setData(processes);
+      setSslJobs(ssl);
     } catch { /* silent */ }
     setLoading(false);
     setRefreshing(false);
@@ -78,9 +99,17 @@ export default function ProcessesPage() {
 
   useEffect(() => {
     load();
-    const id = setInterval(() => load(), 5000);
+    refreshDomainJobs();
+    const id = setInterval(() => { load(); refreshDomainJobs(); }, 5000);
     return () => clearInterval(id);
-  }, [load]);
+  }, [load, refreshDomainJobs]);
+
+  // Make sure any active domain jobs we discovered are being tracked in the store.
+  useEffect(() => {
+    for (const j of domainJobs) {
+      if (j.status === "RUNNING" && j.serverId) track(j.id, j.serverId);
+    }
+  }, [domainJobs, track]);
 
   const handleKill = useCallback(async (sessionId: string) => {
     if (!window.confirm("Kill this session? The SSH connection will be terminated.")) return;
@@ -114,7 +143,56 @@ export default function ProcessesPage() {
     }
   }, [load]);
 
+  const handleRetryDomain = useCallback(async (jobId: string) => {
+    try {
+      const job = await retryDomainJobApi(jobId);
+      track(job.id, job.serverId);
+      showToast("Domain job retried", "success");
+    } catch {
+      showToast("Failed to retry domain job", "error");
+    }
+  }, [track]);
+
+  const handleCancelDomain = useCallback(async (jobId: string) => {
+    if (!window.confirm("Cancel this domain assignment job?")) return;
+    try {
+      await cancelDomainJobApi(jobId);
+      showToast("Domain job cancelled", "success");
+      refreshDomainJobs();
+    } catch {
+      showToast("Failed to cancel domain job", "error");
+    }
+  }, [refreshDomainJobs]);
+
+  const handleRetrySsl = useCallback(async (jobId: string) => {
+    try {
+      await retrySslJobApi(jobId);
+      showToast("SSL job retried", "success");
+      load();
+    } catch {
+      showToast("Failed to retry SSL job", "error");
+    }
+  }, [load]);
+
+  const handleCancelSsl = useCallback(async (jobId: string) => {
+    if (!window.confirm("Cancel this SSL job?")) return;
+    try {
+      await cancelSslJobApi(jobId);
+      showToast("SSL job cancelled", "success");
+      load();
+    } catch {
+      showToast("Failed to cancel SSL job", "error");
+    }
+  }, [load]);
+
+  const serverById = (id: string | null | undefined) => servers.find((s) => s.id === id);
+
   if (!currentUser || currentUser.role !== "ADMIN") return null;
+
+  const pendingDomainJobs = domainJobs.filter(
+    (j) => j.status === "RUNNING" || j.status === "FAILED",
+  );
+  const activeSsl = sslJobs.filter((j) => j.status !== "COMPLETED");
 
   return (
     <div className="min-h-screen bg-canvas-bg pt-14">
@@ -123,9 +201,9 @@ export default function ProcessesPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-canvas-fg">Background Processes</h1>
-            <p className="mt-0.5 text-xs text-canvas-muted">Active terminal sessions, persistent connections, and deployment jobs</p>
+            <p className="mt-0.5 text-xs text-canvas-muted">Sessions, deployment jobs, domain assignments, and SSL provisioning</p>
           </div>
-          <button type="button" onClick={() => load(true)} disabled={refreshing}
+          <button type="button" onClick={() => { load(true); refreshDomainJobs(); }} disabled={refreshing}
             className="flex items-center gap-1.5 rounded-md border border-canvas-border px-3 py-1.5 text-xs font-medium text-canvas-muted transition-colors hover:text-canvas-fg disabled:opacity-50">
             <FiRefreshCw size={12} className={refreshing ? "animate-spin" : ""} />
             Refresh
@@ -134,12 +212,13 @@ export default function ProcessesPage() {
 
         {/* Summary cards */}
         {data && (
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-6">
             <SummaryCard value={data.totalSessions} label="Sessions" icon={<FiTerminal size={14} />} />
             <SummaryCard value={data.activeSessions.filter((s) => s.type === "TERMINAL").length} label="Terminal" color="text-blue-500" />
             <SummaryCard value={data.activeSessions.filter((s) => s.type === "PERSISTENT").length} label="Persistent" color="text-purple-500" />
-            <SummaryCard value={data.activeSessions.filter((s) => s.type === "DEPLOYMENT").length} label="Deployment" color="text-orange-500" />
             <SummaryCard value={data.totalRunningJobs} label="Running Jobs" color="text-yellow-500" icon={<FiPlay size={14} />} />
+            <SummaryCard value={pendingDomainJobs.length} label="Domain Jobs" color="text-yellow-500" icon={<FiGlobe size={14} />} />
+            <SummaryCard value={activeSsl.length} label="SSL Jobs" color="text-green-500" icon={<FiShield size={14} />} />
           </div>
         )}
 
@@ -199,10 +278,129 @@ export default function ProcessesPage() {
           </div>
         </div>
 
-        {/* Running Jobs Table */}
+        {/* Domain Assignment Jobs */}
+        <div className="mt-6">
+          <h2 className="mb-3 text-sm font-medium text-canvas-fg flex items-center gap-2">
+            <FiGlobe size={13} className="text-canvas-muted" />
+            Domain Assignments
+          </h2>
+          <div className="overflow-hidden rounded-lg border border-canvas-border">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-canvas-border bg-canvas-surface-hover/30">
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Hostname</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Server</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Status</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Step</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Retry</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Started</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-canvas-border">
+                  {pendingDomainJobs.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-canvas-muted">No pending domain jobs</td></tr>
+                  ) : (
+                    pendingDomainJobs.map((j) => {
+                      const srv = serverById(j.serverId);
+                      return (
+                        <tr key={j.id} className="transition-colors hover:bg-canvas-surface-hover/30">
+                          <td className="px-4 py-2.5 font-mono text-canvas-fg">{j.hostname}</td>
+                          <td className="px-4 py-2.5">
+                            {srv ? (
+                              <Link href={`/?servers=${srv.id}`} className="text-canvas-fg underline-offset-2 hover:underline">{srv.name}</Link>
+                            ) : (
+                              <span className="text-canvas-muted">{j.serverId ? j.serverId.slice(0, 8) : "—"}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${JOB_STATUS_BADGE[j.status] ?? ""}`}>
+                              {j.status === "RUNNING" && <span className="mr-1 inline-block h-1 w-1 animate-pulse rounded-full bg-current" />}
+                              {j.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-canvas-muted">{DOMAIN_STEP_LABELS[j.currentStep] ?? j.currentStep}</td>
+                          <td className="px-4 py-2.5 text-canvas-muted">{j.retryCount}/{j.maxRetries}</td>
+                          <td className="px-4 py-2.5 text-canvas-muted">{formatAgo(j.startedAt)}</td>
+                          <td className="px-4 py-2.5 space-x-1">
+                            {j.status === "RUNNING" && (
+                              <button type="button" onClick={() => handleCancelDomain(j.id)}
+                                className="rounded-md px-2 py-1 text-[10px] font-medium text-red-500 hover:bg-red-500/10">Cancel</button>
+                            )}
+                            {j.status === "FAILED" && j.currentStep === "FAILED_RETRYABLE" && (
+                              <button type="button" onClick={() => handleRetryDomain(j.id)}
+                                className="rounded-md px-2 py-1 text-[10px] font-medium text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg">Retry</button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* SSL Provisioning Jobs */}
+        <div className="mt-6">
+          <h2 className="mb-3 text-sm font-medium text-canvas-fg flex items-center gap-2">
+            <FiShield size={13} className="text-canvas-muted" />
+            SSL Provisioning
+          </h2>
+          <div className="overflow-hidden rounded-lg border border-canvas-border">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-canvas-border bg-canvas-surface-hover/30">
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Hostname</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Step</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Status</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Retry</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Started</th>
+                    <th className="px-4 py-2.5 font-medium text-canvas-muted">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-canvas-border">
+                  {activeSsl.length === 0 ? (
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-canvas-muted">No active SSL jobs</td></tr>
+                  ) : (
+                    activeSsl.map((j) => (
+                      <tr key={j.id} className="transition-colors hover:bg-canvas-surface-hover/30">
+                        <td className="px-4 py-2.5 font-mono text-canvas-fg">{j.hostname}</td>
+                        <td className="px-4 py-2.5 text-canvas-muted">{SSL_STEP_LABELS[j.currentStep] ?? j.currentStep}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${JOB_STATUS_BADGE[j.status] ?? ""}`}>
+                            {j.status === "RUNNING" && <span className="mr-1 inline-block h-1 w-1 animate-pulse rounded-full bg-current" />}
+                            {j.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-canvas-muted">{j.retryCount}</td>
+                        <td className="px-4 py-2.5 text-canvas-muted">{formatAgo(j.startedAt)}</td>
+                        <td className="px-4 py-2.5 space-x-1">
+                          {j.status === "RUNNING" && (
+                            <button type="button" onClick={() => handleCancelSsl(j.id)}
+                              className="rounded-md px-2 py-1 text-[10px] font-medium text-red-500 hover:bg-red-500/10">Cancel</button>
+                          )}
+                          {j.status === "FAILED" && j.currentStep === "FAILED_RETRYABLE" && (
+                            <button type="button" onClick={() => handleRetrySsl(j.id)}
+                              className="rounded-md px-2 py-1 text-[10px] font-medium text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg">Retry</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Running Jobs Table (deployment) */}
         {data && data.runningJobs.length > 0 && (
           <div className="mt-6">
-            <h2 className="mb-3 text-sm font-medium text-canvas-fg">Running / Pending Jobs</h2>
+            <h2 className="mb-3 text-sm font-medium text-canvas-fg">Running / Pending Deployment Jobs</h2>
             <div className="overflow-hidden rounded-lg border border-canvas-border">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">

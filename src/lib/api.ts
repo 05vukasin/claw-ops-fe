@@ -105,6 +105,9 @@ export interface Server {
   environment: string;
   status: ServerStatus;
   assignedDomain: string | null;
+  /** Present immediately after server creation while the domain assignment job is still running. */
+  pendingDomainAssignmentId?: string | null;
+  pendingDomainJobId?: string | null;
   createdAt: string;
 }
 
@@ -371,6 +374,14 @@ export async function fetchSslJobApi(jobId: string): Promise<SslJob> {
   return res.json() as Promise<SslJob>;
 }
 
+/** List SSL provisioning jobs currently in RUNNING status (admin processes page). */
+export async function fetchActiveSslJobsApi(): Promise<SslJob[]> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/jobs?status=RUNNING&page=0&size=50`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as PageResponse<SslJob>;
+  return data.content ?? [];
+}
+
 export async function retrySslJobApi(jobId: string): Promise<SslJob> {
   const res = await apiFetch(`/api/v1/ssl-certificates/jobs/${encodeURIComponent(jobId)}/retry`, { method: "POST" });
   if (!res.ok) {
@@ -409,6 +420,84 @@ export async function cancelSslJobApi(jobId: string): Promise<void> {
     const err = await res.json().catch(() => ({ message: "Failed to cancel job" }));
     throw new ApiError(res.status, err.message || "Failed to cancel job");
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Domain Assignment Jobs (async DNS record creation + verification)  */
+/* ------------------------------------------------------------------ */
+
+export type DomainJobStatus = "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type DomainJobStep =
+  | "PENDING_DNS" | "CREATING_RECORD" | "DNS_CREATED"
+  | "VERIFYING" | "VERIFIED" | "COMPLETED"
+  | "FAILED_RETRYABLE" | "FAILED_PERMANENT";
+
+export interface DomainJob {
+  id: string;
+  domainAssignmentId: string;
+  serverId: string | null;
+  hostname: string;
+  currentStep: DomainJobStep;
+  status: DomainJobStatus;
+  retryCount: number;
+  maxRetries: number;
+  logs: string | null;
+  errorMessage: string | null;
+  triggeredBy: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export async function fetchDomainJobApi(jobId: string): Promise<DomainJob> {
+  const res = await apiFetch(`/api/v1/domain-assignments/jobs/${encodeURIComponent(jobId)}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load domain job.");
+  return res.json() as Promise<DomainJob>;
+}
+
+export async function fetchActiveDomainJobsApi(): Promise<DomainJob[]> {
+  const res = await apiFetch(`/api/v1/domain-assignments/jobs/active`);
+  if (!res.ok) return [];
+  return res.json() as Promise<DomainJob[]>;
+}
+
+export async function retryDomainJobApi(jobId: string): Promise<DomainJob> {
+  const res = await apiFetch(`/api/v1/domain-assignments/jobs/${encodeURIComponent(jobId)}/retry`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Retry failed" }));
+    throw new ApiError(res.status, err.message || "Retry failed");
+  }
+  return res.json() as Promise<DomainJob>;
+}
+
+export async function cancelDomainJobApi(jobId: string): Promise<void> {
+  const res = await apiFetch(`/api/v1/domain-assignments/jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+  });
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => ({ message: "Failed to cancel domain job" }));
+    throw new ApiError(res.status, err.message || "Failed to cancel domain job");
+  }
+}
+
+/** Assign a zone's subdomain to an existing server (async). Returns the new assignment with latestJobId populated. */
+export async function assignDomainToServerApi(
+  serverId: string,
+  zoneId: string,
+  hostnameOverride?: string,
+): Promise<DomainAssignment> {
+  const res = await apiFetch(`/api/v1/domain-assignments/server`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ serverId, zoneId, hostnameOverride: hostnameOverride ?? null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to assign domain" }));
+    throw new ApiError(res.status, err.message || "Failed to assign domain");
+  }
+  return res.json() as Promise<DomainAssignment>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -870,7 +959,11 @@ export interface DomainAssignment {
   targetValue: string;
   zoneName: string | null;
   zoneId: string;
+  /** Server (or other resource) this DNS record is attached to. */
+  resourceId: string | null;
   status: AssignmentStatus;
+  /** Latest async job for this assignment — poll to see step-by-step progress. */
+  latestJobId?: string | null;
   createdAt: string;
 }
 

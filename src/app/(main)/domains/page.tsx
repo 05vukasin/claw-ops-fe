@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FiChevronRight, FiChevronDown, FiEye, FiEyeOff, FiRefreshCw, FiCheckCircle, FiTrash2, FiStar, FiGlobe } from "react-icons/fi";
+import { FiChevronRight, FiChevronDown, FiEye, FiEyeOff, FiRefreshCw, FiCheckCircle, FiTrash2, FiStar, FiGlobe, FiSearch, FiShield } from "react-icons/fi";
 import { Modal } from "@/components/ui/modal";
 import { getUser } from "@/lib/auth";
 import { useIsMobile } from "@/lib/use-is-mobile";
@@ -20,6 +21,7 @@ import {
   verifyAssignmentApi,
   releaseAssignmentApi,
   createSecretApi,
+  assignDomainToServerApi,
   ApiError,
   type ProviderAccount,
   type ProviderType,
@@ -27,6 +29,8 @@ import {
   type DomainAssignment,
   type PageResponse,
 } from "@/lib/api";
+import { useServers } from "@/lib/use-servers";
+import { useDomainJobs } from "@/lib/use-domain-jobs";
 
 const PAGE_SIZE = 15;
 
@@ -76,8 +80,14 @@ export default function DomainsPage() {
   const [assignData, setAssignData] = useState<PageResponse<DomainAssignment> | null>(null);
   const [assignPage, setAssignPage] = useState(0);
   const [filterZone, setFilterZone] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
   const [busyAssign, setBusyAssign] = useState<string | null>(null);
   const [customModalOpen, setCustomModalOpen] = useState(false);
+  const [assignServerModalOpen, setAssignServerModalOpen] = useState(false);
+
+  // Servers + live job updates (re-fetch assignments when a job completes).
+  const { servers } = useServers();
+  const { jobs: domainJobs } = useDomainJobs();
 
   // ── Load accounts + zones ──
   const loadAccounts = useCallback(async (p = 0) => {
@@ -102,6 +112,17 @@ export default function DomainsPage() {
 
   useEffect(() => { loadAccounts(); }, [loadAccounts]);
   useEffect(() => { loadAssignments(0, filterZone); }, [loadAssignments, filterZone]);
+
+  // When a tracked domain job transitions to a terminal state, refetch assignments so
+  // the status badge updates without the user having to pan/refresh.
+  const terminalJobKey = domainJobs
+    .filter((j) => j.status === "COMPLETED" || j.status === "FAILED" || j.status === "CANCELLED")
+    .map((j) => j.id)
+    .join(",");
+  useEffect(() => {
+    if (terminalJobKey) loadAssignments(assignPage, filterZone);
+
+  }, [terminalJobKey]);
 
   // ── Zone helpers ──
   const zonesByAccount = useCallback((accountId: string) => zones.filter((z) => z.providerAccountId === accountId), [zones]);
@@ -173,7 +194,26 @@ export default function DomainsPage() {
   }, [showAlert, loadAssignments, assignPage, filterZone]);
 
   const accounts = accData?.content ?? [];
-  const assignments = assignData?.content ?? [];
+  const allAssignments = assignData?.content ?? [];
+  const serverById = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    for (const s of servers) map.set(s.id, { id: s.id, name: s.name });
+    return map;
+  }, [servers]);
+  const serversWithoutDomain = useMemo(
+    () => servers.filter((s) => !s.assignedDomain).map((s) => ({ id: s.id, name: s.name })),
+    [servers],
+  );
+  const assignments = useMemo(() => {
+    if (!filterSearch.trim()) return allAssignments;
+    const q = filterSearch.trim().toLowerCase();
+    return allAssignments.filter((a) =>
+      a.hostname.toLowerCase().includes(q) ||
+      a.status.toLowerCase().includes(q) ||
+      (a.zoneName ?? "").toLowerCase().includes(q) ||
+      a.targetValue.toLowerCase().includes(q),
+    );
+  }, [allAssignments, filterSearch]);
 
   const modals = (
     <>
@@ -189,6 +229,18 @@ export default function DomainsPage() {
         zones={activeZones}
         onClose={() => setCustomModalOpen(false)}
         onSaved={() => { setCustomModalOpen(false); showAlert("Custom record created", "success"); loadAssignments(assignPage, filterZone); }}
+      />
+      <AssignServerModal
+        key={assignServerModalOpen ? "assign" : "closed"}
+        open={assignServerModalOpen}
+        zones={activeZones}
+        servers={serversWithoutDomain}
+        onClose={() => setAssignServerModalOpen(false)}
+        onSaved={() => {
+          setAssignServerModalOpen(false);
+          showAlert("Domain assignment queued", "success");
+          loadAssignments(assignPage, filterZone);
+        }}
       />
     </>
   );
@@ -288,9 +340,19 @@ export default function DomainsPage() {
 
       {/* ════════ SECTION 2: SUBDOMAINS ════════ */}
       <div>
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight text-canvas-fg">Subdomains</h2>
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <FiSearch size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-canvas-muted" />
+              <input
+                type="text"
+                placeholder="Search hostname / status..."
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                className="rounded-md border border-canvas-border bg-transparent py-1.5 pl-7 pr-2.5 text-xs text-canvas-fg placeholder:text-canvas-muted/60 focus:outline-none"
+              />
+            </div>
             <select
               value={filterZone}
               onChange={(e) => { setFilterZone(e.target.value); }}
@@ -299,6 +361,15 @@ export default function DomainsPage() {
               <option value="">All domains</option>
               {activeZones.map((z) => <option key={z.id} value={z.id}>{z.zoneName}</option>)}
             </select>
+            <button
+              type="button"
+              onClick={() => setAssignServerModalOpen(true)}
+              disabled={serversWithoutDomain.length === 0 || activeZones.length === 0}
+              className="rounded-md border border-canvas-border bg-transparent px-3 py-1.5 text-xs font-medium text-canvas-fg transition-colors hover:bg-canvas-surface-hover disabled:opacity-40"
+              title={serversWithoutDomain.length === 0 ? "All servers already have a domain assigned" : ""}
+            >
+              Assign to Server
+            </button>
             <button type="button" onClick={() => setCustomModalOpen(true)} className="rounded-md border border-canvas-border bg-canvas-fg px-4 py-1.5 text-xs font-medium text-canvas-bg transition-opacity hover:opacity-90">
               + Custom Record
             </button>
@@ -307,38 +378,58 @@ export default function DomainsPage() {
 
         <div className="rounded-lg border border-canvas-border bg-canvas-bg">
           {assignments.length === 0 ? (
-            <div className="py-12 text-center text-sm text-canvas-muted">No subdomains found. Subdomains are created automatically when you add servers.</div>
+            <div className="py-12 text-center text-sm text-canvas-muted">
+              {allAssignments.length === 0
+                ? "No subdomains found. Subdomains are created automatically when you add servers."
+                : "No subdomains match your search."}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-canvas-border">
-                    <Th>Hostname</Th><Th>Type</Th><Th>Target</Th><Th>Domain</Th><Th>Status</Th><Th>Created</Th><Th>Actions</Th>
+                    <Th>Hostname</Th><Th>Type</Th><Th>Target</Th><Th>Domain</Th><Th>Server</Th><Th>Status</Th><Th>Created</Th><Th>Actions</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {assignments.map((a) => (
-                    <tr key={a.id} className="border-b border-canvas-border last:border-b-0 transition-colors hover:bg-canvas-surface-hover/50">
-                      <td className="px-4 py-3 font-mono text-xs font-medium text-canvas-fg whitespace-nowrap">{a.hostname}</td>
-                      <td className="px-4 py-3"><Badge className="bg-canvas-surface-hover text-canvas-muted">{a.recordType}</Badge></td>
-                      <td className="px-4 py-3 font-mono text-xs text-canvas-muted">{a.targetValue}</td>
-                      <td className="px-4 py-3 text-xs text-canvas-muted">{a.zoneName || "—"}</td>
-                      <td className="px-4 py-3"><Badge className={ASSIGN_STYLE[a.status] ?? ASSIGN_STYLE.REQUESTED}>{a.status}</Badge></td>
-                      <td className="px-4 py-3 text-xs text-canvas-muted whitespace-nowrap">{fmt(a.createdAt)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1">
-                          {a.status !== "RELEASED" && a.status !== "VERIFIED" && (
-                            <GhostBtn onClick={() => handleVerify(a.id)} disabled={busyAssign === `ver-${a.id}`}>
-                              {busyAssign === `ver-${a.id}` ? "..." : "Verify"}
-                            </GhostBtn>
+                  {assignments.map((a) => {
+                    const srv = a.resourceId ? serverById.get(a.resourceId) : undefined;
+                    return (
+                      <tr key={a.id} className="border-b border-canvas-border last:border-b-0 transition-colors hover:bg-canvas-surface-hover/50">
+                        <td className="px-4 py-3 font-mono text-xs font-medium text-canvas-fg whitespace-nowrap">{a.hostname}</td>
+                        <td className="px-4 py-3"><Badge className="bg-canvas-surface-hover text-canvas-muted">{a.recordType}</Badge></td>
+                        <td className="px-4 py-3 font-mono text-xs text-canvas-muted">{a.targetValue}</td>
+                        <td className="px-4 py-3 text-xs text-canvas-muted">{a.zoneName || "—"}</td>
+                        <td className="px-4 py-3 text-xs">
+                          {srv ? (
+                            <Link
+                              href={`/?servers=${srv.id}`}
+                              className="inline-flex items-center gap-1 text-canvas-fg underline-offset-2 hover:underline"
+                            >
+                              <FiShield size={10} className="text-canvas-muted" />
+                              {srv.name}
+                            </Link>
+                          ) : (
+                            <span className="text-canvas-muted">—</span>
                           )}
-                          {a.status !== "RELEASED" && (
-                            <GhostBtn onClick={() => handleRelease(a)} danger>Release</GhostBtn>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-4 py-3"><Badge className={ASSIGN_STYLE[a.status] ?? ASSIGN_STYLE.REQUESTED}>{a.status}</Badge></td>
+                        <td className="px-4 py-3 text-xs text-canvas-muted whitespace-nowrap">{fmt(a.createdAt)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            {a.status !== "RELEASED" && a.status !== "VERIFIED" && (
+                              <GhostBtn onClick={() => handleVerify(a.id)} disabled={busyAssign === `ver-${a.id}`}>
+                                {busyAssign === `ver-${a.id}` ? "..." : "Verify"}
+                              </GhostBtn>
+                            )}
+                            {a.status !== "RELEASED" && (
+                              <GhostBtn onClick={() => handleRelease(a)} danger>Release</GhostBtn>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -592,6 +683,85 @@ function CustomRecordModal({ open, zones, onClose, onSaved }: { open: boolean; z
           <button type="button" onClick={onClose} className="rounded-md px-4 py-2 text-sm text-canvas-muted transition-colors hover:text-canvas-fg">Cancel</button>
           <button type="submit" disabled={submitting} className="rounded-md border border-canvas-border bg-canvas-fg px-5 py-2 text-sm font-medium text-canvas-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
             {submitting ? "Creating..." : "Create"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  Assign-to-Server Modal                                             */
+/* ================================================================== */
+
+function AssignServerModal({
+  open,
+  zones,
+  servers,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  zones: ZoneFull[];
+  servers: { id: string; name: string }[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [zoneId, setZoneId] = useState("");
+  const [serverId, setServerId] = useState("");
+  const [hostnameOverride, setHostnameOverride] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError("");
+    if (!serverId) { setError("Pick a server."); return; }
+    if (!zoneId) { setError("Pick a zone."); return; }
+
+    setSubmitting(true);
+    try {
+      await assignDomainToServerApi(serverId, zoneId, hostnameOverride.trim() || undefined);
+      onSaved();
+    } catch (err) { setError(err instanceof ApiError ? err.message : "Assign failed"); }
+    finally { setSubmitting(false); }
+  }, [serverId, zoneId, hostnameOverride, onSaved]);
+
+  const inputBase = "w-full rounded-md border border-canvas-border bg-transparent px-3 py-2 text-sm text-canvas-fg placeholder:text-canvas-muted/60 transition-colors focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10";
+
+  return (
+    <Modal open={open} onClose={onClose}>
+      <form onSubmit={handleSubmit} noValidate>
+        <div className="px-6 pb-1 pt-6">
+          <h3 className="text-[15px] font-semibold tracking-tight text-canvas-fg">Assign Domain to Server</h3>
+          <p className="mt-1 text-[11px] text-canvas-muted">DNS record creation runs as a background job — this call returns immediately.</p>
+        </div>
+        <div className="space-y-3 px-6 pb-2 pt-4">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">Server <span className="text-red-500/70">*</span></label>
+            <select value={serverId} onChange={(e) => setServerId(e.target.value)} className={inputBase}>
+              <option value="">Select a server without a domain...</option>
+              {servers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">Zone <span className="text-red-500/70">*</span></label>
+            <select value={zoneId} onChange={(e) => setZoneId(e.target.value)} className={inputBase}>
+              <option value="">Select a zone...</option>
+              {zones.map((z) => <option key={z.id} value={z.id}>{z.zoneName}{z.defaultForAutoAssign ? " (default)" : ""}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-[11px] font-medium text-canvas-muted">Hostname override <span className="ml-1 font-normal text-canvas-muted/50">optional</span></label>
+            <input type="text" placeholder="e.g. app.example.com" value={hostnameOverride} onChange={(e) => setHostnameOverride(e.target.value)} className={`${inputBase} font-mono text-xs`} />
+            <p className="mt-1 text-[10px] text-canvas-muted">Leave blank to use the default &quot;&lt;server-slug&gt;.&lt;zone&gt;&quot; naming.</p>
+          </div>
+          {error && <p className="text-[11px] text-red-500 dark:text-red-400">{error}</p>}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-canvas-border px-6 py-4">
+          <button type="button" onClick={onClose} className="rounded-md px-4 py-2 text-sm text-canvas-muted transition-colors hover:text-canvas-fg">Cancel</button>
+          <button type="submit" disabled={submitting} className="rounded-md border border-canvas-border bg-canvas-fg px-5 py-2 text-sm font-medium text-canvas-bg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
+            {submitting ? "Assigning..." : "Assign Domain"}
           </button>
         </div>
       </form>

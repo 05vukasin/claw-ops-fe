@@ -102,6 +102,26 @@ function removeServer(id: string) {
   emit();
 }
 
+function patchServer(id: string, patch: Partial<Server>) {
+  let changed = false;
+  servers = servers.map((s) => {
+    if (s.id !== id) return s;
+    changed = true;
+    return { ...s, ...patch };
+  });
+  if (changed) emit();
+}
+
+/** Update a single server's fields locally (without refetching). Used by async job handlers. */
+export function patchServerLocal(id: string, patch: Partial<Server>) {
+  patchServer(id, patch);
+}
+
+/** Trigger a fresh fetch from the server. Callable outside of React (e.g. from stores). */
+export function refreshServers() {
+  fetchAndMerge();
+}
+
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */

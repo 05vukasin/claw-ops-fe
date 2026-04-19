@@ -3,6 +3,7 @@
 import { memo, useCallback, useRef, useState } from "react";
 import type { ServerWithUI } from "@/lib/use-servers";
 import type { MonitoringState } from "@/lib/api";
+import { useDomainJobs } from "@/lib/use-domain-jobs";
 
 const NODE_SIZE = 60;
 const DRAG_THRESHOLD = 4;
@@ -98,6 +99,12 @@ export const ServerNode = memo(function ServerNode({
 
   const dotColor = STATUS_DOT[server.status] ?? STATUS_DOT.UNKNOWN;
 
+  // Show a pulsing globe badge while a domain-assignment job is running for this server.
+  const { jobs: domainJobs } = useDomainJobs();
+  const hasPendingDomain = domainJobs.some(
+    (j) => j.serverId === server.id && j.status === "RUNNING",
+  );
+
   return (
     <div
       ref={nodeRef}
@@ -153,6 +160,20 @@ export const ServerNode = memo(function ServerNode({
         <span
           className={`absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-canvas-bg ${dotColor}`}
         />
+
+        {/* Pending-domain badge: bottom-left globe with pulsing yellow dot */}
+        {hasPendingDomain && (
+          <span
+            title="Assigning subdomain..."
+            className="absolute -bottom-0.5 -left-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-canvas-bg bg-yellow-400/90 text-[8px] text-canvas-bg"
+          >
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </span>
+        )}
       </div>
 
       <p className="mt-1.5 w-full text-center text-[10px] font-medium leading-tight text-canvas-muted">

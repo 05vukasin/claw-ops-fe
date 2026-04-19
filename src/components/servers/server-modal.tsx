@@ -13,6 +13,7 @@ import {
   type ServerAuthType,
   type Zone,
 } from "@/lib/api";
+import { trackDomainJob } from "@/lib/use-domain-jobs";
 
 interface ServerModalProps {
   open: boolean;
@@ -150,8 +151,14 @@ export function ServerModal({ open, server, onClose, onSaved }: ServerModalProps
           onSaved("Server updated");
         } else {
           const created = await createServerApi(body);
+          // Start tracking the async domain-assignment job, if backend queued one.
+          if (created.pendingDomainJobId) {
+            trackDomainJob(created.pendingDomainJobId, created.id);
+          }
           if (created.assignedDomain) {
             onSaved(`Server created with subdomain: ${created.assignedDomain}`);
+          } else if (created.pendingDomainJobId) {
+            onSaved("Server created. Subdomain assignment running in the background.");
           } else {
             onSaved("Server created");
           }
