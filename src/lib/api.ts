@@ -133,6 +133,10 @@ export interface SslCertificate {
   lastRenewedAt: string | null;
   lastError: string | null;
   provisioningJobId: string | null;
+  /** true = ClawOps installed + configured host nginx; false = port 80 was in use, cert is
+   *  on disk only and the user's reverse proxy should serve it. Defaults to true for
+   *  backward compat when missing. */
+  hostNginxManaged?: boolean;
   createdAt: string | null;
   updatedAt: string | null;
 }

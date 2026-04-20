@@ -682,6 +682,12 @@ export function DomainSection({ server, focusSslTick }: DomainSectionProps) {
                           </div>
                         )}
 
+                        {/* Cert-files card — shown when host nginx isn't managed by ClawOps
+                            (port 80 was already in use at provisioning time). */}
+                        {ssl.hostNginxManaged === false && ssl.hostname && (
+                          <CertPathsCard hostname={ssl.hostname} />
+                        )}
+
                         {/* Probe result card */}
                         {probeResult && (
                           <ProbeResultCard result={probeResult} onDismiss={() => setProbeResult(null)} />
@@ -729,21 +735,28 @@ export function DomainSection({ server, focusSslTick }: DomainSectionProps) {
                         />
                       </div>
                     ) : (
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5">
-                          <label className="text-[10px] font-medium text-canvas-muted">Port</label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={65535}
-                            value={sslTargetPort}
-                            onChange={(e) => setSslTargetPort(e.target.value)}
-                            className="w-16 rounded-md border border-canvas-border bg-transparent px-2 py-1 text-xs text-canvas-fg focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10"
-                          />
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-[10px] font-medium text-canvas-muted">Port</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={65535}
+                              value={sslTargetPort}
+                              onChange={(e) => setSslTargetPort(e.target.value)}
+                              className="w-16 rounded-md border border-canvas-border bg-transparent px-2 py-1 text-xs text-canvas-fg focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10"
+                            />
+                          </div>
+                          <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiShield size={11} />}>
+                            {sslLoading ? "Provisioning..." : "Provision SSL"}
+                          </ActionBtn>
                         </div>
-                        <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiShield size={11} />}>
-                          {sslLoading ? "Provisioning..." : "Provision SSL"}
-                        </ActionBtn>
+                        <p className="text-[10px] text-canvas-muted/70">
+                          If port 80/443 is already used by Docker / Traefik / Caddy, ClawOps will still
+                          issue the cert (via DNS-01) and leave it on disk — nginx config is only applied
+                          when we manage it.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -800,6 +813,57 @@ function ActionBtn({
       {icon}
       {children}
     </button>
+  );
+}
+
+function CertPathsCard({ hostname }: { hostname: string }) {
+  const fullchain = `/etc/letsencrypt/live/${hostname}/fullchain.pem`;
+  const privkey = `/etc/letsencrypt/live/${hostname}/privkey.pem`;
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = useCallback(async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      setTimeout(() => setCopied((prev) => (prev === label ? null : prev)), 1500);
+    } catch { /* ignore */ }
+  }, []);
+  return (
+    <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3 text-[11px] space-y-2">
+      <p className="font-medium text-canvas-fg">Host nginx is not managed by ClawOps</p>
+      <p className="text-canvas-muted">
+        Port 80 was already in use (likely a Docker / Traefik / Caddy reverse proxy). The
+        certificate was issued via DNS-01 and left on disk. Mount these files into your
+        reverse proxy:
+      </p>
+      <div className="space-y-1">
+        <PathRow label="fullchain" value={fullchain} copied={copied === "fullchain"} onCopy={() => copy("fullchain", fullchain)} />
+        <PathRow label="privkey" value={privkey} copied={copied === "privkey"} onCopy={() => copy("privkey", privkey)} />
+      </div>
+      <p className="text-[10px] text-canvas-muted/80">
+        Auto-renewal runs daily via DNS-01 — your proxy just needs to re-read these files
+        (most do so automatically, or reload weekly).
+      </p>
+    </div>
+  );
+}
+
+function PathRow({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-[72px] shrink-0 text-[10px] font-medium uppercase tracking-wider text-canvas-muted">
+        {label}
+      </span>
+      <code className="flex-1 overflow-x-auto rounded bg-canvas-surface-hover/60 px-2 py-1 font-mono text-[11px] text-canvas-fg">
+        {value}
+      </code>
+      <button
+        type="button"
+        onClick={onCopy}
+        className="rounded-md border border-canvas-border px-2 py-1 text-[10px] font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
   );
 }
 
