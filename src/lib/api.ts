@@ -1500,6 +1500,53 @@ export async function checkDeployScriptApi(serverId: string): Promise<boolean> {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Server apps (claw-chat install/status)                             */
+/* ------------------------------------------------------------------ */
+
+export interface ChatAppStatus {
+  installed: boolean;
+  running: boolean;
+  healthState: string;
+  rawOutput: string;
+}
+
+export interface ChatInstallRequest {
+  allowedEmail: string;
+  apiOrigin?: string | null;
+}
+
+export interface ChatInstallResult {
+  exitCode: number;
+  output: string;
+  durationMs: number;
+}
+
+export async function fetchChatAppStatusApi(serverId: string): Promise<ChatAppStatus> {
+  const res = await apiFetch(`/api/v1/servers/${encodeURIComponent(serverId)}/apps/chat/status`);
+  if (!res.ok) {
+    // Server offline / unreachable — treat as not-installed so the UI still offers the install button.
+    return { installed: false, running: false, healthState: "none", rawOutput: "" };
+  }
+  return res.json() as Promise<ChatAppStatus>;
+}
+
+export async function installChatAppApi(
+  serverId: string,
+  req: ChatInstallRequest,
+): Promise<ChatInstallResult> {
+  const res = await apiFetch(`/api/v1/servers/${encodeURIComponent(serverId)}/apps/chat/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Install failed" }));
+    throw new ApiError(res.status, err.message || "Install failed");
+  }
+  return res.json() as Promise<ChatInstallResult>;
+}
+
 /** Escape a file path for safe use in single-quoted shell strings */
 function escapeShellPath(path: string): string {
   return path.replace(/'/g, "'\\''");

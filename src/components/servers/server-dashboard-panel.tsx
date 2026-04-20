@@ -10,6 +10,7 @@ import {
   FiEdit2,
   FiWifi,
   FiPlay,
+  FiDownload,
 } from "react-icons/fi";
 import { TerminalSection, type TerminalSectionHandle } from "./terminal-section";
 import { HealthSection } from "./health-section";
@@ -19,6 +20,7 @@ import { FileBrowser, type FileBrowserHandle } from "./file-browser";
 import { DeployPopup } from "./deploy-popup";
 import { DomainSection } from "./domain-section";
 import { SslHeaderBadge } from "./ssl-header-badge";
+import { InstallChatPopup } from "./install-chat-popup";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
@@ -26,6 +28,7 @@ import {
   checkClaudeCodeInstalledApi,
   checkDeployScriptApi,
   fetchSslForServer,
+  fetchChatAppStatusApi,
   ApiError,
   type Server,
   type SslCertificate,
@@ -136,6 +139,21 @@ export function ServerDashboardPanel({
     checkDeployScriptApi(server.id)
       .then((ok) => { if (!stale) setDeployAvailable(ok); })
       .catch(() => { if (!stale) setDeployAvailable(false); });
+    return () => { stale = true; };
+  }, [server.id, server.status]);
+
+  /* ---- Chat app detection ---- */
+  const [chatStatus, setChatStatus] = useState<"unknown" | "installed" | "not-installed">("unknown");
+  const [showInstallChat, setShowInstallChat] = useState(false);
+  useEffect(() => {
+    if (server.status !== "ONLINE") return;
+    let stale = false;
+    fetchChatAppStatusApi(server.id)
+      .then((s) => {
+        if (stale) return;
+        setChatStatus(s.installed && s.running ? "installed" : "not-installed");
+      })
+      .catch(() => { if (!stale) setChatStatus("unknown"); });
     return () => { stale = true; };
   }, [server.id, server.status]);
 
@@ -455,12 +473,20 @@ export function ServerDashboardPanel({
                     Deploy
                   </ActionBtn>
                 )}
-                {server.assignedDomain && (
+                {server.assignedDomain && chatStatus === "installed" && (
                   <ActionBtn
                     onClick={() => window.open(`https://${server.assignedDomain}/chat`, "_blank")}
                     icon={<svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>}
                   >
                     Chat
+                  </ActionBtn>
+                )}
+                {server.assignedDomain && chatStatus === "not-installed" && (
+                  <ActionBtn
+                    onClick={() => setShowInstallChat(true)}
+                    icon={<FiDownload size={13} />}
+                  >
+                    Install Chat App
                   </ActionBtn>
                 )}
               </div>
@@ -595,6 +621,15 @@ export function ServerDashboardPanel({
 
       {showDeploy && (
         <DeployPopup serverId={server.id} onClose={() => setShowDeploy(false)} />
+      )}
+
+      {showInstallChat && server.assignedDomain && (
+        <InstallChatPopup
+          serverId={server.id}
+          hostname={server.assignedDomain}
+          onClose={() => setShowInstallChat(false)}
+          onInstalled={() => setChatStatus("installed")}
+        />
       )}
     </div>
   );
