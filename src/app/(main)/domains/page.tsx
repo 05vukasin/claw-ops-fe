@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FiChevronRight, FiChevronDown, FiEye, FiEyeOff, FiRefreshCw, FiCheckCircle, FiTrash2, FiStar, FiGlobe, FiSearch, FiShield } from "react-icons/fi";
@@ -22,15 +22,20 @@ import {
   releaseAssignmentApi,
   createSecretApi,
   assignDomainToServerApi,
+  fetchSslByAssignmentApi,
+  provisionSslApi,
   ApiError,
   type ProviderAccount,
   type ProviderType,
   type ZoneFull,
   type DomainAssignment,
   type PageResponse,
+  type SslCertificate,
 } from "@/lib/api";
 import { useServers } from "@/lib/use-servers";
 import { useDomainJobs } from "@/lib/use-domain-jobs";
+import { useSslJobs, trackSslJob } from "@/lib/use-ssl-jobs";
+import { SslDashboard } from "@/components/domains/ssl-dashboard";
 
 const PAGE_SIZE = 15;
 
@@ -81,13 +86,16 @@ export default function DomainsPage() {
   const [assignPage, setAssignPage] = useState(0);
   const [filterZone, setFilterZone] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
+  const [filterSsl, setFilterSsl] = useState<"ALL" | "ACTIVE" | "EXPIRING" | "EXPIRED" | "FAILED" | "PROVISIONING" | "NONE">("ALL");
   const [busyAssign, setBusyAssign] = useState<string | null>(null);
   const [customModalOpen, setCustomModalOpen] = useState(false);
   const [assignServerModalOpen, setAssignServerModalOpen] = useState(false);
+  const [sslByAssignment, setSslByAssignment] = useState<Record<string, SslCertificate | null>>({});
 
   // Servers + live job updates (re-fetch assignments when a job completes).
   const { servers } = useServers();
   const { jobs: domainJobs } = useDomainJobs();
+  const { jobs: sslJobs, track: trackSsl } = useSslJobs();
 
   // ── Load accounts + zones ──
   const loadAccounts = useCallback(async (p = 0) => {
@@ -204,16 +212,106 @@ export default function DomainsPage() {
     () => servers.filter((s) => !s.assignedDomain).map((s) => ({ id: s.id, name: s.name })),
     [servers],
   );
+  // Lazy-fetch SSL cert per visible assignment with resourceId. Deduplicate in-flight requests
+  // via a ref-tracked set so we don't spam the backend on re-renders.
+  const sslInflight = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const a of allAssignments) {
+      if (!a.resourceId) continue;
+      if (a.id in sslByAssignment) continue;
+      if (sslInflight.current.has(a.id)) continue;
+      sslInflight.current.add(a.id);
+      fetchSslByAssignmentApi(a.id)
+        .then((cert) => {
+          setSslByAssignment((prev) => ({ ...prev, [a.id]: cert }));
+        })
+        .catch(() => {
+          setSslByAssignment((prev) => ({ ...prev, [a.id]: null }));
+        })
+        .finally(() => { sslInflight.current.delete(a.id); });
+    }
+  }, [allAssignments, sslByAssignment]);
+
+  // When an SSL job for a given server transitions to COMPLETED/FAILED, invalidate the cached
+  // cert for the matching assignment so the UI picks up the new status.
+  const terminalSslKey = sslJobs
+    .filter((j) => j.status === "COMPLETED" || j.status === "FAILED")
+    .map((j) => j.id)
+    .join(",");
+  useEffect(() => {
+    if (!terminalSslKey) return;
+    setSslByAssignment((prev) => {
+      // Only drop entries whose resourceId matches any of the jobs' serverId
+      const affectedServerIds = new Set(
+        sslJobs.filter((j) => j.status === "COMPLETED" || j.status === "FAILED").map((j) => j.serverId ?? ""),
+      );
+      const next = { ...prev };
+      for (const a of allAssignments) {
+        if (a.resourceId && affectedServerIds.has(a.resourceId)) {
+          delete next[a.id];
+        }
+      }
+      return next;
+    });
+  }, [terminalSslKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sslForAssignment = useCallback((a: DomainAssignment): SslCertificate | null | undefined => {
+    return a.id in sslByAssignment ? sslByAssignment[a.id] : undefined; // undefined = not-yet-fetched
+  }, [sslByAssignment]);
+
+  function matchesSslFilter(filter: typeof filterSsl, cert: SslCertificate | null | undefined): boolean {
+    if (filter === "ALL") return true;
+    if (cert === undefined) return true; // don't hide rows while lazy fetch is pending
+    if (filter === "NONE") return cert == null;
+    if (cert == null) return false;
+    if (filter === "ACTIVE") return cert.status === "ACTIVE";
+    if (filter === "EXPIRED") return cert.status === "EXPIRED";
+    if (filter === "FAILED") return cert.status === "FAILED";
+    if (filter === "PROVISIONING") return cert.status === "PROVISIONING" || cert.status === "PENDING";
+    if (filter === "EXPIRING") {
+      if (cert.status !== "ACTIVE" || !cert.expiresAt) return false;
+      const days = Math.ceil((new Date(cert.expiresAt).getTime() - Date.now()) / 86_400_000);
+      return days <= 30;
+    }
+    return true;
+  }
+
   const assignments = useMemo(() => {
-    if (!filterSearch.trim()) return allAssignments;
-    const q = filterSearch.trim().toLowerCase();
-    return allAssignments.filter((a) =>
-      a.hostname.toLowerCase().includes(q) ||
-      a.status.toLowerCase().includes(q) ||
-      (a.zoneName ?? "").toLowerCase().includes(q) ||
-      a.targetValue.toLowerCase().includes(q),
-    );
-  }, [allAssignments, filterSearch]);
+    let list = allAssignments;
+    if (filterSearch.trim()) {
+      const q = filterSearch.trim().toLowerCase();
+      list = list.filter((a) =>
+        a.hostname.toLowerCase().includes(q) ||
+        a.status.toLowerCase().includes(q) ||
+        (a.zoneName ?? "").toLowerCase().includes(q) ||
+        a.targetValue.toLowerCase().includes(q),
+      );
+    }
+    if (filterSsl !== "ALL") {
+      list = list.filter((a) => matchesSslFilter(filterSsl, sslForAssignment(a)));
+    }
+    return list;
+  }, [allAssignments, filterSearch, filterSsl, sslForAssignment]);
+
+  const handleProvisionSslForAssignment = useCallback(async (a: DomainAssignment) => {
+    if (!a.resourceId) return;
+    try {
+      const job = await provisionSslApi(a.resourceId);
+      if (job) {
+        trackSsl(job.id, a.resourceId);
+        trackSslJob(job.id, a.resourceId);
+        showAlert(`SSL provisioning started for ${a.hostname}`, "success");
+        // Invalidate the cached cert so the row shows PROVISIONING on next paint.
+        setSslByAssignment((prev) => {
+          const next = { ...prev };
+          delete next[a.id];
+          return next;
+        });
+      }
+    } catch (e) {
+      showAlert(e instanceof ApiError ? e.message : "Failed to start SSL provisioning", "error");
+    }
+  }, [showAlert, trackSsl]);
 
   const modals = (
     <>
@@ -288,6 +386,20 @@ export default function DomainsPage() {
         </div>
       )}
 
+      {/* ════════ SECTION 0: SSL DASHBOARD ════════ */}
+      <div className="mb-8">
+        <SslDashboard
+          onFilterChange={(f) => {
+            setFilterSsl(f);
+            // Scroll Subdomains section into view so user sees the filtered rows.
+            setTimeout(() => {
+              const el = document.getElementById("subdomains-section");
+              el?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 50);
+          }}
+        />
+      </div>
+
       {/* ════════ SECTION 1: PROVIDER ACCOUNTS ════════ */}
       <div className="mb-8">
         <div className="mb-4 flex items-center justify-between">
@@ -339,10 +451,10 @@ export default function DomainsPage() {
       </div>
 
       {/* ════════ SECTION 2: SUBDOMAINS ════════ */}
-      <div>
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <div id="subdomains-section">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight text-canvas-fg">Subdomains</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <FiSearch size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-canvas-muted" />
               <input
@@ -360,6 +472,20 @@ export default function DomainsPage() {
             >
               <option value="">All domains</option>
               {activeZones.map((z) => <option key={z.id} value={z.id}>{z.zoneName}</option>)}
+            </select>
+            <select
+              value={filterSsl}
+              onChange={(e) => setFilterSsl(e.target.value as typeof filterSsl)}
+              className="rounded-md border border-canvas-border bg-transparent px-2.5 py-1.5 text-xs text-canvas-fg focus:outline-none"
+              title="Filter by SSL status"
+            >
+              <option value="ALL">SSL · Any</option>
+              <option value="ACTIVE">SSL · Active</option>
+              <option value="EXPIRING">SSL · Expiring ≤30d</option>
+              <option value="EXPIRED">SSL · Expired</option>
+              <option value="FAILED">SSL · Failed</option>
+              <option value="PROVISIONING">SSL · Provisioning</option>
+              <option value="NONE">SSL · None</option>
             </select>
             <button
               type="button"
@@ -388,12 +514,14 @@ export default function DomainsPage() {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-canvas-border">
-                    <Th>Hostname</Th><Th>Type</Th><Th>Target</Th><Th>Domain</Th><Th>Server</Th><Th>Status</Th><Th>Created</Th><Th>Actions</Th>
+                    <Th>Hostname</Th><Th>Type</Th><Th>Target</Th><Th>Domain</Th><Th>Server</Th><Th>Status</Th><Th>SSL</Th><Th>Created</Th><Th>Actions</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {assignments.map((a) => {
                     const srv = a.resourceId ? serverById.get(a.resourceId) : undefined;
+                    const cert = sslForAssignment(a);
+                    const canProvisionSsl = a.resourceId && (a.status === "VERIFIED" || a.status === "ACTIVE" || a.status === "DNS_CREATED") && cert === null;
                     return (
                       <tr key={a.id} className="border-b border-canvas-border last:border-b-0 transition-colors hover:bg-canvas-surface-hover/50">
                         <td className="px-4 py-3 font-mono text-xs font-medium text-canvas-fg whitespace-nowrap">{a.hostname}</td>
@@ -414,6 +542,9 @@ export default function DomainsPage() {
                           )}
                         </td>
                         <td className="px-4 py-3"><Badge className={ASSIGN_STYLE[a.status] ?? ASSIGN_STYLE.REQUESTED}>{a.status}</Badge></td>
+                        <td className="px-4 py-3 text-xs">
+                          <SslCell cert={cert} />
+                        </td>
                         <td className="px-4 py-3 text-xs text-canvas-muted whitespace-nowrap">{fmt(a.createdAt)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           <div className="flex items-center gap-1">
@@ -421,6 +552,9 @@ export default function DomainsPage() {
                               <GhostBtn onClick={() => handleVerify(a.id)} disabled={busyAssign === `ver-${a.id}`}>
                                 {busyAssign === `ver-${a.id}` ? "..." : "Verify"}
                               </GhostBtn>
+                            )}
+                            {canProvisionSsl && (
+                              <GhostBtn onClick={() => handleProvisionSslForAssignment(a)}>Provision SSL</GhostBtn>
                             )}
                             {a.status !== "RELEASED" && (
                               <GhostBtn onClick={() => handleRelease(a)} danger>Release</GhostBtn>
@@ -1146,6 +1280,37 @@ function Pagination({ data, onPage }: { data: PageResponse<unknown>; onPage: (p:
     </div>
   );
 }
+function SslCell({ cert }: { cert: SslCertificate | null | undefined }) {
+  if (cert === undefined) return <span className="text-canvas-muted/70">—</span>;
+  if (cert === null) return <span className="text-canvas-muted">None</span>;
+
+  if (cert.status === "ACTIVE" && cert.expiresAt) {
+    const days = Math.ceil((new Date(cert.expiresAt).getTime() - Date.now()) / 86_400_000);
+    const tone = days <= 7 ? "text-red-500 dark:text-red-400"
+      : days <= 30 ? "text-orange-600 dark:text-orange-400"
+      : "text-green-600 dark:text-green-400";
+    return <span className={`font-mono ${tone}`}>ACTIVE · {days}d</span>;
+  }
+  if (cert.status === "ACTIVE") {
+    return <span className="text-green-600 dark:text-green-400">ACTIVE</span>;
+  }
+  if (cert.status === "EXPIRED") {
+    return <span className="text-red-500 dark:text-red-400">EXPIRED</span>;
+  }
+  if (cert.status === "FAILED") {
+    return <span className="text-red-500 dark:text-red-400">FAILED</span>;
+  }
+  if (cert.status === "PROVISIONING" || cert.status === "PENDING") {
+    return (
+      <span className="inline-flex items-center gap-1 text-yellow-600 dark:text-yellow-400">
+        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-500" />
+        {cert.status}
+      </span>
+    );
+  }
+  return <span className="text-canvas-muted">{cert.status}</span>;
+}
+
 function fmt(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });

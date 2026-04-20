@@ -4,6 +4,7 @@ import { memo, useCallback, useRef, useState } from "react";
 import type { ServerWithUI } from "@/lib/use-servers";
 import type { MonitoringState } from "@/lib/api";
 import { useDomainJobs } from "@/lib/use-domain-jobs";
+import { useSslJobs } from "@/lib/use-ssl-jobs";
 
 const NODE_SIZE = 60;
 const DRAG_THRESHOLD = 4;
@@ -104,6 +105,11 @@ export const ServerNode = memo(function ServerNode({
   const hasPendingDomain = domainJobs.some(
     (j) => j.serverId === server.id && j.status === "RUNNING",
   );
+  // Show a pulsing green shield while an SSL provisioning job is running.
+  const { jobs: sslJobs } = useSslJobs();
+  const hasPendingSsl = sslJobs.some(
+    (j) => j.serverId === server.id && j.status === "RUNNING",
+  );
 
   return (
     <div
@@ -171,6 +177,18 @@ export const ServerNode = memo(function ServerNode({
               <circle cx="12" cy="12" r="10" />
               <line x1="2" y1="12" x2="22" y2="12" />
               <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </span>
+        )}
+
+        {/* Pending-SSL badge: top-left pulsing green shield */}
+        {hasPendingSsl && (
+          <span
+            title="Provisioning SSL certificate..."
+            className="absolute -top-0.5 -left-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-canvas-bg bg-green-500/90 text-[8px] text-canvas-bg animate-pulse"
+          >
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             </svg>
           </span>
         )}

@@ -8,12 +8,17 @@ import {
   FiRefreshCw,
   FiTrash2,
   FiCheckCircle,
+  FiActivity,
+  FiClock,
+  FiWifi,
 } from "react-icons/fi";
 import {
   ApiError,
   fetchAssignmentForServer,
   fetchSslForServer,
   fetchSslJobApi,
+  fetchSslAuditLogApi,
+  fetchSslProbeApi,
   fetchZonesApi,
   provisionSslApi,
   renewSslApi,
@@ -29,10 +34,13 @@ import {
   type Server,
   type SslCertificate,
   type SslJob,
+  type SslProbeResponse,
+  type AuditLogEntry,
   type DomainAssignment,
   type Zone,
 } from "@/lib/api";
 import { useDomainJobs, trackDomainJob } from "@/lib/use-domain-jobs";
+import { useSslJobs, trackSslJob } from "@/lib/use-ssl-jobs";
 import {
   SSL_BADGE,
   SSL_STEP_LABELS,
@@ -41,10 +49,13 @@ import {
   formatSslExpiry,
 } from "@/lib/ssl-labels";
 import { SslLogPanel } from "./ssl-log-panel";
+import { SslLogViewer } from "./ssl-log-viewer";
 import { DomainLogPanel } from "./domain-log-panel";
 
 interface DomainSectionProps {
   server: Server;
+  /** Incremented by parent to request focus: expand + scroll into view. */
+  focusSslTick?: number;
 }
 
 function makeSslStub(serverId: string, overrides: Partial<SslCertificate>): SslCertificate {
@@ -56,8 +67,19 @@ function makeSslStub(serverId: string, overrides: Partial<SslCertificate>): SslC
   };
 }
 
-export function DomainSection({ server }: DomainSectionProps) {
+export function DomainSection({ server, focusSslTick }: DomainSectionProps) {
   const [expanded, setExpanded] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Parent requests focus (typically the header SSL badge was clicked) — expand + scroll.
+  useEffect(() => {
+    if (focusSslTick == null || focusSslTick === 0) return;
+    setExpanded(true);
+    // Defer scroll until after expand animation starts
+    setTimeout(() => {
+      rootRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  }, [focusSslTick]);
 
   // ── Domain assignment state ──
   const [assignment, setAssignment] = useState<DomainAssignment | null>(null);
@@ -74,7 +96,24 @@ export function DomainSection({ server }: DomainSectionProps) {
   const [sslLoading, setSslLoading] = useState(false);
   const [sslJob, setSslJob] = useState<SslJob | null>(null);
   const [showSslLog, setShowSslLog] = useState(false);
+  const [showSslViewer, setShowSslViewer] = useState(false);
   const [sslTargetPort, setSslTargetPort] = useState("443");
+
+  // Probe
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<SslProbeResponse | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
+
+  // Audit log drawer
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
+
+  // Live SSL job state from the shared store (used for the "pending SSL without cert" branch)
+  const { jobs: allSslJobs } = useSslJobs();
+  const liveSslJob = allSslJobs.find((j) => j.serverId === server.id && j.status === "RUNNING") ?? null;
+  // The job displayed in the log panel — prefer our polled copy, fall back to the store copy.
+  const currentSslJob = sslJob ?? liveSslJob;
 
   const pollSslRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sslLoadedRef = useRef(false);
@@ -279,6 +318,8 @@ export function DomainSection({ server }: DomainSectionProps) {
         setSslJob(job);
         setShowSslLog(true);
         pollSslJob(job.id);
+        // Share with the global store so server-node + processes page see it too.
+        trackSslJob(job.id, server.id);
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -291,6 +332,38 @@ export function DomainSection({ server }: DomainSectionProps) {
     }
     setSslLoading(false);
   }, [server.id, sslTargetPort, pollSslJob]);
+
+  /* ---- TLS probe ---- */
+  const handleProbe = useCallback(async () => {
+    if (!ssl) return;
+    setProbing(true);
+    setProbeError(null);
+    try {
+      const r = await fetchSslProbeApi(ssl.id);
+      setProbeResult(r);
+    } catch (err) {
+      setProbeError(err instanceof ApiError ? err.message : "Probe failed.");
+    }
+    setProbing(false);
+  }, [ssl]);
+
+  /* ---- Audit log ---- */
+  const loadAudit = useCallback(async () => {
+    if (!ssl) return;
+    setAuditLoading(true);
+    try {
+      const page = await fetchSslAuditLogApi(ssl.id, 0, 25);
+      setAuditEntries(page.content);
+    } catch { /* silent */ }
+    setAuditLoading(false);
+  }, [ssl]);
+
+  const toggleAudit = useCallback(() => {
+    setAuditOpen((prev) => {
+      if (!prev) loadAudit();
+      return !prev;
+    });
+  }, [loadAudit]);
 
   const handleRenewSsl = useCallback(async () => {
     if (!ssl) return;
@@ -381,7 +454,7 @@ export function DomainSection({ server }: DomainSectionProps) {
     assignment && (assignment.status === "VERIFIED" || assignment.status === "ACTIVE" || assignment.status === "DNS_CREATED");
 
   return (
-    <div className="border-b border-canvas-border">
+    <div ref={rootRef} className="border-b border-canvas-border">
       <button
         type="button"
         onClick={() => setExpanded((p) => !p)}
@@ -540,17 +613,19 @@ export function DomainSection({ server }: DomainSectionProps) {
                             {(ssl.status === "PROVISIONING" || ssl.status === "REMOVING") && <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-400" />}
                             {ssl.status === "PROVISIONING" && sslJob && <span className="text-[10px] text-canvas-muted">{SSL_STEP_LABELS[sslJob.currentStep] ?? sslJob.currentStep}</span>}
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex flex-wrap items-center gap-1">
                             {ssl.status === "ACTIVE" && (
                               <>
                                 <ActionBtn onClick={handleCheckSsl} disabled={sslLoading} icon={<FiCheckCircle size={11} />}>Check</ActionBtn>
                                 <ActionBtn onClick={handleRenewSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Renew</ActionBtn>
+                                <ActionBtn onClick={handleProbe} disabled={probing} icon={<FiWifi size={11} className={probing ? "animate-pulse" : ""} />}>Probe TLS</ActionBtn>
                               </>
                             )}
                             {ssl.status === "EXPIRED" && (
                               <>
                                 <ActionBtn onClick={handleRenewSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Renew</ActionBtn>
                                 <ActionBtn onClick={handleCheckSsl} disabled={sslLoading} icon={<FiCheckCircle size={11} />}>Check</ActionBtn>
+                                <ActionBtn onClick={handleProbe} disabled={probing} icon={<FiWifi size={11} className={probing ? "animate-pulse" : ""} />}>Probe TLS</ActionBtn>
                               </>
                             )}
                             {ssl.status === "PROVISIONING" && (
@@ -562,6 +637,9 @@ export function DomainSection({ server }: DomainSectionProps) {
                             {ssl.status === "FAILED" && (
                               <ActionBtn onClick={handleProvisionSsl} disabled={sslLoading} icon={<FiRefreshCw size={11} className={sslLoading ? "animate-spin" : ""} />}>Retry</ActionBtn>
                             )}
+                            <ActionBtn onClick={toggleAudit} icon={<FiActivity size={11} />}>
+                              {auditOpen ? "Hide Activity" : "Activity"}
+                            </ActionBtn>
                             {ssl.status !== "PROVISIONING" && ssl.status !== "REMOVING" && (
                               <ActionBtn onClick={handleDeleteSsl} disabled={sslLoading} icon={<FiTrash2 size={11} className="text-red-500/70" />}>Remove</ActionBtn>
                             )}
@@ -595,14 +673,52 @@ export function DomainSection({ server }: DomainSectionProps) {
 
                         {ssl.lastError && <p className="text-[11px] text-red-500 dark:text-red-400">{ssl.lastError}</p>}
 
+                        {/* Probe result card */}
+                        {probeResult && (
+                          <ProbeResultCard result={probeResult} onDismiss={() => setProbeResult(null)} />
+                        )}
+                        {probeError && (
+                          <p className="text-[11px] text-red-500 dark:text-red-400">Probe failed: {probeError}</p>
+                        )}
+
+                        {/* Audit log drawer */}
+                        {auditOpen && (
+                          <AuditLogDrawer entries={auditEntries} loading={auditLoading} onRefresh={loadAudit} />
+                        )}
+
                         {showSslLog && (
                           sslJob ? (
-                            <SslLogPanel job={sslJob} onRetry={handleRetrySslJob} onCancel={handleCancelSslJob} onClose={() => { setShowSslLog(false); if (pollSslRef.current) { clearTimeout(pollSslRef.current); pollSslRef.current = null; } }} />
+                            <SslLogPanel
+                              job={sslJob}
+                              onRetry={handleRetrySslJob}
+                              onCancel={handleCancelSslJob}
+                              onExpand={() => setShowSslViewer(true)}
+                              onClose={() => { setShowSslLog(false); if (pollSslRef.current) { clearTimeout(pollSslRef.current); pollSslRef.current = null; } }}
+                            />
                           ) : (
                             <div className="mt-2 rounded-md border border-canvas-border bg-[#0d1117] px-3 py-4 text-center text-[11px] text-gray-500">Loading job logs...</div>
                           )
                         )}
                       </>
+                    ) : liveSslJob ? (
+                      /* Fall-through: live SSL provisioning job exists but cert row hasn't landed yet.
+                         Surface the log immediately so the user isn't left staring at "No cert". */
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-medium text-yellow-600 dark:text-yellow-400">PROVISIONING</p>
+                          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-yellow-400" />
+                          <span className="text-[10px] text-canvas-muted">
+                            {SSL_STEP_LABELS[liveSslJob.currentStep] ?? liveSslJob.currentStep}
+                          </span>
+                        </div>
+                        <SslLogPanel
+                          job={liveSslJob}
+                          onRetry={handleRetrySslJob}
+                          onCancel={handleCancelSslJob}
+                          onExpand={() => setShowSslViewer(true)}
+                          onClose={() => { /* cannot close a server-wide live job preview */ }}
+                        />
+                      </div>
                     ) : (
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5">
@@ -635,6 +751,15 @@ export function DomainSection({ server }: DomainSectionProps) {
           </div>
         </div>
       </div>
+
+      {/* Full-screen SSL log viewer */}
+      <SslLogViewer
+        open={showSslViewer}
+        job={currentSslJob}
+        onRetry={handleRetrySslJob}
+        onCancel={handleCancelSslJob}
+        onClose={() => setShowSslViewer(false)}
+      />
     </div>
   );
 }
@@ -666,5 +791,86 @@ function ActionBtn({
       {icon}
       {children}
     </button>
+  );
+}
+
+function ProbeResultCard({ result, onDismiss }: { result: SslProbeResponse; onDismiss: () => void }) {
+  const certExp = result.certExpiry ? new Date(result.certExpiry) : null;
+  const daysLeft = certExp ? Math.ceil((certExp.getTime() - Date.now()) / 86_400_000) : null;
+  return (
+    <div className="rounded-md border border-canvas-border bg-canvas-surface-hover/30 p-3 text-[11px]">
+      <div className="flex items-center justify-between">
+        <p className="font-medium text-canvas-fg">Live probe · {result.hostname}</p>
+        <button type="button" onClick={onDismiss} className="text-[10px] text-canvas-muted hover:text-canvas-fg">Dismiss</button>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+        <ProbeRow label="HTTP" value={`${result.httpCode || "—"} ${result.httpReachable ? "✓" : "✕"}`}
+                  tone={result.httpReachable ? "ok" : "warn"} />
+        <ProbeRow label="HTTPS" value={`${result.httpsCode || "—"} ${result.httpsReachable ? "✓" : "✕"}`}
+                  tone={result.httpsReachable ? "ok" : "err"} />
+        <ProbeRow label="TLS" value={result.tlsValid ? "valid" : result.tlsPresent ? "expired" : "absent"}
+                  tone={result.tlsValid ? "ok" : "err"} />
+        <ProbeRow label="Cert expiry (wire)"
+                  value={certExp ? `${certExp.toLocaleDateString()}${daysLeft != null ? ` (${daysLeft}d)` : ""}` : "—"}
+                  tone={daysLeft != null && daysLeft < 0 ? "err" : daysLeft != null && daysLeft < 14 ? "warn" : undefined} />
+      </div>
+      <p className="mt-2 text-[10px] text-canvas-muted">Probed {new Date(result.probedAt).toLocaleTimeString()}</p>
+    </div>
+  );
+}
+
+function ProbeRow({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" | "err" }) {
+  const toneClass = tone === "ok" ? "text-green-600 dark:text-green-400"
+    : tone === "warn" ? "text-orange-600 dark:text-orange-400"
+    : tone === "err" ? "text-red-500 dark:text-red-400"
+    : "text-canvas-fg";
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-canvas-muted">{label}</span>
+      <span className={`font-mono ${toneClass}`}>{value}</span>
+    </div>
+  );
+}
+
+function AuditLogDrawer({
+  entries, loading, onRefresh,
+}: { entries: AuditLogEntry[]; loading: boolean; onRefresh: () => void }) {
+  return (
+    <div className="rounded-md border border-canvas-border bg-canvas-surface-hover/20 p-3 text-[11px]">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="font-medium text-canvas-fg flex items-center gap-1.5">
+          <FiClock size={11} className="text-canvas-muted" />
+          Activity
+        </p>
+        <button type="button" onClick={onRefresh} disabled={loading}
+                className="text-[10px] text-canvas-muted hover:text-canvas-fg disabled:opacity-50">
+          {loading ? "…" : "Refresh"}
+        </button>
+      </div>
+      {entries.length === 0 ? (
+        <p className="py-3 text-center text-canvas-muted">{loading ? "Loading…" : "No activity recorded yet."}</p>
+      ) : (
+        <ul className="max-h-56 overflow-y-auto divide-y divide-canvas-border">
+          {entries.map((e) => (
+            <li key={e.id} className="py-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-canvas-fg">{e.action}</span>
+                <span className="text-canvas-muted">
+                  {new Date(e.createdAt).toLocaleString(undefined, {
+                    month: "short", day: "numeric", hour: "numeric", minute: "numeric",
+                  })}
+                </span>
+              </div>
+              {e.details && (
+                <p className="mt-0.5 text-canvas-muted whitespace-pre-wrap break-words">{e.details}</p>
+              )}
+              {e.userId && (
+                <p className="text-[10px] text-canvas-muted/70">user {e.userId.substring(0, 8)}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

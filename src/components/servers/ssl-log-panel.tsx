@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { FiRefreshCw, FiX } from "react-icons/fi";
+import { FiRefreshCw, FiX, FiMaximize2 } from "react-icons/fi";
 import type { SslJob } from "@/lib/api";
 import { SSL_STEP_LABELS } from "@/lib/ssl-labels";
 
@@ -10,11 +10,14 @@ export function SslLogPanel({
   onRetry,
   onCancel,
   onClose,
+  onExpand,
 }: {
   job: SslJob;
   onRetry: () => void;
   onCancel?: () => void;
   onClose: () => void;
+  /** If provided, shows an "Expand" button that opens the full-screen SSL log viewer. */
+  onExpand?: () => void;
 }) {
   const logRef = useRef<HTMLPreElement>(null);
 
@@ -45,9 +48,22 @@ export function SslLogPanel({
         <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${stepClass}`}>
           {stepLabel}
         </span>
-        <button type="button" onClick={onClose} className="text-[10px] text-canvas-muted hover:text-canvas-fg">
-          Close
-        </button>
+        <div className="flex items-center gap-2">
+          {onExpand && (
+            <button
+              type="button"
+              onClick={onExpand}
+              title="Open full-screen log viewer"
+              className="flex items-center gap-1 text-[10px] text-canvas-muted hover:text-canvas-fg"
+            >
+              <FiMaximize2 size={10} />
+              Expand
+            </button>
+          )}
+          <button type="button" onClick={onClose} className="text-[10px] text-canvas-muted hover:text-canvas-fg">
+            Close
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 px-3 py-1.5 text-[10px] text-canvas-muted border-b border-canvas-border">

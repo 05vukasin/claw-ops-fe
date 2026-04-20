@@ -18,15 +18,19 @@ import { ScriptsSection } from "./scripts-section";
 import { FileBrowser, type FileBrowserHandle } from "./file-browser";
 import { DeployPopup } from "./deploy-popup";
 import { DomainSection } from "./domain-section";
+import { SslHeaderBadge } from "./ssl-header-badge";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
   deleteServerApi,
   checkClaudeCodeInstalledApi,
   checkDeployScriptApi,
+  fetchSslForServer,
   ApiError,
   type Server,
+  type SslCertificate,
 } from "@/lib/api";
+import { useSslJobs } from "@/lib/use-ssl-jobs";
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -138,6 +142,37 @@ export function ServerDashboardPanel({
   /* ---- test connection ---- */
   const [testState, setTestState] = useState<"idle" | "loading" | "ok" | "fail">("idle");
   const [testMsg, setTestMsg] = useState("");
+
+  /* ---- SSL cert + active job (for the header badge) ---- */
+  const [ssl, setSsl] = useState<SslCertificate | null>(null);
+  const { jobs: sslJobs } = useSslJobs();
+  const activeSslJob = sslJobs.find(
+    (j) => j.serverId === server.id && j.status === "RUNNING",
+  ) ?? null;
+
+  useEffect(() => {
+    if (!server.assignedDomain) return;
+    let stale = false;
+    fetchSslForServer(server.id)
+      .then((c) => { if (!stale) setSsl(c); })
+      .catch(() => {});
+    return () => { stale = true; };
+  }, [server.id, server.assignedDomain]);
+
+  // Refetch cert whenever an SSL job for this server reaches a terminal state so the
+  // header badge catches up without waiting for a manual page refresh.
+  const terminalSslKey = sslJobs
+    .filter((j) => j.serverId === server.id && (j.status === "COMPLETED" || j.status === "FAILED"))
+    .map((j) => j.id)
+    .join(",");
+  useEffect(() => {
+    if (!terminalSslKey || !server.assignedDomain) return;
+    fetchSslForServer(server.id).then((c) => setSsl(c)).catch(() => {});
+  }, [terminalSslKey, server.id, server.assignedDomain]);
+
+  /* ---- SSL focus signal (badge click → expand + scroll DomainSection) ---- */
+  const [sslFocusTick, setSslFocusTick] = useState(0);
+  const focusSsl = useCallback(() => setSslFocusTick((n) => n + 1), []);
 
   /* ---- drag ---- */
   const dragging = useRef(false);
@@ -358,6 +393,8 @@ export function ServerDashboardPanel({
           {server.status}
         </span>
 
+        <SslHeaderBadge cert={ssl} activeJob={activeSslJob} onClick={focusSsl} />
+
         <button
           type="button"
           onClick={onClose}
@@ -471,7 +508,7 @@ export function ServerDashboardPanel({
               <ConnectionsSection serverId={server.id} serverName={server.name} />
 
               {/* DOMAIN & SSL — unified section */}
-              <DomainSection server={server} />
+              <DomainSection server={server} focusSslTick={sslFocusTick} />
 
               {/* SCRIPTS */}
               <ScriptsSection serverId={server.id} />

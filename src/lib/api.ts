@@ -145,12 +145,19 @@ export type SslJobStep =
 
 export interface SslJob {
   id: string;
+  domainAssignmentId?: string;
+  serverId?: string | null;
   hostname: string;
   status: SslJobStatus;
   currentStep: SslJobStep;
   logs: string | null;
   errorMessage: string | null;
   retryCount: number;
+  maxRetries?: number;
+  /** Set during the DNS-01 step — provider's TXT record id (useful for operator debugging). */
+  acmeTxtRecordId?: string | null;
+  triggeredBy?: string | null;
+  createdAt?: string;
   startedAt: string | null;
   finishedAt: string | null;
 }
@@ -380,6 +387,97 @@ export async function fetchActiveSslJobsApi(): Promise<SslJob[]> {
   if (!res.ok) return [];
   const data = (await res.json()) as PageResponse<SslJob>;
   return data.content ?? [];
+}
+
+/* ------------------------------------------------------------------ */
+/*  SSL extras: dashboard, probe, audit log, scheduler status          */
+/* ------------------------------------------------------------------ */
+
+export interface SslDashboardResponse {
+  totalCertificates: number;
+  activeCertificates: number;
+  expiredCertificates: number;
+  expiringSoonCertificates: number;
+  failedCertificates: number;
+  provisioningCertificates: number;
+  expiringSoon: { hostname: string; expiresAt: string | null; daysUntilExpiry: number }[];
+  recentFailures: { hostname: string; lastError: string }[];
+}
+
+export interface SslProbeResponse {
+  hostname: string;
+  httpCode: string;
+  httpReachable: boolean;
+  httpsCode: string;
+  httpsReachable: boolean;
+  certExpiry: string | null;
+  tlsPresent: boolean;
+  tlsValid: boolean;
+  probedAt: string;
+}
+
+export interface SslSchedulerStatus {
+  renewLastRunAt: string | null;
+  renewNextRunAt: string | null;
+  lastOutcome: {
+    renewed: number;
+    failed: number;
+    considered: number;
+    durationMs: number;
+  };
+  expiryLastRunAt: string | null;
+  expiryNextRunAt: string | null;
+  renewalWindowDays: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  userId: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  details: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+export async function fetchSslDashboardApi(): Promise<SslDashboardResponse | null> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/dashboard`);
+  if (!res.ok) return null;
+  return res.json() as Promise<SslDashboardResponse>;
+}
+
+export async function fetchSslProbeApi(certId: string): Promise<SslProbeResponse> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/${encodeURIComponent(certId)}/probe`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Probe failed" }));
+    throw new ApiError(res.status, err.message || "Probe failed");
+  }
+  return res.json() as Promise<SslProbeResponse>;
+}
+
+export async function fetchSslAuditLogApi(
+  certId: string,
+  page = 0,
+  size = 25,
+): Promise<PageResponse<AuditLogEntry>> {
+  const res = await apiFetch(
+    `/api/v1/ssl-certificates/${encodeURIComponent(certId)}/audit-log?page=${page}&size=${size}&sort=createdAt,desc`,
+  );
+  if (!res.ok) throw new ApiError(res.status, "Failed to load SSL audit log.");
+  return res.json() as Promise<PageResponse<AuditLogEntry>>;
+}
+
+export async function fetchSslSchedulerStatusApi(): Promise<SslSchedulerStatus | null> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/scheduler-status`);
+  if (!res.ok) return null;
+  return res.json() as Promise<SslSchedulerStatus>;
+}
+
+export async function fetchSslByAssignmentApi(assignmentId: string): Promise<SslCertificate | null> {
+  const res = await apiFetch(`/api/v1/ssl-certificates/by-assignment/${encodeURIComponent(assignmentId)}`);
+  if (!res.ok) return null;
+  return res.json() as Promise<SslCertificate>;
 }
 
 export async function retrySslJobApi(jobId: string): Promise<SslJob> {
