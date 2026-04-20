@@ -21,6 +21,7 @@ import { DeployPopup } from "./deploy-popup";
 import { DomainSection } from "./domain-section";
 import { SslHeaderBadge } from "./ssl-header-badge";
 import { InstallChatPopup } from "./install-chat-popup";
+import { ChatActionsPopover } from "./chat-actions-popover";
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
@@ -145,6 +146,8 @@ export function ServerDashboardPanel({
   /* ---- Chat app detection ---- */
   const [chatStatus, setChatStatus] = useState<"unknown" | "installed" | "not-installed">("unknown");
   const [showInstallChat, setShowInstallChat] = useState(false);
+  const [chatActionsOpen, setChatActionsOpen] = useState(false);
+  const chatButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (server.status !== "ONLINE") return;
     let stale = false;
@@ -474,12 +477,16 @@ export function ServerDashboardPanel({
                   </ActionBtn>
                 )}
                 {server.assignedDomain && chatStatus === "installed" && (
-                  <ActionBtn
-                    onClick={() => window.open(`https://${server.assignedDomain}/chat`, "_blank")}
-                    icon={<svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>}
+                  <button
+                    ref={chatButtonRef}
+                    type="button"
+                    onClick={() => setChatActionsOpen((v) => !v)}
+                    className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg"
                   >
+                    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                     Chat
-                  </ActionBtn>
+                    <FiChevronRight size={10} className={`chevron-rotate ${chatActionsOpen ? "open" : ""}`} />
+                  </button>
                 )}
                 {server.assignedDomain && chatStatus === "not-installed" && (
                   <ActionBtn
@@ -630,6 +637,19 @@ export function ServerDashboardPanel({
           hostname={server.assignedDomain}
           onClose={() => setShowInstallChat(false)}
           onInstalled={() => setChatStatus("installed")}
+        />
+      )}
+
+      {chatActionsOpen && server.assignedDomain && chatStatus === "installed" && (
+        <ChatActionsPopover
+          serverId={server.id}
+          hostname={server.assignedDomain}
+          anchorRef={chatButtonRef}
+          onClose={() => setChatActionsOpen(false)}
+          onUninstalled={() => {
+            setChatStatus("not-installed");
+            setChatActionsOpen(false);
+          }}
         />
       )}
     </div>

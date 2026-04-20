@@ -1547,6 +1547,28 @@ export async function installChatAppApi(
   return res.json() as Promise<ChatInstallResult>;
 }
 
+export async function updateChatAppApi(serverId: string): Promise<ChatInstallResult> {
+  const res = await apiFetch(`/api/v1/servers/${encodeURIComponent(serverId)}/apps/chat/update`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Update failed" }));
+    throw new ApiError(res.status, err.message || "Update failed");
+  }
+  return res.json() as Promise<ChatInstallResult>;
+}
+
+export async function uninstallChatAppApi(serverId: string): Promise<ChatInstallResult> {
+  const res = await apiFetch(`/api/v1/servers/${encodeURIComponent(serverId)}/apps/chat`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Uninstall failed" }));
+    throw new ApiError(res.status, err.message || "Uninstall failed");
+  }
+  return res.json() as Promise<ChatInstallResult>;
+}
+
 /** Escape a file path for safe use in single-quoted shell strings */
 function escapeShellPath(path: string): string {
   return path.replace(/'/g, "'\\''");
