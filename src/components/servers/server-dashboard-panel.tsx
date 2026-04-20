@@ -626,6 +626,7 @@ export function ServerDashboardPanel({
       {showInstallChat && server.assignedDomain && (
         <InstallChatPopup
           serverId={server.id}
+          serverName={server.name}
           hostname={server.assignedDomain}
           onClose={() => setShowInstallChat(false)}
           onInstalled={() => setChatStatus("installed")}

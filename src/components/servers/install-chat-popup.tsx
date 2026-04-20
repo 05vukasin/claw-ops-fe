@@ -2,28 +2,41 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FiDownload, FiPlay, FiExternalLink, FiX } from "react-icons/fi";
-import { installChatAppApi, ApiError, type ChatInstallResult } from "@/lib/api";
+import { FiDownload, FiPlay, FiExternalLink, FiX, FiLock, FiTerminal, FiCheckCircle } from "react-icons/fi";
+import {
+  installChatAppApi,
+  provisionSslApi,
+  fetchSslForServer,
+  ApiError,
+  type ChatInstallResult,
+  type SslCertificate,
+} from "@/lib/api";
 import { getUser } from "@/lib/auth";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
+import { useSslJobs } from "@/lib/use-ssl-jobs";
 import { Z_INDEX } from "@/lib/z-index";
+import { ClaudeCodeOverlay } from "./claude-code-overlay";
 
 type Phase = "form" | "running" | "success" | "failed";
 
 interface InstallChatPopupProps {
   serverId: string;
+  serverName: string;
   hostname: string;
   onClose: () => void;
   onInstalled: () => void;
 }
 
 /**
- * Dedicated installer modal for the claw-chat app. Collects the authorized email
- * from the user, then runs the backend install endpoint and streams the stdout
- * into a log pane. Mirrors {@code DeployPopup} for visual consistency.
+ * One-click installer modal for claw-chat. Collects the authorized email,
+ * runs bootstrap.sh on the target server (which installs Docker/Node/Claude
+ * CLI and the chat stack), streams the output, and then offers the next
+ * actions in the golden path: provision SSL (co-existence mode, since
+ * claw-nginx now owns port 80), re-run the installer to switch to HTTPS,
+ * and authenticate the Claude CLI in an in-browser terminal.
  */
-export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: InstallChatPopupProps) {
+export function InstallChatPopup({ serverId, serverName, hostname, onClose, onInstalled }: InstallChatPopupProps) {
   const isMobile = useIsMobile();
   const { viewportHeight } = useVisualViewport();
 
@@ -34,6 +47,17 @@ export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: I
   const [result, setResult] = useState<ChatInstallResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
+
+  /* ── SSL state after install ── */
+  const [ssl, setSsl] = useState<SslCertificate | null>(null);
+  const { jobs: sslJobs, track: trackSsl } = useSslJobs();
+  const [sslJobId, setSslJobId] = useState<string | null>(null);
+  const sslJob = sslJobs.find((j) => j.id === sslJobId) ?? null;
+  const [sslStarting, setSslStarting] = useState(false);
+  const [sslError, setSslError] = useState<string | null>(null);
+
+  /* ── Claude auth overlay ── */
+  const [showClaudeOverlay, setShowClaudeOverlay] = useState(false);
 
   /* ── Lock body scroll ── */
   useEffect(() => {
@@ -61,6 +85,23 @@ export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: I
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [result]);
 
+  /* ── After install succeeds, pull the server's current cert so we know
+     whether to offer "Provision SSL" vs "Re-run to enable HTTPS". ── */
+  useEffect(() => {
+    if (phase !== "success") return;
+    let stale = false;
+    fetchSslForServer(serverId)
+      .then((c) => { if (!stale) setSsl(c); })
+      .catch(() => {});
+    return () => { stale = true; };
+  }, [phase, serverId]);
+
+  /* ── When an SSL job we started reaches COMPLETED, refetch the cert. ── */
+  useEffect(() => {
+    if (!sslJob || sslJob.status !== "COMPLETED") return;
+    fetchSslForServer(serverId).then((c) => setSsl(c)).catch(() => {});
+  }, [sslJob, serverId]);
+
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
   const runInstall = useCallback(async () => {
@@ -86,6 +127,28 @@ export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: I
       setErrorMsg(err instanceof ApiError ? err.message : "Install request failed");
     }
   }, [emailValid, email, apiOrigin, serverId, onInstalled]);
+
+  const runProvisionSsl = useCallback(async () => {
+    setSslStarting(true);
+    setSslError(null);
+    try {
+      const job = await provisionSslApi(serverId);
+      if (job?.id) {
+        trackSsl(job.id, serverId);
+        setSslJobId(job.id);
+      }
+    } catch (err) {
+      setSslError(err instanceof ApiError ? err.message : "SSL provisioning failed to start");
+    } finally {
+      setSslStarting(false);
+    }
+  }, [serverId, trackSsl]);
+
+  /* ── Derived: which next-step card to show in the success phase ── */
+  const hasActiveCert = ssl?.status === "ACTIVE";
+  const certOnDiskButHttpOnly = hasActiveCert && result?.output?.includes("starting HTTP-only") === true;
+  const sslRunning = sslJob?.status === "RUNNING" || sslStarting;
+  const sslJustCompleted = sslJob?.status === "COMPLETED";
 
   const statusDot =
     phase === "running" ? "bg-yellow-400 animate-pulse"
@@ -123,9 +186,10 @@ export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: I
         {phase === "form" && (
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 text-[12px] text-[#c9d1d9]">
             <p className="text-[11px] text-gray-400">
-              Installs the claw-chat app at <span className="font-mono text-gray-200">https://{hostname}/chat</span>.
-              The installer auto-detects SSL certs at
-              <span className="font-mono text-gray-200"> /etc/letsencrypt/live/{hostname}/</span> and picks HTTP or HTTPS accordingly.
+              Installs claw-chat at <span className="font-mono text-gray-200">https://{hostname}/chat</span>.
+              Bootstrap runs <span className="font-mono text-gray-200">apt upgrade</span>, installs Docker,
+              Node.js and the Claude CLI, then brings the stack up. Auto-detects SSL certs at
+              <span className="font-mono text-gray-200"> /etc/letsencrypt/live/{hostname}/</span>.
             </p>
 
             <div>
@@ -171,8 +235,7 @@ export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: I
             )}
 
             <p className="text-[10px] text-gray-600">
-              The installer runs as root over SSH. It will stop any host-level nginx service,
-              install Docker if missing, pull the chat image, and bring up the stack.
+              Runs as root over SSH. First-time runs take 2–4 minutes (apt upgrade dominates).
             </p>
           </div>
         )}
@@ -184,41 +247,127 @@ export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: I
               <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" style={{ animationDelay: "0.2s" }} />
               <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" style={{ animationDelay: "0.4s" }} />
             </div>
-            <p className="text-sm text-gray-400">Running install.sh on {hostname}...</p>
-            <p className="text-[11px] text-gray-600">Typical run takes 30-90 seconds (first run installs Docker).</p>
+            <p className="text-sm text-gray-400">Running bootstrap on {hostname}...</p>
+            <p className="text-[11px] text-gray-600">
+              Updating packages → Docker → Node + Claude CLI → installer → container start.
+            </p>
           </div>
         )}
 
-        {(phase === "success" || phase === "failed") && (
-          <div className="flex flex-1 flex-col min-h-0 p-2">
-            <div className={`mb-2 rounded-md px-3 py-2 text-xs font-medium ${
-              phase === "success"
-                ? "bg-green-500/10 text-green-400"
-                : "bg-red-500/10 text-red-400"
-            }`}>
-              {phase === "success" ? (
-                <span className="flex items-center gap-2">
-                  Chat app installed
-                  <a
-                    href={`https://${hostname}/chat`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 underline hover:text-green-300"
-                  >
-                    Open <FiExternalLink size={10} />
-                  </a>
+        {phase === "success" && (
+          <div className="flex flex-1 flex-col min-h-0 overflow-y-auto p-3 gap-3">
+            {/* Step 1: installed */}
+            <div className="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2">
+              <div className="flex items-center gap-2 text-xs text-green-400">
+                <FiCheckCircle size={13} />
+                <span className="font-medium">Chat app installed</span>
+                <a
+                  href={`${hasActiveCert ? "https" : "http"}://${hostname}/chat`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-auto inline-flex items-center gap-1 underline hover:text-green-300"
+                >
+                  Open <FiExternalLink size={10} />
+                </a>
+              </div>
+            </div>
+
+            {/* Step 2: SSL */}
+            <div className="rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2">
+              <div className="flex items-center gap-2 text-xs">
+                <FiLock size={13} className={hasActiveCert ? "text-green-400" : "text-gray-500"} />
+                <span className="font-medium text-[#c9d1d9]">
+                  {hasActiveCert ? "SSL certificate active" : "SSL not yet provisioned"}
                 </span>
-              ) : (
-                <span>Install failed{errorMsg ? ` — ${errorMsg}` : ""}</span>
+                {sslRunning && <span className="ml-auto text-[10px] text-yellow-400 animate-pulse">running…</span>}
+              </div>
+              {!hasActiveCert && !sslRunning && !sslJustCompleted && (
+                <>
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    With claw-nginx now holding port 80, SSL provisioning will run in co-existence
+                    mode (DNS-01, no host-nginx config changes).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={runProvisionSsl}
+                    disabled={sslStarting}
+                    className="mt-2 flex items-center gap-1.5 rounded bg-blue-500/90 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+                  >
+                    <FiPlay size={11} />
+                    Provision SSL now
+                  </button>
+                </>
+              )}
+              {sslRunning && sslJob && (
+                <p className="mt-1 text-[10px] text-gray-500">
+                  Step: {sslJob.currentStep} — typical run 1–3 min.
+                </p>
+              )}
+              {sslJustCompleted && !hasActiveCert && (
+                <p className="mt-1 text-[10px] text-gray-500">
+                  Cert issued. Re-run the installer to switch claw-nginx into HTTPS mode.
+                </p>
+              )}
+              {sslJustCompleted && (
+                <button
+                  type="button"
+                  onClick={runInstall}
+                  className="mt-2 flex items-center gap-1.5 rounded bg-blue-500/90 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-blue-500"
+                >
+                  <FiPlay size={11} />
+                  {hasActiveCert ? "Re-run installer" : "Re-run to enable HTTPS"}
+                </button>
+              )}
+              {sslError && (
+                <p className="mt-1 text-[10px] text-red-400">{sslError}</p>
+              )}
+              {certOnDiskButHttpOnly && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Cert is active but install.sh ran before it existed. Re-run to switch to HTTPS.
+                </p>
               )}
             </div>
-            {phase === "success" && (
-              <p className="mb-2 text-[10px] text-gray-500">
-                First-time setup: sign in with <span className="font-mono text-gray-300">{email}</span>, open
-                Settings → Terminal and run <span className="font-mono text-gray-300">claude auth login</span> to
-                authenticate the Claude CLI inside the container.
+
+            {/* Step 3: Claude auth */}
+            <div className="rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2">
+              <div className="flex items-center gap-2 text-xs text-[#c9d1d9]">
+                <FiTerminal size={13} className="text-orange-400" />
+                <span className="font-medium">Authenticate Claude CLI</span>
+              </div>
+              <p className="mt-1 text-[10px] text-gray-500">
+                Sign in to Claude so the chat app can talk to the Agent SDK. Opens an in-browser
+                terminal with <span className="font-mono text-gray-300">claude auth login</span> pre-typed.
               </p>
-            )}
+              <button
+                type="button"
+                onClick={() => setShowClaudeOverlay(true)}
+                className="mt-2 flex items-center gap-1.5 rounded bg-orange-500/90 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-orange-500"
+              >
+                <FiTerminal size={11} />
+                Authenticate Claude now
+              </button>
+            </div>
+
+            {/* Install log (collapsible-ish: just a fixed-height pre) */}
+            <details className="mt-1">
+              <summary className="cursor-pointer text-[10px] text-gray-500 hover:text-gray-300">
+                Show install log
+              </summary>
+              <pre
+                ref={logRef}
+                className="mt-2 max-h-64 overflow-y-auto rounded-md bg-[#0d1117] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all border border-[#21262d]"
+              >
+                {result?.output || "(no output)"}
+              </pre>
+            </details>
+          </div>
+        )}
+
+        {phase === "failed" && (
+          <div className="flex flex-1 flex-col min-h-0 p-2">
+            <div className="mb-2 rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
+              Install failed{errorMsg ? ` — ${errorMsg}` : ""}
+            </div>
             <pre
               ref={logRef}
               className="flex-1 min-h-0 overflow-y-auto rounded-md bg-[#161b22] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all"
@@ -266,29 +415,42 @@ export function InstallChatPopup({ serverId, hostname, onClose, onInstalled }: I
     </>
   );
 
-  if (isMobile) {
-    return createPortal(
-      <div className="fixed inset-0 bg-[#0d1117]" style={{ zIndex: Z_INDEX.MODAL }}>
-        <div className="flex flex-col" style={{ height: viewportHeight, overflow: "hidden" }}>
-          {content}
-        </div>
-      </div>,
-      document.body,
-    );
-  }
+  const popup = isMobile
+    ? createPortal(
+        <div className="fixed inset-0 bg-[#0d1117]" style={{ zIndex: Z_INDEX.MODAL }}>
+          <div className="flex flex-col" style={{ height: viewportHeight, overflow: "hidden" }}>
+            {content}
+          </div>
+        </div>,
+        document.body,
+      )
+    : createPortal(
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-[2px] animate-backdrop-in"
+          style={{ zIndex: Z_INDEX.MODAL }}
+        >
+          <div
+            className="mx-4 flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-canvas-border shadow-2xl animate-modal-in"
+            style={{ maxHeight: "min(700px, 85vh)" }}
+          >
+            {content}
+          </div>
+        </div>,
+        document.body,
+      );
 
-  return createPortal(
-    <div
-      className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-[2px] animate-backdrop-in"
-      style={{ zIndex: Z_INDEX.MODAL }}
-    >
-      <div
-        className="mx-4 flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-canvas-border shadow-2xl animate-modal-in"
-        style={{ maxHeight: "min(600px, 80vh)" }}
-      >
-        {content}
-      </div>
-    </div>,
-    document.body,
+  return (
+    <>
+      {popup}
+      {showClaudeOverlay && (
+        <ClaudeCodeOverlay
+          serverId={serverId}
+          serverName={serverName}
+          initialCommand="claude auth login"
+          title="Authenticate Claude CLI"
+          onClose={() => setShowClaudeOverlay(false)}
+        />
+      )}
+    </>
   );
 }
