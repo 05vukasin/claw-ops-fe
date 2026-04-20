@@ -25,10 +25,17 @@ interface StoredEntry {
 }
 
 let jobs: Record<string, SslJob> = {};
+let jobsSnapshot: SslJob[] = [];
+const EMPTY_JOBS: SslJob[] = [];
 let tracked: Record<string, StoredEntry> = {};
 const listeners = new Set<() => void>();
 const perJobTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 let bootstrapped = false;
+
+function setJobs(next: Record<string, SslJob>) {
+  jobs = next;
+  jobsSnapshot = Object.values(next);
+}
 
 function emit() {
   listeners.forEach((l) => l());
@@ -41,7 +48,11 @@ function subscribe(listener: () => void) {
 }
 
 function getSnapshot(): SslJob[] {
-  return Object.values(jobs);
+  return jobsSnapshot;
+}
+
+function getServerSnapshot(): SslJob[] {
+  return EMPTY_JOBS;
 }
 
 function loadTracked(): Record<string, StoredEntry> {
@@ -73,7 +84,7 @@ function schedulePoll(jobId: string) {
 async function pollOne(jobId: string) {
   try {
     const job = await fetchSslJobApi(jobId);
-    jobs = { ...jobs, [job.id]: job };
+    setJobs({ ...jobs, [job.id]: job });
     emit();
     if (isTerminal(job.status)) {
       // If the cert is now ACTIVE, nudge any UI that reads from fetchSslForServer to refresh.
@@ -96,7 +107,7 @@ function scheduleEviction(jobId: string) {
   perJobTimers[jobId] = setTimeout(() => {
     const next = { ...jobs };
     delete next[jobId];
-    jobs = next;
+    setJobs(next);
     const nextTracked = { ...tracked };
     delete nextTracked[jobId];
     tracked = nextTracked;
@@ -117,7 +128,7 @@ async function safetyNetPoll() {
         if (!perJobTimers[j.id]) schedulePoll(j.id);
       }
     }
-    jobs = next;
+    setJobs(next);
     saveTracked();
     emit();
   } catch {
@@ -151,13 +162,13 @@ export function untrackSslJob(jobId: string) {
   tracked = nextTracked;
   const next = { ...jobs };
   delete next[jobId];
-  jobs = next;
+  setJobs(next);
   saveTracked();
   emit();
 }
 
 export function useSslJobs() {
-  const list = useSyncExternalStore(subscribe, getSnapshot, () => []);
+  const list = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   useEffect(() => {
     bootstrap();
   }, []);
