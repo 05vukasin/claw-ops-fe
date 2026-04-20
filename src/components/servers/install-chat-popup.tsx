@@ -11,6 +11,7 @@ import {
   type ChatInstallResult,
   type SslCertificate,
 } from "@/lib/api";
+import { getApiOrigin } from "@/lib/apiClient";
 import { getUser } from "@/lib/auth";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
@@ -43,7 +44,11 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
   const [phase, setPhase] = useState<Phase>("form");
   const [email, setEmail] = useState<string>(() => getUser()?.email ?? "");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [apiOrigin, setApiOrigin] = useState("");
+  // Seed with the ClawOps backend origin the dashboard is currently talking to.
+  // That's the URL the chat app needs to hit for /api/v1/auth/login etc. — if
+  // we don't pre-fill this, the backend falls back to the chat's own hostname
+  // and every login request loops back and 404s.
+  const [apiOrigin, setApiOrigin] = useState<string>(() => getApiOrigin());
   const [result, setResult] = useState<ChatInstallResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
@@ -219,17 +224,19 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
             {showAdvanced && (
               <div>
                 <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                  API origin override
+                  ClawOps backend URL
                 </label>
                 <input
                   type="url"
                   value={apiOrigin}
                   onChange={(e) => setApiOrigin(e.target.value)}
-                  placeholder={`https://${hostname} (default)`}
+                  placeholder={getApiOrigin() || "https://clawops.example.com"}
                   className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1.5 text-[12px] text-[#c9d1d9] placeholder:text-gray-600 focus:outline-none focus:border-blue-400/50"
                 />
                 <p className="mt-1 text-[10px] text-gray-500">
-                  Overrides NEXT_PUBLIC_API_ORIGIN. Leave blank to use the server&apos;s own domain.
+                  Sets <span className="font-mono text-gray-300">NEXT_PUBLIC_API_ORIGIN</span> in the chat&apos;s
+                  <span className="font-mono text-gray-300"> .env</span>. Pre-filled with the dashboard&apos;s own backend
+                  URL — change only if the chat should talk to a different ClawOps instance.
                 </p>
               </div>
             )}
