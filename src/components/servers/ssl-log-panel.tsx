@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { FiRefreshCw, FiX, FiMaximize2 } from "react-icons/fi";
+import { useEffect, useRef, useState } from "react";
+import { FiRefreshCw, FiX, FiMaximize2, FiAlertTriangle } from "react-icons/fi";
 import type { SslJob } from "@/lib/api";
 import { SSL_STEP_LABELS } from "@/lib/ssl-labels";
 
@@ -20,10 +20,23 @@ export function SslLogPanel({
   onExpand?: () => void;
 }) {
   const logRef = useRef<HTMLPreElement>(null);
+  const [stuckSeconds, setStuckSeconds] = useState(0);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [job.logs]);
+
+  // If the runner hasn't appended any logs after a while, surface a hint so the user
+  // knows to retry instead of assuming the UI is broken.
+  useEffect(() => {
+    if (job.logs || job.status !== "RUNNING") return;
+    const started = Date.now();
+    const id = setInterval(() => {
+      setStuckSeconds(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [job.logs, job.status]);
+  const stuck = !job.logs && job.status === "RUNNING" && stuckSeconds >= 20;
 
   const stepLabel = SSL_STEP_LABELS[job.currentStep] ?? job.currentStep;
   const stepClass =
@@ -73,6 +86,18 @@ export function SslLogPanel({
       {job.errorMessage && (
         <div className="mx-3 mt-2 rounded border border-red-900/30 bg-[#1c0a0a] px-3 py-2 font-mono text-[11px] text-red-300 whitespace-pre-wrap break-all">
           {job.errorMessage}
+        </div>
+      )}
+
+      {stuck && (
+        <div className="mx-3 mt-2 flex items-start gap-2 rounded border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-[11px] text-orange-600 dark:text-orange-400">
+          <FiAlertTriangle size={12} className="mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium">Runner hasn&apos;t picked up this job yet ({stuckSeconds}s)</p>
+            <p className="mt-0.5 text-[10px] text-orange-600/80 dark:text-orange-400/80">
+              If this persists past ~30s, the backend runner is stuck. Click Retry, or cancel and provision again.
+            </p>
+          </div>
         </div>
       )}
 
