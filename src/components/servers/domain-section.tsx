@@ -671,7 +671,16 @@ export function DomainSection({ server, focusSslTick }: DomainSectionProps) {
                           </div>
                         )}
 
-                        {ssl.lastError && <p className="text-[11px] text-red-500 dark:text-red-400">{ssl.lastError}</p>}
+                        {ssl.lastError && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-red-500 dark:text-red-400">{ssl.lastError}</p>
+                            {isInstallFailure(ssl.lastError) && (
+                              <p className="text-[10px] text-canvas-muted/80">
+                                Supported distros: Ubuntu / Debian, RHEL family (Fedora, Rocky, Alma), Alpine, Arch, openSUSE. Check the job log for the exact command + exit code.
+                              </p>
+                            )}
+                          </div>
+                        )}
 
                         {/* Probe result card */}
                         {probeResult && (
@@ -792,6 +801,12 @@ function ActionBtn({
       {children}
     </button>
   );
+}
+
+function isInstallFailure(msg: string | null | undefined): boolean {
+  if (!msg) return false;
+  const m = msg.toLowerCase();
+  return m.includes("failed to install") || m.includes("install step failed") || m.includes("unsupported distro");
 }
 
 function ProbeResultCard({ result, onDismiss }: { result: SslProbeResponse; onDismiss: () => void }) {
