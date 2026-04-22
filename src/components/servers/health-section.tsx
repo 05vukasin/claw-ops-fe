@@ -222,6 +222,11 @@ interface HealthSectionProps { serverId: string; initialTab?: HealthTab }
 
 export function HealthSection({ serverId, initialTab }: HealthSectionProps) {
   const [expanded, setExpanded] = useState(!!initialTab);
+  // Tracks whether the section has ever been expanded in this mount, so we can lazy-mount
+  // the body (MiniChart, tabs, etc.) on first open and keep it mounted thereafter to
+  // preserve the collapse animation without paying the initial-render cost.
+  const hasEverExpandedRef = useRef(expanded);
+  if (expanded) hasEverExpandedRef.current = true;
   const [tab, setTab] = useState<HealthTab>(initialTab ?? "overview");
   const [detailExpanded, setDetailExpanded] = useState(false);
 
@@ -360,6 +365,7 @@ export function HealthSection({ serverId, initialTab }: HealthSectionProps) {
 
       <div className={`animate-collapse ${expanded ? "open" : ""}`}>
         <div className="collapse-inner">
+          {hasEverExpandedRef.current && (
           <div className="border-t border-canvas-border px-5 py-4">
             {/* Tabs */}
             <div className="mb-4 flex items-center gap-1">
@@ -603,6 +609,7 @@ export function HealthSection({ serverId, initialTab }: HealthSectionProps) {
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
 

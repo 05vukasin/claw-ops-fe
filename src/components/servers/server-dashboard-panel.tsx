@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   FiChevronRight,
   FiServer,
@@ -12,16 +13,41 @@ import {
   FiPlay,
   FiDownload,
 } from "react-icons/fi";
-import { TerminalSection, type TerminalSectionHandle } from "./terminal-section";
+import type { TerminalSectionHandle } from "./terminal-section";
 import { HealthSection } from "./health-section";
 import { ConnectionsSection } from "./connections-section";
 import { ScriptsSection } from "./scripts-section";
 import { FileBrowser, type FileBrowserHandle } from "./file-browser";
-import { DeployPopup } from "./deploy-popup";
 import { DomainSection } from "./domain-section";
 import { SslHeaderBadge } from "./ssl-header-badge";
-import { InstallChatPopup } from "./install-chat-popup";
 import { ChatActionsPopover } from "./chat-actions-popover";
+
+/* ------------------------------------------------------------------ */
+/*  Dynamic imports — keep heavy / rarely-opened chunks out of the     */
+/*  initial panel bundle. xterm.js + WebGL addon alone is ~150KB.      */
+/* ------------------------------------------------------------------ */
+
+const TerminalSection = dynamic(
+  () => import("./terminal-section").then((m) => ({ default: m.TerminalSection })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-1 items-center justify-center bg-[#0a0e13] text-[11px] text-canvas-muted">
+        Loading terminal…
+      </div>
+    ),
+  },
+);
+
+const DeployPopup = dynamic(
+  () => import("./deploy-popup").then((m) => ({ default: m.DeployPopup })),
+  { ssr: false },
+);
+
+const InstallChatPopup = dynamic(
+  () => import("./install-chat-popup").then((m) => ({ default: m.InstallChatPopup })),
+  { ssr: false },
+);
 import { Z_INDEX } from "@/lib/z-index";
 import {
   testConnectionApi,
@@ -44,23 +70,75 @@ const PANEL_W = 480;
 const PANEL_MIN_W = 340;
 const PANEL_MAX_W = 1400;
 
-/** Per-server localStorage helpers */
-function panelKey(serverId: string, suffix: string) {
-  return `openclaw-panel-${serverId}-${suffix}`;
-}
-function loadNum(key: string, fallback: number): number {
-  try { const v = localStorage.getItem(key); return v ? parseInt(v, 10) || fallback : fallback; } catch { return fallback; }
-}
-function saveNum(key: string, val: number) {
-  try { localStorage.setItem(key, String(Math.round(val))); } catch {}
-}
-
 interface PanelPos {
   x: number;
   y: number;
 }
 
 const DEFAULT_POS: PanelPos = { x: 80, y: 80 };
+
+/* ------------------------------------------------------------------ */
+/*  Panel settings cache (module-level)                                */
+/*  Reads localStorage ONCE per session for all server panels, then    */
+/*  serves reads from an in-memory Map. Writes update the Map and      */
+/*  localStorage together, so remount reads stay consistent.           */
+/* ------------------------------------------------------------------ */
+
+type PanelField = "x" | "y" | "w" | "term";
+interface PanelSettings {
+  x: number;
+  y: number;
+  w: number;
+  term: number;
+}
+const DEFAULT_PANEL_SETTINGS: PanelSettings = {
+  x: DEFAULT_POS.x,
+  y: DEFAULT_POS.y,
+  w: PANEL_W,
+  term: 0,
+};
+
+let panelSettingsCache: Map<string, PanelSettings> | null = null;
+
+function ensurePanelCache(): Map<string, PanelSettings> {
+  if (panelSettingsCache) return panelSettingsCache;
+  const cache = new Map<string, PanelSettings>();
+  try {
+    if (typeof localStorage !== "undefined") {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        const m = /^openclaw-panel-(.+)-(x|y|w|term)$/.exec(key);
+        if (!m) continue;
+        const serverId = m[1];
+        const field = m[2] as PanelField;
+        const raw = localStorage.getItem(key);
+        if (raw === null) continue;
+        const n = parseInt(raw, 10);
+        if (Number.isNaN(n)) continue;
+        const existing = cache.get(serverId) ?? { ...DEFAULT_PANEL_SETTINGS };
+        existing[field] = n;
+        cache.set(serverId, existing);
+      }
+    }
+  } catch { /* noop */ }
+  panelSettingsCache = cache;
+  return cache;
+}
+
+function getPanelSettings(serverId: string): PanelSettings {
+  const existing = ensurePanelCache().get(serverId);
+  return existing ? { ...existing } : { ...DEFAULT_PANEL_SETTINGS };
+}
+
+function setPanelSetting(serverId: string, field: PanelField, val: number) {
+  const cache = ensurePanelCache();
+  const rounded = Math.round(val);
+  const existing = cache.get(serverId) ?? { ...DEFAULT_PANEL_SETTINGS };
+  existing[field] = rounded;
+  cache.set(serverId, existing);
+  try { localStorage.setItem(`openclaw-panel-${serverId}-${field}`, String(rounded)); } catch { /* noop */ }
+}
 
 const STATUS_STYLE: Record<string, string> = {
   ONLINE: "bg-green-400",
@@ -98,65 +176,60 @@ export function ServerDashboardPanel({
 }: ServerDashboardPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  /* ---- initial settings (read cache once per mount) ---- */
+  const initialSettings = useRef(getPanelSettings(server.id)).current;
+
   /* ---- position (per-server) ---- */
-  const [pos, setPos] = useState<PanelPos>(() => ({
-    x: loadNum(panelKey(server.id, "x"), DEFAULT_POS.x),
-    y: loadNum(panelKey(server.id, "y"), DEFAULT_POS.y),
-  }));
+  const [pos, setPos] = useState<PanelPos>({ x: initialSettings.x, y: initialSettings.y });
   const posRef = useRef(pos);
   posRef.current = pos;
 
   /* ---- panel width (per-server) ---- */
-  const [panelW, setPanelW] = useState<number>(() => loadNum(panelKey(server.id, "w"), PANEL_W));
+  const [panelW, setPanelW] = useState<number>(initialSettings.w);
   const panelWRef = useRef(panelW);
   panelWRef.current = panelW;
 
   /* ---- sections ---- */
   const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const [termExpanded, setTermExpanded] = useState(() => loadNum(panelKey(server.id, "term"), 0) === 1);
+  const [termExpanded, setTermExpanded] = useState(initialSettings.term === 1);
   const termRef = useRef<TerminalSectionHandle>(null);
   const fileBrowserRef = useRef<FileBrowserHandle>(null);
   const [fileBrowserH, setFileBrowserH] = useState(200);
   const fileBrowserHRef = useRef(200);
   const [panelH, setPanelH] = useState<number | null>(null);
 
-  /* ---- Claude Code detection ---- */
+  /* ---- Batched detection (Claude Code / Deploy script / Chat app) ---- */
+  // One effect + Promise.allSettled → requests fire in parallel and a single setState commits
+  // the result. Previously these were 3 separate effects causing up to 3 render cycles per panel open.
   const [claudeInstalled, setClaudeInstalled] = useState<"unknown" | "checking" | "installed" | "not-installed">("unknown");
-  useEffect(() => {
-    if (server.status !== "ONLINE") return;
-    let stale = false;
-    checkClaudeCodeInstalledApi(server.id)
-      .then((ok) => { if (!stale) setClaudeInstalled(ok ? "installed" : "not-installed"); })
-      .catch(() => { if (!stale) setClaudeInstalled("unknown"); });
-    return () => { stale = true; };
-  }, [server.id, server.status]);
-
-  /* ---- Deploy script detection ---- */
   const [deployAvailable, setDeployAvailable] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
-  useEffect(() => {
-    if (server.status !== "ONLINE") return;
-    let stale = false;
-    checkDeployScriptApi(server.id)
-      .then((ok) => { if (!stale) setDeployAvailable(ok); })
-      .catch(() => { if (!stale) setDeployAvailable(false); });
-    return () => { stale = true; };
-  }, [server.id, server.status]);
-
-  /* ---- Chat app detection ---- */
   const [chatStatus, setChatStatus] = useState<"unknown" | "installed" | "not-installed">("unknown");
   const [showInstallChat, setShowInstallChat] = useState(false);
   const [chatActionsOpen, setChatActionsOpen] = useState(false);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
+
   useEffect(() => {
     if (server.status !== "ONLINE") return;
     let stale = false;
-    fetchChatAppStatusApi(server.id)
-      .then((s) => {
-        if (stale) return;
-        setChatStatus(s.installed && s.running ? "installed" : "not-installed");
-      })
-      .catch(() => { if (!stale) setChatStatus("unknown"); });
+    Promise.allSettled([
+      checkClaudeCodeInstalledApi(server.id),
+      checkDeployScriptApi(server.id),
+      fetchChatAppStatusApi(server.id),
+    ]).then(([claudeRes, deployRes, chatRes]) => {
+      if (stale) return;
+      setClaudeInstalled(
+        claudeRes.status === "fulfilled"
+          ? (claudeRes.value ? "installed" : "not-installed")
+          : "unknown",
+      );
+      setDeployAvailable(deployRes.status === "fulfilled" ? deployRes.value : false);
+      setChatStatus(
+        chatRes.status === "fulfilled"
+          ? (chatRes.value.installed && chatRes.value.running ? "installed" : "not-installed")
+          : "unknown",
+      );
+    });
     return () => { stale = true; };
   }, [server.id, server.status]);
 
@@ -225,16 +298,23 @@ export function ServerDashboardPanel({
     const nx = Math.max(0, Math.min(e.clientX - dragOffset.current.x, window.innerWidth - panelWRef.current));
     const panelH = panelRef.current?.offsetHeight ?? 200;
     const ny = Math.max(0, Math.min(e.clientY - dragOffset.current.y, window.innerHeight - panelH));
-    setPos({ x: nx, y: ny });
+    // Update DOM directly during drag — avoids a full React re-render every pointermove.
+    // The posRef stays authoritative; we commit to state on pointerup so persisted position matches.
+    posRef.current = { x: nx, y: ny };
+    if (panelRef.current) {
+      panelRef.current.style.left = `${nx}px`;
+      panelRef.current.style.top = `${ny}px`;
+    }
   }, []);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragging.current) return;
     dragging.current = false;
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    // Persist position
-    saveNum(panelKey(server.id, "x"), posRef.current.x);
-    saveNum(panelKey(server.id, "y"), posRef.current.y);
+    // Commit final position so React state matches the DOM, then persist.
+    setPos({ x: posRef.current.x, y: posRef.current.y });
+    setPanelSetting(server.id, "x", posRef.current.x);
+    setPanelSetting(server.id, "y", posRef.current.y);
   }, [server.id]);
 
   /* ---- resize ---- */
@@ -251,17 +331,28 @@ export function ServerDashboardPanel({
       function onMove(ev: PointerEvent) {
         const dx = ev.clientX - startX;
         const newW = Math.max(PANEL_MIN_W, Math.min(PANEL_MAX_W, startW + (dir === "right" ? dx : -dx)));
-        setPanelW(newW);
+        // Direct DOM update — avoid setState per pointermove
+        panelWRef.current = newW;
+        if (panelRef.current) {
+          panelRef.current.style.width = `${newW}px`;
+        }
         if (dir === "left") {
           const newX = Math.max(0, startPanelX + startW - newW);
-          setPos((p) => ({ ...p, x: newX }));
+          posRef.current = { ...posRef.current, x: newX };
+          if (panelRef.current) {
+            panelRef.current.style.left = `${newX}px`;
+          }
         }
       }
       function onUp() {
         el.releasePointerCapture(e.pointerId);
         el.removeEventListener("pointermove", onMove);
         el.removeEventListener("pointerup", onUp);
-        saveNum(panelKey(server.id, "w"), panelWRef.current);
+        // Commit to React state + persist.
+        setPanelW(panelWRef.current);
+        if (dir === "left") setPos({ x: posRef.current.x, y: posRef.current.y });
+        setPanelSetting(server.id, "w", panelWRef.current);
+        if (dir === "left") setPanelSetting(server.id, "x", posRef.current.x);
       }
       el.addEventListener("pointermove", onMove);
       el.addEventListener("pointerup", onUp);
@@ -300,15 +391,22 @@ export function ServerDashboardPanel({
     el.setPointerCapture(e.pointerId);
     const startY = e.clientY;
     const startH = panelRef.current?.offsetHeight ?? 600;
+    let latestH = startH;
     function onMove(ev: PointerEvent) {
       const dy = ev.clientY - startY;
       const newH = Math.max(300, Math.min(window.innerHeight - posRef.current.y - 8, startH + dy));
-      setPanelH(newH);
+      latestH = newH;
+      // Direct DOM update during drag — no React re-render per frame.
+      if (panelRef.current) {
+        panelRef.current.style.height = `${newH}px`;
+      }
     }
     function onUp() {
       el.releasePointerCapture(e.pointerId);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
+      // Commit final height to state so subsequent renders match the DOM.
+      setPanelH(latestH);
     }
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
@@ -461,7 +559,7 @@ export function ServerDashboardPanel({
                   <ActionBtn
                     onClick={() => {
                       setTermExpanded(true);
-                      saveNum(panelKey(server.id, "term"), 1);
+                      setPanelSetting(server.id, "term", 1);
                       setTimeout(() => {
                         termRef.current?.queueCommand("export PATH=\"$HOME/.local/bin:$PATH\" && claude\r");
                       }, 100);
@@ -575,13 +673,13 @@ export function ServerDashboardPanel({
                       const y = startY + (targetY - startY) * ease(t);
                       setPos((p) => ({ ...p, y }));
                       if (t < 1) requestAnimationFrame(animate);
-                      else saveNum(panelKey(server.id, "y"), targetY);
+                      else setPanelSetting(server.id, "y", targetY);
                     }
                     requestAnimationFrame(animate);
                   }
                 }
                 const next = !prev;
-                saveNum(panelKey(server.id, "term"), next ? 1 : 0);
+                setPanelSetting(server.id, "term", next ? 1 : 0);
                 return next;
               });
             }}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { Z_INDEX } from "@/lib/z-index";
@@ -91,14 +92,6 @@ export function Navbar({ open, onClose }: NavbarProps) {
     };
   }, [open, onClose]);
 
-  const handleNav = useCallback(
-    (href: string) => {
-      router.push(href);
-      onClose();
-    },
-    [router, onClose],
-  );
-
   if (!mounted) return null;
 
   return (
@@ -161,7 +154,7 @@ export function Navbar({ open, onClose }: NavbarProps) {
                       key={entry.label}
                       group={entry}
                       pathname={pathname}
-                      onNav={handleNav}
+                      onClose={onClose}
                       delay={i * 40}
                     />
                   );
@@ -169,9 +162,10 @@ export function Navbar({ open, onClose }: NavbarProps) {
                 const isActive = pathname === entry.href;
                 return (
                   <li key={entry.href} className="animate-nav-item" style={{ animationDelay: `${i * 40}ms` }}>
-                    <button
-                      type="button"
-                      onClick={() => handleNav(entry.href)}
+                    <Link
+                      href={entry.href}
+                      prefetch
+                      onClick={onClose}
                       className={`flex w-full items-center rounded-md px-3 py-2 text-sm transition-colors ${
                         isActive
                           ? "bg-canvas-surface-hover font-medium text-canvas-fg"
@@ -180,7 +174,7 @@ export function Navbar({ open, onClose }: NavbarProps) {
                     >
                       <NavIcon name={entry.label} />
                       <span className="ml-2.5">{entry.label}</span>
-                    </button>
+                    </Link>
                   </li>
                 );
               })}
@@ -228,10 +222,10 @@ export function Navbar({ open, onClose }: NavbarProps) {
 
 /* ── Collapsible nav group ── */
 
-function NavGroupItem({ group, pathname, onNav, delay }: {
+function NavGroupItem({ group, pathname, onClose, delay }: {
   group: NavGroup;
   pathname: string;
-  onNav: (href: string) => void;
+  onClose: () => void;
   delay: number;
 }) {
   const childActive = group.children.some((c) => pathname === c.href);
@@ -264,9 +258,10 @@ function NavGroupItem({ group, pathname, onNav, delay }: {
             const active = pathname === child.href;
             return (
               <li key={child.href}>
-                <button
-                  type="button"
-                  onClick={() => onNav(child.href)}
+                <Link
+                  href={child.href}
+                  prefetch
+                  onClick={onClose}
                   className={`flex w-full items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${
                     active
                       ? "bg-canvas-surface-hover font-medium text-canvas-fg"
@@ -275,7 +270,7 @@ function NavGroupItem({ group, pathname, onNav, delay }: {
                 >
                   <NavIcon name={child.label} />
                   <span className="ml-2">{child.label}</span>
-                </button>
+                </Link>
               </li>
             );
           })}

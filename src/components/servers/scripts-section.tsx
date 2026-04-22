@@ -65,6 +65,10 @@ interface ScriptsSectionProps {
 
 export function ScriptsSection({ serverId }: ScriptsSectionProps) {
   const [expanded, setExpanded] = useState(false);
+  // Lazy-mount the body on first expansion so the initial panel render skips the script-list
+  // render cost (and its search + job polling lives behind `expanded` checks already).
+  const hasEverExpandedRef = useRef(expanded);
+  if (expanded) hasEverExpandedRef.current = true;
   const [scripts, setScripts] = useState<DeploymentScript[]>([]);
   const [jobs, setJobs] = useState<DeploymentJob[]>([]);
   const [search, setSearch] = useState("");
@@ -245,6 +249,7 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
 
       <div className={`animate-collapse ${expanded ? "open" : ""}`}>
         <div className="collapse-inner">
+          {hasEverExpandedRef.current && (
           <div className="border-t border-canvas-border">
 
           {/* ===== SCRIPT LIBRARY ===== */}
@@ -397,6 +402,7 @@ export function ScriptsSection({ serverId }: ScriptsSectionProps) {
             </div>
           </div>
           </div>
+          )}
         </div>
       </div>
 

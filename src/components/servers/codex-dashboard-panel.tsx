@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { FiChevronRight, FiFolder, FiRefreshCw, FiSettings, FiTerminal, FiX } from "react-icons/fi";
 import { executeCommandApi } from "@/lib/api";
 import { Z_INDEX } from "@/lib/z-index";
-import { CodexCodeOverlay } from "./codex-code-overlay";
+
+const CodexCodeOverlay = dynamic(
+  () => import("./codex-code-overlay").then((m) => ({ default: m.CodexCodeOverlay })),
+  { ssr: false },
+);
 
 const PANEL_W = 440;
 const PANEL_MIN_W = 340;

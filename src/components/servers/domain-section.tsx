@@ -69,6 +69,10 @@ function makeSslStub(serverId: string, overrides: Partial<SslCertificate>): SslC
 
 export function DomainSection({ server, focusSslTick }: DomainSectionProps) {
   const [expanded, setExpanded] = useState(false);
+  // Lazy-mount the body on first expansion to keep initial panel render cheap; after first
+  // open we leave it mounted so the collapse animation works.
+  const hasEverExpandedRef = useRef(expanded);
+  if (expanded) hasEverExpandedRef.current = true;
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Parent requests focus (typically the header SSL badge was clicked) — expand + scroll.
@@ -483,6 +487,7 @@ export function DomainSection({ server, focusSslTick }: DomainSectionProps) {
 
       <div className={`animate-collapse ${expanded ? "open" : ""}`}>
         <div className="collapse-inner">
+          {hasEverExpandedRef.current && (
           <div className="border-t border-canvas-border px-5 py-4 space-y-4">
 
             {/* ── A. Pending domain job, no assignment yet ── */}
@@ -771,6 +776,7 @@ export function DomainSection({ server, focusSslTick }: DomainSectionProps) {
             )}
 
           </div>
+          )}
         </div>
       </div>
 

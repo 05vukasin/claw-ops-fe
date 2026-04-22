@@ -1,11 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ServerDashboardPanel, ServerModal } from "@/components/servers";
 import { AgentDashboardPanel } from "@/components/agents/agent-dashboard-panel";
 import { AgentConfigPanel } from "@/components/agents/agent-config-panel";
-import { FileEditorPanel } from "@/components/servers/file-editor-panel";
+
+// Rarely-opened — lazy-load so it doesn't ship in the initial bundle.
+const FileEditorPanel = dynamic(
+  () => import("@/components/servers/file-editor-panel").then((m) => ({ default: m.FileEditorPanel })),
+  { ssr: false },
+);
 import { GitHubDashboardPanel } from "@/components/servers/github-dashboard-panel";
 import { ClaudeDashboardPanel } from "@/components/servers/claude-dashboard-panel";
 import { CodexDashboardPanel } from "@/components/servers/codex-dashboard-panel";

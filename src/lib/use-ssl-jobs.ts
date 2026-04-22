@@ -30,7 +30,21 @@ const EMPTY_JOBS: SslJob[] = [];
 let tracked: Record<string, StoredEntry> = {};
 const listeners = new Set<() => void>();
 const perJobTimers: Record<string, ReturnType<typeof setTimeout>> = {};
-let bootstrapped = false;
+
+// Bootstrap state survives HMR via globalThis so the safety-net interval isn't duplicated on
+// hot reload. The prior implementation leaked an interval on every module replacement.
+const SSL_BOOTSTRAP_KEY = "__clawops_ssl_jobs_bootstrap__" as const;
+interface SslBootstrapState {
+  bootstrapped: boolean;
+  safetyTimer: ReturnType<typeof setInterval> | null;
+}
+function sslBootstrapState(): SslBootstrapState {
+  const g = globalThis as unknown as Record<string, SslBootstrapState>;
+  if (!g[SSL_BOOTSTRAP_KEY]) {
+    g[SSL_BOOTSTRAP_KEY] = { bootstrapped: false, safetyTimer: null };
+  }
+  return g[SSL_BOOTSTRAP_KEY];
+}
 
 function setJobs(next: Record<string, SslJob>) {
   jobs = next;
@@ -137,11 +151,13 @@ async function safetyNetPoll() {
 }
 
 function bootstrap() {
-  if (bootstrapped) return;
-  bootstrapped = true;
+  const state = sslBootstrapState();
+  if (state.bootstrapped) return;
+  state.bootstrapped = true;
   tracked = loadTracked();
   for (const id of Object.keys(tracked)) schedulePoll(id);
-  setInterval(safetyNetPoll, SAFETY_NET_POLL_MS);
+  if (state.safetyTimer !== null) clearInterval(state.safetyTimer);
+  state.safetyTimer = setInterval(safetyNetPoll, SAFETY_NET_POLL_MS);
   safetyNetPoll();
 }
 

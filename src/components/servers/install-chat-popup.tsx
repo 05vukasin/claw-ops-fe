@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { FiDownload, FiPlay, FiExternalLink, FiX, FiLock, FiTerminal, FiCheckCircle } from "react-icons/fi";
 import {
@@ -17,7 +18,11 @@ import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { useSslJobs } from "@/lib/use-ssl-jobs";
 import { Z_INDEX } from "@/lib/z-index";
-import { ClaudeCodeOverlay } from "./claude-code-overlay";
+
+const ClaudeCodeOverlay = dynamic(
+  () => import("./claude-code-overlay").then((m) => ({ default: m.ClaudeCodeOverlay })),
+  { ssr: false },
+);
 
 type Phase = "form" | "running" | "success" | "failed";
 

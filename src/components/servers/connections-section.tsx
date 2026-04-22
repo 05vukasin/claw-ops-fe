@@ -1,9 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { FiChevronRight, FiGithub, FiLink, FiRefreshCw } from "react-icons/fi";
 import { executeCommandApi } from "@/lib/api";
-import { ClaudeCodeOverlay } from "./claude-code-overlay";
+
+// Overlay is large and only shown when user explicitly triggers a login flow.
+const ClaudeCodeOverlay = dynamic(
+  () => import("./claude-code-overlay").then((m) => ({ default: m.ClaudeCodeOverlay })),
+  { ssr: false },
+);
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -203,6 +209,10 @@ print('SETUP_OK' if changed else 'ALREADY_CONFIGURED')"`,
 
 export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionProps) {
   const [expanded, setExpanded] = useState(false);
+  // Lazy-mount the body on first expansion so `executeCommandApi` fan-out (gh/claude/codex/google)
+  // only runs when the user actually opens the section.
+  const hasEverExpandedRef = useRef(expanded);
+  if (expanded) hasEverExpandedRef.current = true;
   const [github, setGithub] = useState<ConnectionStatus>(EMPTY);
   const [claude, setClaude] = useState<ConnectionStatus>(EMPTY);
   const [codex, setCodex] = useState<ConnectionStatus>(EMPTY);
@@ -360,6 +370,7 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
         </button>
         <div className={`animate-collapse ${expanded ? "open" : ""}`}>
           <div className="collapse-inner">
+            {hasEverExpandedRef.current && (
             <div className="border-t border-canvas-border">
               {/* Refresh */}
               <div className="flex justify-end px-5 pt-3 pb-1">
@@ -423,6 +434,7 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
 
               <div className="h-2" />
             </div>
+            )}
           </div>
         </div>
       </div>

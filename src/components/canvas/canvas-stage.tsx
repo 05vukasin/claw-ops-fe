@@ -69,6 +69,9 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
   const [camera, setCamera] = useState<Camera>(loadCamera);
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
+  // Ref to the transformed world container so we can write CSS transforms directly during pan
+  // without triggering React re-renders every pointermove frame.
+  const worldRef = useRef<HTMLDivElement>(null);
 
   // Persist camera on change (debounced)
   useEffect(() => {
@@ -185,6 +188,20 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
   const [livePos, setLivePos] = useState<Record<string, { x: number; y: number }>>({});
 
   const handleMove = useCallback((id: string, x: number, y: number) => {
+    // Update connector line start points directly via DOM for this server's edges — avoids
+    // waiting for the setLivePos-triggered useEffect to iterate over every node in the canvas.
+    for (const [key, line] of agentLineRefs.current) {
+      if (key.startsWith(`${id}::`)) {
+        line.setAttribute("x1", String(x));
+        line.setAttribute("y1", String(y));
+      }
+    }
+    const ghLine = githubLineRefs.current.get(`github::${id}`);
+    if (ghLine) { ghLine.setAttribute("x1", String(x)); ghLine.setAttribute("y1", String(y)); }
+    const ccLine = claudeLineRefs.current.get(`claude::${id}`);
+    if (ccLine) { ccLine.setAttribute("x1", String(x)); ccLine.setAttribute("y1", String(y)); }
+    const codexLine = codexLineRefs.current.get(`codex::${id}`);
+    if (codexLine) { codexLine.setAttribute("x1", String(x)); codexLine.setAttribute("y1", String(y)); }
     setLivePos((prev) => ({ ...prev, [id]: { x, y } }));
   }, []);
 
@@ -347,17 +364,23 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     if (!panning.current) return;
     const dx = e.clientX - panStart.current.x;
     const dy = e.clientY - panStart.current.y;
-    setCamera((prev) => ({
-      ...prev,
-      x: panStart.current.cx + dx,
-      y: panStart.current.cy + dy,
-    }));
+    const nx = panStart.current.cx + dx;
+    const ny = panStart.current.cy + dy;
+    // Update ref + DOM directly; skip React state during the pan to avoid re-rendering
+    // every node and connector line per frame.
+    cameraRef.current = { ...cameraRef.current, x: nx, y: ny };
+    if (worldRef.current) {
+      worldRef.current.style.transform = `translate(${nx}px, ${ny}px) scale(${cameraRef.current.zoom})`;
+    }
   }, []);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!panning.current) return;
     panning.current = false;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    // Commit final camera to state so children (nodes reading camera.zoom via props) stay in sync
+    // and localStorage persistence picks up the final position.
+    setCamera({ ...cameraRef.current });
     saveCamera(cameraRef.current);
   }, []);
 
@@ -376,6 +399,7 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     >
       {/* Transformed world container — nodes live here in world coordinates */}
       <div
+        ref={worldRef}
         style={{
           transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})`,
           transformOrigin: "0 0",

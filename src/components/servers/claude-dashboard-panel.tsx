@@ -1,10 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { FiChevronRight, FiFolder, FiKey, FiRefreshCw, FiTerminal, FiX, FiZap, FiDownload } from "react-icons/fi";
 import { executeCommandApi, ApiError } from "@/lib/api";
 import { Z_INDEX } from "@/lib/z-index";
-import { ClaudeCodeOverlay } from "./claude-code-overlay";
+
+const ClaudeCodeOverlay = dynamic(
+  () => import("./claude-code-overlay").then((m) => ({ default: m.ClaudeCodeOverlay })),
+  { ssr: false },
+);
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
