@@ -779,6 +779,29 @@ export async function fetchAuditLogsApi(
   return res.json() as Promise<PageResponse<AuditLogEntry>>;
 }
 
+export interface DeleteAuditLogsResponse {
+  deletedCount: number;
+  before: string;
+}
+
+export async function deleteOldAuditLogsApi(before: string): Promise<DeleteAuditLogsResponse> {
+  const params = new URLSearchParams({ before });
+  const res = await apiFetch(`/api/v1/audit/logs?${params.toString()}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    let message = "Failed to delete old audit logs.";
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body?.message) message = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json() as Promise<DeleteAuditLogsResponse>;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Deployment Scripts                                                 */
 /* ------------------------------------------------------------------ */
