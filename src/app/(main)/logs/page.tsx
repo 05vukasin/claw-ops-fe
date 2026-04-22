@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiFilter, FiChevronDown, FiX } from "react-icons/fi";
+import { FiFilter, FiChevronDown, FiX, FiTrash2 } from "react-icons/fi";
 import { getUser } from "@/lib/auth";
 import { useIsMobile } from "@/lib/use-is-mobile";
+import { Modal } from "@/components/ui/modal";
 import {
+  ApiError,
+  deleteOldAuditLogsApi,
   fetchAuditLogsApi,
   type AuditLogEntry,
   type AuditLogFilters,
@@ -70,6 +73,24 @@ export default function LogsPage() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Delete old logs
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((msg: string, type: "success" | "error") => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    },
+    [],
+  );
+
   const buildFilters = useCallback((): AuditLogFilters => {
     const f: AuditLogFilters = {};
     if (filterAction) f.action = filterAction;
@@ -125,6 +146,19 @@ export default function LogsPage() {
     setTimeout(() => loadLogs(0), 0);
   }, [loadLogs]);
 
+  const handleDeleteOldLogs = useCallback(
+    async (beforeIso: string) => {
+      const result = await deleteOldAuditLogsApi(beforeIso);
+      showToast(
+        `Deleted ${result.deletedCount} audit log ${result.deletedCount === 1 ? "entry" : "entries"}.`,
+        "success",
+      );
+      setShowDeleteModal(false);
+      loadLogs(0);
+    },
+    [loadLogs, showToast],
+  );
+
   if (!currentUser || currentUser.role !== "ADMIN") return null;
 
   const logs = data?.content ?? [];
@@ -137,47 +171,68 @@ export default function LogsPage() {
   /* ── Mobile view ── */
   if (isMobile) {
     return (
-      <MobileLogsView
-        logs={logs}
-        loading={loading}
-        error={error}
-        data={data}
-        page={page}
-        autoRefresh={autoRefresh}
-        hasActiveFilters={hasActiveFilters}
-        filterAction={filterAction}
-        filterEntityType={filterEntityType}
-        filterUserId={filterUserId}
-        filterFrom={filterFrom}
-        filterTo={filterTo}
-        onFilterAction={setFilterAction}
-        onFilterEntityType={setFilterEntityType}
-        onFilterUserId={setFilterUserId}
-        onFilterFrom={setFilterFrom}
-        onFilterTo={setFilterTo}
-        onAutoRefresh={setAutoRefresh}
-        onFilter={handleFilter}
-        onClear={handleClear}
-        onLoadPage={loadLogs}
-      />
+      <>
+        <MobileLogsView
+          logs={logs}
+          loading={loading}
+          error={error}
+          data={data}
+          page={page}
+          autoRefresh={autoRefresh}
+          hasActiveFilters={hasActiveFilters}
+          filterAction={filterAction}
+          filterEntityType={filterEntityType}
+          filterUserId={filterUserId}
+          filterFrom={filterFrom}
+          filterTo={filterTo}
+          onFilterAction={setFilterAction}
+          onFilterEntityType={setFilterEntityType}
+          onFilterUserId={setFilterUserId}
+          onFilterFrom={setFilterFrom}
+          onFilterTo={setFilterTo}
+          onAutoRefresh={setAutoRefresh}
+          onFilter={handleFilter}
+          onClear={handleClear}
+          onLoadPage={loadLogs}
+          onOpenDelete={() => setShowDeleteModal(true)}
+        />
+        <DeleteOldLogsModal
+          open={showDeleteModal}
+          onClose={() => setShowDeleteModal(false)}
+          onConfirm={handleDeleteOldLogs}
+          onError={(m) => showToast(m, "error")}
+        />
+        <Toast toast={toast} onClose={() => setToast(null)} />
+      </>
     );
   }
 
   /* ── Desktop view ── */
   return (
+    <>
     <div className="mx-auto max-w-7xl px-4 py-6">
       {/* Header */}
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight text-canvas-fg">Audit Log</h2>
-        <label className="flex items-center gap-2 text-xs text-canvas-muted cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={autoRefresh}
-            onChange={(e) => setAutoRefresh(e.target.checked)}
-            className="accent-canvas-fg"
-          />
-          Auto-refresh (10s)
-        </label>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-xs text-canvas-muted cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="accent-canvas-fg"
+            />
+            Auto-refresh (10s)
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowDeleteModal(true)}
+            className="flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-1.5 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/10 dark:text-red-400"
+          >
+            <FiTrash2 size={12} />
+            Delete old logs…
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -317,6 +372,14 @@ export default function LogsPage() {
         </div>
       )}
     </div>
+    <DeleteOldLogsModal
+      open={showDeleteModal}
+      onClose={() => setShowDeleteModal(false)}
+      onConfirm={handleDeleteOldLogs}
+      onError={(m) => showToast(m, "error")}
+    />
+    <Toast toast={toast} onClose={() => setToast(null)} />
+    </>
   );
 }
 
@@ -400,6 +463,7 @@ function MobileLogsView({
   onFilter,
   onClear,
   onLoadPage,
+  onOpenDelete,
 }: {
   logs: AuditLogEntry[];
   loading: boolean;
@@ -422,6 +486,7 @@ function MobileLogsView({
   onFilter: () => void;
   onClear: () => void;
   onLoadPage: (page: number) => void;
+  onOpenDelete: () => void;
 }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -527,6 +592,15 @@ function MobileLogsView({
             />
             Auto-refresh (10s)
           </label>
+
+          <button
+            type="button"
+            onClick={() => { setFiltersOpen(false); onOpenDelete(); }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/5 py-2 text-[11px] font-medium text-red-500 transition-colors hover:bg-red-500/10 dark:text-red-400"
+          >
+            <FiTrash2 size={11} />
+            Delete old logs…
+          </button>
 
           <div className="flex items-center gap-2 pt-1">
             <button
@@ -662,6 +736,220 @@ function LogCard({ log }: { log: AuditLogEntry }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Delete Old Logs Modal                                              */
+/* ================================================================== */
+
+const PRESETS: { label: string; days: number }[] = [
+  { label: "7 days", days: 7 },
+  { label: "30 days", days: 30 },
+  { label: "90 days", days: 90 },
+  { label: "1 year", days: 365 },
+];
+
+function DeleteOldLogsModal({
+  open,
+  onClose,
+  onConfirm,
+  onError,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (beforeIso: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  // Modal unmounts on close and remounts on next open, so useState initializers
+  // give us a fresh state per open without a reset effect.
+  const [presetDays, setPresetDays] = useState<number | null>(30);
+  const [customDate, setCustomDate] = useState("");
+  const [confirmText, setConfirmText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [openedAt] = useState<number>(() => Date.now());
+
+  const cutoffIso = useMemo<string | null>(() => {
+    if (customDate) {
+      const d = new Date(customDate);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString();
+    }
+    if (presetDays != null) {
+      return new Date(openedAt - presetDays * 24 * 60 * 60 * 1000).toISOString();
+    }
+    return null;
+  }, [customDate, presetDays, openedAt]);
+
+  const cutoffPreview = useMemo(() => {
+    if (!cutoffIso) return null;
+    return new Date(cutoffIso).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [cutoffIso]);
+
+  const canSubmit = !!cutoffIso && confirmText === "DELETE" && !submitting;
+
+  const handleSubmit = async () => {
+    if (!cutoffIso || submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm(cutoffIso);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : "Failed to delete old logs";
+      onError(msg);
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose}>
+      <div className="flex flex-col gap-4 p-5">
+        <div>
+          <h3 className="text-base font-semibold text-canvas-fg">Delete old audit logs</h3>
+          <p className="mt-1 text-xs text-canvas-muted">
+            This permanently removes all audit entries older than the selected cutoff. Deletes across
+            all logs, regardless of current filters. This action cannot be undone.
+          </p>
+        </div>
+
+        {/* Presets */}
+        <div>
+          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-canvas-muted">
+            Older than
+          </label>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((p) => {
+              const active = presetDays === p.days && !customDate;
+              return (
+                <button
+                  key={p.days}
+                  type="button"
+                  onClick={() => {
+                    setPresetDays(p.days);
+                    setCustomDate("");
+                  }}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                    active
+                      ? "border-canvas-fg bg-canvas-fg text-canvas-bg"
+                      : "border-canvas-border text-canvas-muted hover:bg-canvas-surface-hover hover:text-canvas-fg"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Custom date */}
+        <div>
+          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-canvas-muted">
+            Or choose a cutoff date
+          </label>
+          <input
+            type="datetime-local"
+            value={customDate}
+            onChange={(e) => {
+              setCustomDate(e.target.value);
+              if (e.target.value) setPresetDays(null);
+            }}
+            className="w-full rounded-md border border-canvas-border bg-transparent px-2.5 py-1.5 text-xs text-canvas-fg focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10"
+          />
+        </div>
+
+        {/* Cutoff preview */}
+        {cutoffPreview && (
+          <div className="rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2 text-[11px] text-red-500 dark:text-red-400">
+            Will delete entries created before <strong>{cutoffPreview}</strong>.
+          </div>
+        )}
+
+        {/* Type DELETE */}
+        <div>
+          <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wider text-canvas-muted">
+            Type <span className="font-mono text-red-500 dark:text-red-400">DELETE</span> to confirm
+          </label>
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="DELETE"
+            className="w-full rounded-md border border-canvas-border bg-transparent px-2.5 py-1.5 font-mono text-xs text-canvas-fg focus:outline-none focus:border-canvas-fg/25 focus:ring-1 focus:ring-canvas-fg/10"
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-canvas-muted transition-colors hover:text-canvas-fg disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="flex items-center gap-1.5 rounded-md bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            <FiTrash2 size={12} />
+            {submitting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  Toast                                                              */
+/* ================================================================== */
+
+function Toast({
+  toast,
+  onClose,
+}: {
+  toast: { msg: string; type: "success" | "error" } | null;
+  onClose: () => void;
+}) {
+  if (!toast) return null;
+  const isError = toast.type === "error";
+  return (
+    <div
+      className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className={`flex items-center gap-3 rounded-lg border px-4 py-2.5 text-xs shadow-lg ${
+          isError
+            ? "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400"
+            : "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400"
+        }`}
+      >
+        <span>{toast.msg}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-1 opacity-60 hover:opacity-100"
+          aria-label="Dismiss"
+        >
+          <FiX size={12} />
+        </button>
+      </div>
     </div>
   );
 }
