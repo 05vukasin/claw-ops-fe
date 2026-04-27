@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FiExternalLink, FiRefreshCw, FiTrash2, FiLoader } from "react-icons/fi";
 import { updateChatAppApi, uninstallChatAppApi, ApiError } from "@/lib/api";
 
@@ -19,6 +20,11 @@ interface ChatActionsPopoverProps {
  * Update (docker compose pull + up), Delete (compose down + rm + wipe). Update
  * and Delete hit the backend; results surface inline as a status line so the
  * user sees what happened without opening a separate popup.
+ *
+ * Rendered through a portal to document.body to escape any transformed/clipped
+ * ancestor (the dashboard panel uses `animate-modal-in`, which leaves a residual
+ * `transform` that would otherwise turn the panel into the containing block for
+ * `position: fixed` descendants).
  */
 export function ChatActionsPopover({
   serverId,
@@ -31,13 +37,57 @@ export function ChatActionsPopover({
   const [action, setAction] = useState<Action>("idle");
   const [statusMsg, setStatusMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  /* ── Position below the anchor ── */
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    const rect = anchorRef.current.getBoundingClientRect();
-    setPos({ top: rect.bottom + 6, left: rect.left });
+  /* ── Position: clamp to viewport, flip above when overflowing bottom ── */
+  const [pos, setPos] = useState<{ top: number; left: number; ready: boolean }>({
+    top: 0,
+    left: 0,
+    ready: false,
+  });
+
+  const updatePos = useCallback(() => {
+    const anchor = anchorRef.current;
+    const popover = popoverRef.current;
+    if (!anchor || !popover) return;
+    const aRect = anchor.getBoundingClientRect();
+    const pRect = popover.getBoundingClientRect();
+    const margin = 8;
+    const gap = 6;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let left = aRect.left;
+    if (left + pRect.width > vw - margin) {
+      left = vw - pRect.width - margin;
+    }
+    if (left < margin) left = margin;
+
+    let top = aRect.bottom + gap;
+    if (top + pRect.height > vh - margin) {
+      const flippedTop = aRect.top - pRect.height - gap;
+      top = flippedTop >= margin ? flippedTop : Math.max(margin, vh - pRect.height - margin);
+    }
+
+    setPos({ top, left, ready: true });
   }, [anchorRef]);
+
+  useLayoutEffect(() => {
+    updatePos();
+  }, [updatePos]);
+
+  useEffect(() => {
+    let raf = 0;
+    const onChange = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updatePos);
+    };
+    window.addEventListener("resize", onChange);
+    window.addEventListener("scroll", onChange, true);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onChange);
+      window.removeEventListener("scroll", onChange, true);
+    };
+  }, [updatePos]);
 
   /* ── Close on click outside (but not on the anchor itself) ── */
   useEffect(() => {
@@ -114,15 +164,19 @@ export function ChatActionsPopover({
     }
   }, [serverId, hostname, onUninstalled, onClose]);
 
-  if (!pos) return null;
+  if (typeof document === "undefined") return null;
 
   const busy = action !== "idle";
 
-  return (
+  return createPortal(
     <div
       ref={popoverRef}
       className="fixed z-50 min-w-[180px] rounded-md border border-canvas-border bg-canvas-bg shadow-xl animate-modal-in"
-      style={{ top: pos.top, left: pos.left }}
+      style={{
+        top: pos.top,
+        left: pos.left,
+        visibility: pos.ready ? "visible" : "hidden",
+      }}
       role="menu"
     >
       <MenuItem
@@ -158,7 +212,8 @@ export function ChatActionsPopover({
           {statusMsg.text}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
