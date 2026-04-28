@@ -18,6 +18,7 @@ import { useIsMobile } from "@/lib/use-is-mobile";
 import { useVisualViewport } from "@/lib/use-visual-viewport";
 import { useSslJobs } from "@/lib/use-ssl-jobs";
 import { Z_INDEX } from "@/lib/z-index";
+import { UserEmailCombobox } from "./user-email-combobox";
 
 const ClaudeCodeOverlay = dynamic(
   () => import("./claude-code-overlay").then((m) => ({ default: m.ClaudeCodeOverlay })),
@@ -48,7 +49,6 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
 
   const [phase, setPhase] = useState<Phase>("form");
   const [email, setEmail] = useState<string>(() => getUser()?.email ?? "");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   // Seed with the ClawOps backend origin the dashboard is currently talking to.
   // That's the URL the chat app needs to hit for /api/v1/auth/login etc. — if
   // we don't pre-fill this, the backend falls back to the chat's own hostname
@@ -56,6 +56,7 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
   const [apiOrigin, setApiOrigin] = useState<string>(() => getApiOrigin());
   const [result, setResult] = useState<ChatInstallResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
 
   /* ── SSL state after install ── */
@@ -113,16 +114,19 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
   }, [sslJob, serverId]);
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const apiOriginValid = apiOrigin.trim().length > 0;
+  const formValid = emailValid && apiOriginValid;
 
   const runInstall = useCallback(async () => {
-    if (!emailValid) return;
+    if (!emailValid || !apiOriginValid) return;
     setPhase("running");
     setResult(null);
     setErrorMsg(null);
+    setErrorStatus(null);
     try {
       const r = await installChatAppApi(serverId, {
         allowedEmail: email.trim(),
-        apiOrigin: apiOrigin.trim() || null,
+        apiOrigin: apiOrigin.trim(),
       });
       setResult(r);
       if (r.exitCode === 0) {
@@ -134,9 +138,14 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
       }
     } catch (err) {
       setPhase("failed");
-      setErrorMsg(err instanceof ApiError ? err.message : "Install request failed");
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+        setErrorStatus(err.status);
+      } else {
+        setErrorMsg(err instanceof Error ? err.message : "Install request failed");
+      }
     }
-  }, [emailValid, email, apiOrigin, serverId, onInstalled]);
+  }, [emailValid, apiOriginValid, email, apiOrigin, serverId, onInstalled]);
 
   const runProvisionSsl = useCallback(async () => {
     setSslStarting(true);
@@ -164,7 +173,7 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
     phase === "running" ? "bg-yellow-400 animate-pulse"
       : phase === "success" ? "bg-green-400"
         : phase === "failed" ? "bg-red-400"
-          : "bg-gray-500";
+          : "bg-canvas-muted";
 
   const statusText =
     phase === "form" ? "Ready"
@@ -179,74 +188,66 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
   const content = (
     <>
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 border-b border-[#21262d] bg-[#161b22] px-4 py-2.5">
+      <div className="flex shrink-0 items-center gap-3 border-b border-canvas-border bg-canvas-surface px-4 py-2.5">
         <FiDownload size={14} className="shrink-0 text-blue-400" />
         <span className={`h-2 w-2 shrink-0 rounded-full ${statusDot}`} />
-        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[#c9d1d9]">
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-canvas-fg">
           Install Chat App · {hostname}
         </span>
         {durationText && (
-          <span className="shrink-0 text-[10px] text-gray-500">{durationText}</span>
+          <span className="shrink-0 text-[10px] text-canvas-muted">{durationText}</span>
         )}
-        <span className="shrink-0 text-[10px] text-gray-400">{statusText}</span>
+        <span className="shrink-0 text-[10px] text-canvas-muted">{statusText}</span>
       </div>
 
       {/* Body */}
-      <div className="flex flex-1 flex-col min-h-0 bg-[#0d1117]">
+      <div className="flex flex-1 flex-col min-h-0 bg-canvas-bg">
         {phase === "form" && (
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 text-[12px] text-[#c9d1d9]">
-            <p className="text-[11px] text-gray-400">
-              Installs claw-chat at <span className="font-mono text-gray-200">https://{hostname}/chat</span>.
-              Bootstrap runs <span className="font-mono text-gray-200">apt upgrade</span>, installs Docker,
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 text-[12px] text-canvas-fg">
+            <p className="text-[11px] text-canvas-muted">
+              Installs claw-chat at <span className="font-mono text-canvas-fg">https://{hostname}/chat</span>.
+              Bootstrap runs <span className="font-mono text-canvas-fg">apt upgrade</span>, installs Docker,
               Node.js and the Claude CLI, then brings the stack up. Auto-detects SSL certs at
-              <span className="font-mono text-gray-200"> /etc/letsencrypt/live/{hostname}/</span>.
+              <span className="font-mono text-canvas-fg"> /etc/letsencrypt/live/{hostname}/</span>.
             </p>
 
             <div>
-              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-gray-400">
+              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-canvas-muted">
                 Authorized email <span className="text-red-400">*</span>
               </label>
-              <input
-                type="email"
+              <UserEmailCombobox
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={setEmail}
                 placeholder="you@example.com"
-                className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1.5 text-[12px] text-[#c9d1d9] placeholder:text-gray-600 focus:outline-none focus:border-blue-400/50"
                 autoFocus
+                invalid={email.length > 0 && !emailValid}
               />
-              <p className="mt-1 text-[10px] text-gray-500">
-                Only this email will be allowed to sign in to the chat UI.
+              <p className="mt-1 text-[10px] text-canvas-muted">
+                Only this email will be allowed to sign in to the chat UI. Type to search existing users.
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="self-start text-[10px] text-gray-500 hover:text-gray-300"
-            >
-              {showAdvanced ? "▾ Advanced" : "▸ Advanced"}
-            </button>
-            {showAdvanced && (
-              <div>
-                <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                  ClawOps backend URL
-                </label>
-                <input
-                  type="url"
-                  value={apiOrigin}
-                  onChange={(e) => setApiOrigin(e.target.value)}
-                  placeholder={getApiOrigin() || "https://clawops.example.com"}
-                  className="w-full rounded-md border border-[#30363d] bg-[#0d1117] px-2 py-1.5 text-[12px] text-[#c9d1d9] placeholder:text-gray-600 focus:outline-none focus:border-blue-400/50"
-                />
-                <p className="mt-1 text-[10px] text-gray-500">
-                  Sets <span className="font-mono text-gray-300">NEXT_PUBLIC_API_ORIGIN</span> in the chat&apos;s
-                  <span className="font-mono text-gray-300"> .env</span>. Pre-filled with the dashboard&apos;s own backend
-                  URL — change only if the chat should talk to a different ClawOps instance.
-                </p>
-              </div>
-            )}
+            <div>
+              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wider text-canvas-muted">
+                ClawOps backend URL <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="url"
+                value={apiOrigin}
+                onChange={(e) => setApiOrigin(e.target.value)}
+                placeholder="https://clawops.example.com"
+                className={`w-full rounded-md border bg-canvas-bg px-2 py-1.5 text-[12px] text-canvas-fg placeholder:text-canvas-muted focus:outline-none focus:border-blue-400/60 ${
+                  apiOriginValid ? "border-canvas-border" : "border-red-500/50"
+                }`}
+              />
+              <p className="mt-1 text-[10px] text-canvas-muted">
+                Sets <span className="font-mono text-canvas-fg">NEXT_PUBLIC_API_ORIGIN</span> in the chat&apos;s
+                <span className="font-mono text-canvas-fg"> .env</span>. Pre-filled with the dashboard&apos;s own backend
+                URL — change only if the chat should talk to a different ClawOps instance.
+              </p>
+            </div>
 
-            <p className="text-[10px] text-gray-600">
+            <p className="text-[10px] text-canvas-muted opacity-70">
               Runs as root over SSH. First-time runs take 2–4 minutes (apt upgrade dominates).
             </p>
           </div>
@@ -259,8 +260,8 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
               <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" style={{ animationDelay: "0.2s" }} />
               <span className="h-2 w-2 animate-pulse rounded-full bg-yellow-400" style={{ animationDelay: "0.4s" }} />
             </div>
-            <p className="text-sm text-gray-400">Running bootstrap on {hostname}...</p>
-            <p className="text-[11px] text-gray-600">
+            <p className="text-sm text-canvas-muted">Running bootstrap on {hostname}...</p>
+            <p className="text-[11px] text-canvas-muted opacity-70">
               Updating packages → Docker → Node + Claude CLI → installer → container start.
             </p>
           </div>
@@ -270,7 +271,7 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
           <div className="flex flex-1 flex-col min-h-0 overflow-y-auto p-3 gap-3">
             {/* Step 1: installed */}
             <div className="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2">
-              <div className="flex items-center gap-2 text-xs text-green-400">
+              <div className="flex items-center gap-2 text-xs text-green-500 dark:text-green-400">
                 <FiCheckCircle size={13} />
                 <span className="font-medium">Chat app installed</span>
                 <a
@@ -285,17 +286,17 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
             </div>
 
             {/* Step 2: SSL */}
-            <div className="rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2">
+            <div className="rounded-md border border-canvas-border bg-canvas-surface px-3 py-2">
               <div className="flex items-center gap-2 text-xs">
-                <FiLock size={13} className={hasActiveCert ? "text-green-400" : "text-gray-500"} />
-                <span className="font-medium text-[#c9d1d9]">
+                <FiLock size={13} className={hasActiveCert ? "text-green-500 dark:text-green-400" : "text-canvas-muted"} />
+                <span className="font-medium text-canvas-fg">
                   {hasActiveCert ? "SSL certificate active" : "SSL not yet provisioned"}
                 </span>
-                {sslRunning && <span className="ml-auto text-[10px] text-yellow-400 animate-pulse">running…</span>}
+                {sslRunning && <span className="ml-auto text-[10px] text-yellow-500 dark:text-yellow-400 animate-pulse">running…</span>}
               </div>
               {!hasActiveCert && !sslRunning && !sslJustCompleted && (
                 <>
-                  <p className="mt-1 text-[10px] text-gray-500">
+                  <p className="mt-1 text-[10px] text-canvas-muted">
                     With claw-nginx now holding port 80, SSL provisioning will run in co-existence
                     mode (DNS-01, no host-nginx config changes).
                   </p>
@@ -311,12 +312,12 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
                 </>
               )}
               {sslRunning && sslJob && (
-                <p className="mt-1 text-[10px] text-gray-500">
+                <p className="mt-1 text-[10px] text-canvas-muted">
                   Step: {sslJob.currentStep} — typical run 1–3 min.
                 </p>
               )}
               {sslJustCompleted && !hasActiveCert && (
-                <p className="mt-1 text-[10px] text-gray-500">
+                <p className="mt-1 text-[10px] text-canvas-muted">
                   Cert issued. Re-run the installer to switch claw-nginx into HTTPS mode.
                 </p>
               )}
@@ -331,24 +332,24 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
                 </button>
               )}
               {sslError && (
-                <p className="mt-1 text-[10px] text-red-400">{sslError}</p>
+                <p className="mt-1 text-[10px] text-red-500 dark:text-red-400">{sslError}</p>
               )}
               {certOnDiskButHttpOnly && (
-                <p className="mt-1 text-[10px] text-amber-400">
+                <p className="mt-1 text-[10px] text-amber-500 dark:text-amber-400">
                   Cert is active but install.sh ran before it existed. Re-run to switch to HTTPS.
                 </p>
               )}
             </div>
 
             {/* Step 3: Claude auth */}
-            <div className="rounded-md border border-[#30363d] bg-[#161b22] px-3 py-2">
-              <div className="flex items-center gap-2 text-xs text-[#c9d1d9]">
+            <div className="rounded-md border border-canvas-border bg-canvas-surface px-3 py-2">
+              <div className="flex items-center gap-2 text-xs text-canvas-fg">
                 <FiTerminal size={13} className="text-orange-400" />
                 <span className="font-medium">Authenticate Claude CLI</span>
               </div>
-              <p className="mt-1 text-[10px] text-gray-500">
+              <p className="mt-1 text-[10px] text-canvas-muted">
                 Sign in to Claude so the chat app can talk to the Agent SDK. Opens an in-browser
-                terminal with <span className="font-mono text-gray-300">claude auth login</span> pre-typed.
+                terminal with <span className="font-mono text-canvas-fg">claude auth login</span> pre-typed.
               </p>
               <button
                 type="button"
@@ -360,14 +361,14 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
               </button>
             </div>
 
-            {/* Install log (collapsible-ish: just a fixed-height pre) */}
+            {/* Install log */}
             <details className="mt-1">
-              <summary className="cursor-pointer text-[10px] text-gray-500 hover:text-gray-300">
+              <summary className="cursor-pointer text-[10px] text-canvas-muted hover:text-canvas-fg">
                 Show install log
               </summary>
               <pre
                 ref={logRef}
-                className="mt-2 max-h-64 overflow-y-auto rounded-md bg-[#0d1117] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all border border-[#21262d]"
+                className="mt-2 max-h-64 overflow-y-auto rounded-md border border-canvas-border bg-canvas-bg px-3 py-2 font-mono text-[11px] leading-relaxed text-canvas-fg whitespace-pre-wrap break-all"
               >
                 {result?.output || "(no output)"}
               </pre>
@@ -376,27 +377,48 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
         )}
 
         {phase === "failed" && (
-          <div className="flex flex-1 flex-col min-h-0 p-2">
-            <div className="mb-2 rounded-md bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400">
+          <div className="flex flex-1 flex-col min-h-0 p-3 gap-2">
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-500 dark:text-red-400">
               Install failed{errorMsg ? ` — ${errorMsg}` : ""}
+              {errorStatus !== null && (
+                <span className="ml-1.5 rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-mono">
+                  HTTP {errorStatus}
+                </span>
+              )}
             </div>
-            <pre
-              ref={logRef}
-              className="flex-1 min-h-0 overflow-y-auto rounded-md bg-[#161b22] px-3 py-2 font-mono text-[11px] leading-relaxed text-[#c9d1d9] whitespace-pre-wrap break-all"
-            >
-              {result?.output || "(no output)"}
-            </pre>
+
+            {result?.output ? (
+              <pre
+                ref={logRef}
+                className="flex-1 min-h-0 overflow-y-auto rounded-md border border-canvas-border bg-canvas-surface px-3 py-2 font-mono text-[11px] leading-relaxed text-canvas-fg whitespace-pre-wrap break-all"
+              >
+                {result.output}
+              </pre>
+            ) : (
+              <details className="text-[11px] text-canvas-muted">
+                <summary className="cursor-pointer hover:text-canvas-fg">Show diagnostic info</summary>
+                <div className="mt-2 rounded-md border border-canvas-border bg-canvas-surface px-3 py-2 font-mono text-[10px] leading-relaxed text-canvas-fg">
+                  No script output captured — request did not reach the install runner.
+                  {errorStatus !== null && <div>HTTP status: {errorStatus}</div>}
+                  {errorMsg && <div>Reason: {errorMsg}</div>}
+                  <div className="mt-2 text-canvas-muted">
+                    Common causes: backend rejected the payload (check apiOrigin), SSH connection
+                    failed, or the install request timed out.
+                  </div>
+                </div>
+              </details>
+            )}
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-[#21262d] bg-[#161b22] px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-t border-canvas-border bg-canvas-surface px-4 py-2">
         {phase === "form" && (
           <button
             type="button"
             onClick={runInstall}
-            disabled={!emailValid}
+            disabled={!formValid}
             className="flex items-center gap-1.5 rounded bg-blue-500/90 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FiPlay size={11} />
@@ -418,7 +440,7 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
           type="button"
           onClick={onClose}
           disabled={phase === "running"}
-          className="flex items-center gap-1 rounded px-2.5 py-1 text-[11px] text-gray-400 transition-colors hover:bg-white/5 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex items-center gap-1 rounded px-2.5 py-1 text-[11px] text-canvas-muted transition-colors hover:bg-canvas-surface-hover hover:text-canvas-fg disabled:cursor-not-allowed disabled:opacity-40"
         >
           <FiX size={11} />
           Close
@@ -429,7 +451,7 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
 
   const popup = isMobile
     ? createPortal(
-        <div className="fixed inset-0 bg-[#0d1117]" style={{ zIndex: Z_INDEX.MODAL }}>
+        <div className="fixed inset-0 bg-canvas-bg" style={{ zIndex: Z_INDEX.MODAL }}>
           <div className="flex flex-col" style={{ height: viewportHeight, overflow: "hidden" }}>
             {content}
           </div>
@@ -442,7 +464,7 @@ export function InstallChatPopup({ serverId, serverName, hostname, onClose, onIn
           style={{ zIndex: Z_INDEX.MODAL }}
         >
           <div
-            className="mx-4 flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-canvas-border shadow-2xl animate-modal-in"
+            className="mx-4 flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-canvas-border bg-canvas-bg shadow-2xl animate-modal-in"
             style={{ maxHeight: "min(700px, 85vh)" }}
           >
             {content}
