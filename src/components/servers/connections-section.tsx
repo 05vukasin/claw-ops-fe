@@ -33,7 +33,18 @@ interface ConnectionsSectionProps {
 /*  Detection commands (same as the fleet-level hooks)                  */
 /* ------------------------------------------------------------------ */
 
-const GH_CMD = `gh auth status 2>&1; echo "---GH_SEP---"; git config --global user.name 2>/dev/null; echo "---GH_SEP---"; git config --global user.email 2>/dev/null`;
+const GH_CMD = [
+  'GH_OUT=$(gh auth status 2>&1)',
+  'if echo "$GH_OUT" | grep -qi "logged in"; then echo "$GH_OUT"',
+  'elif [ -f "$HOME/.claude/custom-github/credentials.json" ]',
+  `then LOGIN=$(python3 -c 'import json,os; f=os.path.join(os.environ.get("HOME","/root"),".claude","custom-github","credentials.json"); d=json.load(open(f)); print(d.get("login","unknown"))' 2>/dev/null)`,
+  'echo "Logged in to github.com account ${LOGIN:-unknown}"',
+  'else echo "$GH_OUT"; fi',
+  'echo "---GH_SEP---"',
+  'git config --global user.name 2>/dev/null',
+  'echo "---GH_SEP---"',
+  'git config --global user.email 2>/dev/null',
+].join('; ');
 
 const CLAUDE_CMD = [
   'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/bin:$PATH"',
