@@ -66,7 +66,7 @@ const GOOGLE_CMD = [
   '(command -v uvx >/dev/null 2>&1 && echo "INSTALLED" || echo "NOT_FOUND")',
   'echo "---GOOG_SEP---"',
   // Check for OAuth tokens (workspace-mcp stores in either location)
-  '(ls ~/.google_workspace_mcp/credentials/*.json 2>/dev/null || ls ~/.workspace-mcp/cli-tokens/ 2>/dev/null) | head -1 || echo "NO_TOKENS"',
+  '(ls ~/.google_workspace_mcp/credentials/*.json 2>/dev/null || ls ~/.workspace-mcp/cli-tokens/ 2>/dev/null || ls ~/.claude/custom-google-workspace/tokens/*.json 2>/dev/null) | head -1 || echo "NO_TOKENS"',
   'echo "---GOOG_SEP---"',
   // Check if configured in Claude Code MCP
   `python3 -c "import json,os; d=json.load(open(os.path.expanduser('~/.claude.json'))); print('CONFIGURED' if any('workspace' in k.lower() or 'google' in k.lower() for k in d.get('mcpServers',{})) else 'NOT_CONFIGURED')" 2>/dev/null || echo "NOT_CONFIGURED"`,
