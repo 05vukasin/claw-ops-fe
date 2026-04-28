@@ -32,7 +32,7 @@ interface GStatus {
   connected: boolean;
 }
 
-const STATUS_CMD = `python3 -c 'import json,os,glob; tokens=sorted(glob.glob(os.path.join(os.environ.get("HOME","/root"),".claude","custom-google-workspace","tokens","*.json"))); d=json.load(open(tokens[0])) if tokens else {}; print("CONNECTED:" + d.get("email","unknown")) if d.get("access_token") else print("NO_TOKEN")' 2>/dev/null || echo "NOT_FOUND"`;
+const STATUS_CMD = `python3 -c 'import json,os,glob; tokens=sorted(glob.glob(os.path.join(os.environ.get("HOME","/root"),".claude","custom-google-workspace","tokens","*.json"))); f=tokens[0] if tokens else None; d=json.load(open(f)) if f else {}; email=os.path.splitext(os.path.basename(f))[0] if f else ""; print("CONNECTED:" + email) if (d.get("token") or d.get("access_token") or d.get("refresh_token")) else print("NO_TOKEN")' 2>/dev/null || echo "NOT_FOUND"`;
 
 function parseStatus(stdout: string): GStatus {
   const raw = stdout.trim();
