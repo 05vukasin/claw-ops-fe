@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 /server-files
+
+# Typo-shim service worker (missing 's' in messaging) — deleted, keep ignored
+# to prevent accidental re-creation from cached browser registrations.
+public/firebase-mesaging-sw.js

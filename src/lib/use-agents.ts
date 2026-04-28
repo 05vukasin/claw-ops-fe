@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { listFilesApi } from "@/lib/api";
 import type { ServerWithUI } from "./use-servers";
+import { createExternalStore } from "@/lib/store-factory";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -26,17 +33,13 @@ const MIN_SPACING = 70; // minimum distance between agent nodes
 const CACHE_TTL = 5 * 60 * 1000;
 const BATCH_SIZE = 3;
 
-let agents: AgentWithUI[] = [];
-const listeners = new Set<() => void>();
+const store = createExternalStore<AgentWithUI[]>([]);
+
 let fetchGeneration = 0;
 let initialized = false;
 let lastFetchedAt = 0;
 const failedServers = new Map<string, number>();
 const FAIL_COOLDOWN = 5 * 60 * 1000;
-
-function notify() { listeners.forEach((l) => l()); }
-function subscribe(cb: () => void) { listeners.add(cb); return () => { listeners.delete(cb); }; }
-function getSnapshot() { return agents; }
 
 /* ── localStorage ── */
 
@@ -47,36 +50,55 @@ interface SavedAgent {
   offsetY: number;
 }
 
-function loadCached(): AgentWithUI[] {
+/** @internal Exported for unit tests. */
+export function loadCached(): AgentWithUI[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Array.isArray(parsed.data)
+    ) {
       lastFetchedAt = parsed.fetchedAt ?? 0;
-      return parsed.data.filter((a: SavedAgent) => a.serverId && a.name && typeof a.offsetX === "number");
+      return parsed.data.filter(
+        (a: SavedAgent) =>
+          a.serverId && a.name && typeof a.offsetX === "number",
+      );
     }
     const arr = parsed as SavedAgent[];
     if (!Array.isArray(arr)) return [];
-    return arr.filter((a) => a.serverId && a.name && typeof a.offsetX === "number");
-  } catch { return []; }
+    return arr.filter(
+      (a) => a.serverId && a.name && typeof a.offsetX === "number",
+    );
+  } catch {
+    return [];
+  }
 }
 
 function saveToStorage() {
   try {
-    const data: SavedAgent[] = agents.map((a) => ({
+    const data: SavedAgent[] = store.getState().map((a) => ({
       serverId: a.serverId,
       name: a.name,
       offsetX: a.offsetX,
       offsetY: a.offsetY,
     }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ data, fetchedAt: lastFetchedAt }));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ data, fetchedAt: lastFetchedAt }),
+    );
   } catch {}
 }
 
 /* ── Random non-overlapping default positions ── */
 
-function randomOffset(existingOffsets: { x: number; y: number }[]): { offsetX: number; offsetY: number } {
+function randomOffset(existingOffsets: { x: number; y: number }[]): {
+  offsetX: number;
+  offsetY: number;
+} {
   // Try random positions in a ring around the server, avoiding overlap
   for (let attempt = 0; attempt < 30; attempt++) {
     const angle = Math.random() * 2 * Math.PI;
@@ -106,15 +128,15 @@ function initFromCache() {
   initialized = true;
   const cached = loadCached();
   if (cached.length > 0) {
-    agents = cached;
-    notify();
+    store.setState(cached);
   }
 }
 
 /* ── Fetch agents from SFTP ── */
 
 async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
-  if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
+  if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL)
+    return;
 
   const gen = ++fetchGeneration;
   const now = Date.now();
@@ -125,14 +147,22 @@ async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
     return !failedAt || now - failedAt > FAIL_COOLDOWN;
   });
 
+  const current = store.getState();
+
   // Build lookup of existing saved positions
   const savedMap = new Map<string, { offsetX: number; offsetY: number }>();
-  for (const a of agents) {
-    savedMap.set(`${a.serverId}::${a.name}`, { offsetX: a.offsetX, offsetY: a.offsetY });
+  for (const a of current) {
+    savedMap.set(`${a.serverId}::${a.name}`, {
+      offsetX: a.offsetX,
+      offsetY: a.offsetY,
+    });
   }
 
   // Batch SFTP calls to avoid hammering the backend
-  const results: PromiseSettledResult<{ serverId: string; dirs: { name: string; directory: boolean }[] }>[] = [];
+  const results: PromiseSettledResult<{
+    serverId: string;
+    dirs: { name: string; directory: boolean }[];
+  }>[] = [];
   for (let i = 0; i < onlineServers.length; i += BATCH_SIZE) {
     if (gen !== fetchGeneration) return;
     const batch = onlineServers.slice(i, i + BATCH_SIZE);
@@ -141,10 +171,19 @@ async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
         try {
           const files = await listFilesApi(server.id, AGENTS_PATH);
           failedServers.delete(server.id);
-          return { serverId: server.id, dirs: files.filter((f: { directory: boolean; name: string }) => f.directory && f.name !== "." && f.name !== "..") };
+          return {
+            serverId: server.id,
+            dirs: files.filter(
+              (f: { directory: boolean; name: string }) =>
+                f.directory && f.name !== "." && f.name !== "..",
+            ),
+          };
         } catch {
           failedServers.set(server.id, Date.now());
-          return { serverId: server.id, dirs: [] as { name: string; directory: boolean }[] };
+          return {
+            serverId: server.id,
+            dirs: [] as { name: string; directory: boolean }[],
+          };
         }
       }),
     );
@@ -157,7 +196,7 @@ async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
 
   // Keep agents from servers we didn't fetch (offline servers) if they were cached
   const fetchedServerIds = new Set(onlineServers.map((s) => s.id));
-  for (const a of agents) {
+  for (const a of current) {
     if (!fetchedServerIds.has(a.serverId)) {
       newAgents.push(a);
     }
@@ -175,7 +214,12 @@ async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
       const saved = savedMap.get(key);
 
       if (saved) {
-        newAgents.push({ serverId, name: dir.name, offsetX: saved.offsetX, offsetY: saved.offsetY });
+        newAgents.push({
+          serverId,
+          name: dir.name,
+          offsetX: saved.offsetX,
+          offsetY: saved.offsetY,
+        });
         serverOffsets.push({ x: saved.offsetX, y: saved.offsetY });
       } else {
         const pos = randomOffset(serverOffsets);
@@ -185,20 +229,29 @@ async function fetchAgentsForServers(servers: ServerWithUI[], force = false) {
     }
   }
 
-  agents = newAgents;
   lastFetchedAt = Date.now();
+  store.setState(newAgents);
   saveToStorage();
-  notify();
 }
 
 /* ── Move ── */
 
-function moveAgent(serverId: string, name: string, offsetX: number, offsetY: number) {
-  agents = agents.map((a) =>
-    a.serverId === serverId && a.name === name ? { ...a, offsetX, offsetY } : a,
+function moveAgent(
+  serverId: string,
+  name: string,
+  offsetX: number,
+  offsetY: number,
+) {
+  store.setState(
+    store
+      .getState()
+      .map((a) =>
+        a.serverId === serverId && a.name === name
+          ? { ...a, offsetX, offsetY }
+          : a,
+      ),
   );
   saveToStorage();
-  notify();
 }
 
 /* ------------------------------------------------------------------ */
@@ -209,19 +262,33 @@ export function useAgents(servers: ServerWithUI[]) {
   // Load from cache immediately (synchronous, before first render)
   if (!initialized) initFromCache();
 
-  const list = useSyncExternalStore(subscribe, getSnapshot, () => []);
+  const list = useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+    () => [],
+  );
 
   const serversRef = useRef(servers);
-  serversRef.current = servers;
+  // Keep the ref in sync after every render so the refresh callback always
+  // closes over the latest servers without being added to effect deps.
+  useEffect(() => {
+    serversRef.current = servers;
+  });
 
   const onlineIds = useMemo(
-    () => servers.filter((s) => s.status === "ONLINE").map((s) => s.id).sort().join(","),
+    () =>
+      servers
+        .filter((s) => s.status === "ONLINE")
+        .map((s) => s.id)
+        .sort()
+        .join(","),
     [servers],
   );
 
   useEffect(() => {
     fetchAgentsForServers(serversRef.current);
-  }, [onlineIds]); // eslint-disable-line react-hooks/exhaustive-deps
+    // serversRef.current is intentionally excluded — it's a stable ref across renders
+  }, [onlineIds]);
 
   const refresh = useCallback(() => {
     lastFetchedAt = 0;

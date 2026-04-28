@@ -17,9 +17,24 @@ import { spawnSync, spawn } from "child_process";
 
 const args = process.argv.slice(2);
 const isBackground = args.includes("--background");
-const sessionId = readArgValue("--id");
 const provider = readProvider(readArgValue("--provider"));
 const resumeSessionId = readArgValue("--resume-session");
+
+// ---------------------------------------------------------------------------
+// Path-traversal guard: the session ID is used to construct a filesystem path
+// under ~/.claw-sessions/{id}/.  A caller that passes --id ../../etc/passwd
+// would escape the sessions directory.  Validate strictly before use.
+// ---------------------------------------------------------------------------
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const rawSessionId = readArgValue("--id");
+if (rawSessionId && !SESSION_ID_RE.test(rawSessionId)) {
+  process.stderr.write(
+    `[chat-bridge] Fatal: --id argument "${rawSessionId}" contains invalid characters.\n` +
+    `Session IDs must match [a-zA-Z0-9_-]{1,64}.\n`,
+  );
+  process.exit(1);
+}
+const sessionId = rawSessionId;
 
 const SESSION_DIR = sessionId ? `${process.env.HOME}/.claw-sessions/${sessionId}` : null;
 const LOG_FILE = isBackground && SESSION_DIR ? `${SESSION_DIR}/bridge.log` : "/tmp/claw-bridge.log";

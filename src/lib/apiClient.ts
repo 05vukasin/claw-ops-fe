@@ -39,16 +39,14 @@ function resolveApiOrigin(): string {
   // Server-side fallback: use a non-NEXT_PUBLIC_ env var to prevent build-time inlining
   // The layout.tsx injects the value for the client, so this only runs during SSR
   const envKey = "NEXT_PUBLIC_API_ORIGIN";
-  const serverVal = typeof process !== "undefined" ? process.env[envKey] : undefined;
+  const serverVal =
+    typeof process !== "undefined" ? process.env[envKey] : undefined;
   return (serverVal ?? "http://localhost:8080").replace(/\/+$/, "");
 }
 
 export function getApiOrigin(): string {
   return resolveApiOrigin();
 }
-
-/** @deprecated Use getApiOrigin() — kept for imports that reference API_ORIGIN */
-export const API_ORIGIN = ""; // placeholder, use getApiOrigin() instead
 
 /**
  * Build a fully-qualified URL from a backend path.
@@ -83,7 +81,9 @@ export function buildApiUrl(path: string): string {
  * @returns       e.g. "wss://viksi.ai/ws?ticket=<uuid>"
  */
 export function buildWsUrl(ticket: string): string {
-  const wsBase = getApiOrigin().replace(/^https/, "wss").replace(/^http/, "ws");
+  const wsBase = getApiOrigin()
+    .replace(/^https/, "wss")
+    .replace(/^http/, "ws");
   return `${wsBase}/ws?ticket=${encodeURIComponent(ticket)}`;
 }
 

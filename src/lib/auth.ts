@@ -3,6 +3,19 @@
  *
  * Stores the authenticated user and JWT refresh token in localStorage so the
  * app can silently restore a session on next visit.
+ *
+ * SECURITY NOTE — XSS risk with localStorage refresh token:
+ * The refresh token is persisted in localStorage under "openclaw-auth:v1".
+ * Any XSS vulnerability in the app can read this value and impersonate the
+ * user indefinitely (until the token is revoked server-side).
+ *
+ * Recommended mitigation: move the refresh token into an HttpOnly, SameSite=Strict
+ * cookie via a Next.js API route (/api/auth/set-cookie) so that JavaScript cannot
+ * access it at all.  claw-ops-chat already uses this approach — the same pattern
+ * can be adopted here.  The access token (in-memory only) is already safe.
+ *
+ * This refactor is deferred; prioritise it if the threat model changes or if a
+ * content-injection vector is discovered in the application.
  */
 
 import type { AuthUser } from "./api";
@@ -26,7 +39,10 @@ export function updateStoredRefreshToken(refreshToken: string): void {
   if (typeof window === "undefined") return;
   const stored = getStoredAuth();
   if (!stored) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...stored, refreshToken }));
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({ ...stored, refreshToken }),
+  );
 }
 
 /** Read the full stored auth record, or null if not logged in. */

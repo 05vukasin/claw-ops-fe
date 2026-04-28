@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { executeCommandApi } from "@/lib/api";
 import type { ServerWithUI } from "@/lib/use-servers";
+import { createExternalStore } from "@/lib/store-factory";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -27,20 +34,13 @@ const DEFAULT_OFFSET = { offsetX: -110, offsetY: -70 };
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const BATCH_SIZE = 3;
 
-let accounts: GitHubAccountWithUI[] = [];
-const listeners = new Set<() => void>();
+const store = createExternalStore<GitHubAccountWithUI[]>([]);
+
 let fetchGeneration = 0;
 let initialized = false;
 let lastFetchedAt = 0;
 const failedServers = new Map<string, number>(); // serverId → timestamp of failure
 const FAIL_COOLDOWN = 5 * 60 * 1000; // 5 minutes
-
-function notify() { listeners.forEach((l) => l()); }
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
-}
-function getSnapshot() { return accounts; }
 
 /* ------------------------------------------------------------------ */
 /*  localStorage persistence                                           */
@@ -61,14 +61,23 @@ function loadCached(): GitHubAccountWithUI[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     // Support new format { data, fetchedAt } and legacy array format
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      Array.isArray(parsed.data)
+    ) {
       // Don't restore lastFetchedAt — always re-fetch on page load to pick up changes
-      return parsed.data.filter((e: SavedEntry) => e.serverId && typeof e.offsetX === "number");
+      return parsed.data.filter(
+        (e: SavedEntry) => e.serverId && typeof e.offsetX === "number",
+      );
     }
     const arr = parsed as SavedEntry[];
     if (!Array.isArray(arr)) return [];
     return arr.filter((e) => e.serverId && typeof e.offsetX === "number");
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 function saveToStorage(list: GitHubAccountWithUI[]) {
@@ -81,14 +90,17 @@ function saveToStorage(list: GitHubAccountWithUI[]) {
       offsetX: a.offsetX,
       offsetY: a.offsetY,
     }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ data, fetchedAt: lastFetchedAt }));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ data, fetchedAt: lastFetchedAt }),
+    );
   } catch {}
 }
 
 function initFromCache() {
   if (initialized) return;
   initialized = true;
-  accounts = loadCached();
+  store.setState(loadCached());
 }
 
 /* ------------------------------------------------------------------ */
@@ -96,26 +108,32 @@ function initFromCache() {
 /* ------------------------------------------------------------------ */
 
 const DETECT_CMD = [
-  'GH_OUT=$(gh auth status 2>&1)',
+  "GH_OUT=$(gh auth status 2>&1)",
   'if echo "$GH_OUT" | grep -qi "logged in"; then echo "$GH_OUT"',
   'elif [ -f "$HOME/.claude/custom-github/credentials.json" ]',
   `then LOGIN=$(python3 -c 'import json,os; f=os.path.join(os.environ.get("HOME","/root"),".claude","custom-github","credentials.json"); d=json.load(open(f)); print(d.get("login","unknown"))' 2>/dev/null)`,
   'echo "Logged in to github.com account ${LOGIN:-unknown}"',
   'else echo "$GH_OUT"; fi',
   'echo "---GH_SEP---"',
-  'git config --global user.name 2>/dev/null',
+  "git config --global user.name 2>/dev/null",
   'echo "---GH_SEP---"',
-  'git config --global user.email 2>/dev/null',
-].join('; ');
+  "git config --global user.email 2>/dev/null",
+].join("; ");
 
-function parseDetection(stdout: string): { username: string | null; email: string | null; authStatus: "authenticated" | "unauthenticated" } {
+function parseDetection(stdout: string): {
+  username: string | null;
+  email: string | null;
+  authStatus: "authenticated" | "unauthenticated";
+} {
   const parts = stdout.split("---GH_SEP---");
   const ghStatus = (parts[0] ?? "").trim();
   const gitName = (parts[1] ?? "").trim() || null;
   const gitEmail = (parts[2] ?? "").trim() || null;
 
   // Parse "Logged in to github.com as USERNAME" from gh auth status
-  const match = ghStatus.match(/Logged in to github\.com (?:as |account )(\S+)/i);
+  const match = ghStatus.match(
+    /Logged in to github\.com (?:as |account )(\S+)/i,
+  );
   if (match) {
     return { username: match[1], email: gitEmail, authStatus: "authenticated" };
   }
@@ -129,7 +147,8 @@ function parseDetection(stdout: string): { username: string | null; email: strin
 }
 
 async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
-  if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
+  if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL)
+    return;
 
   const gen = ++fetchGeneration;
   const now = Date.now();
@@ -142,10 +161,16 @@ async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
   });
   if (onlineServers.length === 0) return;
 
-  const savedMap = new Map(accounts.map((a) => [a.serverId, a]));
+  const current = store.getState();
+  const savedMap = new Map(current.map((a) => [a.serverId, a]));
 
   // Batch SSH calls to avoid hammering the backend
-  const results: PromiseSettledResult<{ serverId: string; username: string | null; email: string | null; authStatus: "authenticated" | "unauthenticated" } | null>[] = [];
+  const results: PromiseSettledResult<{
+    serverId: string;
+    username: string | null;
+    email: string | null;
+    authStatus: "authenticated" | "unauthenticated";
+  } | null>[] = [];
   for (let i = 0; i < onlineServers.length; i += BATCH_SIZE) {
     if (gen !== fetchGeneration) return; // Abort if superseded
     const batch = onlineServers.slice(i, i + BATCH_SIZE);
@@ -185,28 +210,34 @@ async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
   }
 
   // Preserve cached entries for offline servers
-  for (const cached of accounts) {
-    if (!onlineServers.some((s) => s.id === cached.serverId) && !newAccounts.some((a) => a.serverId === cached.serverId)) {
+  for (const cached of current) {
+    if (
+      !onlineServers.some((s) => s.id === cached.serverId) &&
+      !newAccounts.some((a) => a.serverId === cached.serverId)
+    ) {
       newAccounts.push(cached);
     }
   }
 
-  accounts = newAccounts;
   lastFetchedAt = Date.now();
-  saveToStorage(accounts);
-  notify();
+  store.setState(newAccounts);
+  saveToStorage(newAccounts);
 }
 
 /* ------------------------------------------------------------------ */
 /*  Actions                                                            */
 /* ------------------------------------------------------------------ */
 
-function moveGitHubNodeStore(serverId: string, offsetX: number, offsetY: number) {
-  accounts = accounts.map((a) =>
-    a.serverId === serverId ? { ...a, offsetX, offsetY } : a,
-  );
-  saveToStorage(accounts);
-  notify();
+function moveGitHubNodeStore(
+  serverId: string,
+  offsetX: number,
+  offsetY: number,
+) {
+  const next = store
+    .getState()
+    .map((a) => (a.serverId === serverId ? { ...a, offsetX, offsetY } : a));
+  store.setState(next);
+  saveToStorage(next);
 }
 
 /* ------------------------------------------------------------------ */
@@ -215,30 +246,49 @@ function moveGitHubNodeStore(serverId: string, offsetX: number, offsetY: number)
 
 export function useGitHubAccounts(servers: ServerWithUI[]) {
   // Load cache synchronously on first use
-  useMemo(() => { initFromCache(); }, []);
+  useMemo(() => {
+    initFromCache();
+  }, []);
 
-  const list = useSyncExternalStore(subscribe, getSnapshot, () => []);
+  const list = useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+    () => [],
+  );
 
   // Stable dependency: only refetch when the set of online server IDs changes
   const serversRef = useRef(servers);
-  serversRef.current = servers;
+  // Keep the ref in sync after every render so event-handler callbacks always
+  // close over the latest servers without being added to effect deps.
+  useEffect(() => {
+    serversRef.current = servers;
+  });
   const onlineIds = useMemo(
-    () => servers.filter((s) => s.status === "ONLINE").map((s) => s.id).sort().join(","),
+    () =>
+      servers
+        .filter((s) => s.status === "ONLINE")
+        .map((s) => s.id)
+        .sort()
+        .join(","),
     [servers],
   );
 
   useEffect(() => {
     fetchGitHubForServers(serversRef.current);
-  }, [onlineIds]); // eslint-disable-line react-hooks/exhaustive-deps
+    // serversRef.current is intentionally excluded — it's a stable ref across renders
+  }, [onlineIds]);
 
   const refresh = useCallback(() => {
     lastFetchedAt = 0; // Bypass TTL
     fetchGitHubForServers(serversRef.current, true);
   }, []);
 
-  const moveGitHubNode = useCallback((serverId: string, offsetX: number, offsetY: number) => {
-    moveGitHubNodeStore(serverId, offsetX, offsetY);
-  }, []);
+  const moveGitHubNode = useCallback(
+    (serverId: string, offsetX: number, offsetY: number) => {
+      moveGitHubNodeStore(serverId, offsetX, offsetY);
+    },
+    [],
+  );
 
   return { accounts: list, refresh, moveGitHubNode };
 }
