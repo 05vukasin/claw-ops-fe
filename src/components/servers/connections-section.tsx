@@ -63,7 +63,7 @@ const CODEX_CMD = [
 const GOOGLE_CMD = [
   'export PATH="$HOME/.local/bin:$PATH"',
   // Check if uvx/workspace-mcp is available
-  '(command -v uvx >/dev/null 2>&1 && echo "INSTALLED" || echo "NOT_FOUND")',
+  '(command -v uvx >/dev/null 2>&1 || ls ~/.claude/custom-google-workspace/tokens/*.json >/dev/null 2>&1) && echo "INSTALLED" || echo "NOT_FOUND"',
   'echo "---GOOG_SEP---"',
   // Check for OAuth tokens (workspace-mcp stores in either location)
   '(ls ~/.google_workspace_mcp/credentials/*.json 2>/dev/null || ls ~/.workspace-mcp/cli-tokens/ 2>/dev/null || ls ~/.claude/custom-google-workspace/tokens/*.json 2>/dev/null) | head -1 || echo "NO_TOKENS"',
