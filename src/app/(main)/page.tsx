@@ -8,6 +8,8 @@ import { useAgents } from "@/lib/use-agents";
 import { useGitHubAccounts } from "@/lib/use-github-accounts";
 import { useClaudeAccounts } from "@/lib/use-claude-accounts";
 import { useCodexAccounts } from "@/lib/use-codex-accounts";
+import { useMicrosoftAccounts } from "@/lib/use-microsoft-accounts";
+import { useGoogleAccounts } from "@/lib/use-google-accounts";
 import { useServerHealth } from "@/lib/use-server-health";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { AlertBell } from "@/components/servers/alert-bell";
@@ -21,6 +23,8 @@ export default function ServersPage() {
   const { accounts: githubAccounts, moveGitHubNode } = useGitHubAccounts(servers);
   const { accounts: claudeAccounts, moveClaudeNode } = useClaudeAccounts(servers);
   const { accounts: codexAccounts, moveCodexNode } = useCodexAccounts(servers);
+  const { accounts: microsoftAccounts, moveMicrosoftNode } = useMicrosoftAccounts(servers);
+  const { accounts: googleAccounts, moveGoogleNode } = useGoogleAccounts(servers);
   const healthMap = useServerHealth();
   const isMobile = useIsMobile();
 
@@ -35,7 +39,7 @@ export default function ServersPage() {
 
   return (
     <>
-      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} claudeAccounts={claudeAccounts} codexAccounts={codexAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} onMoveClaude={moveClaudeNode} onMoveCodex={moveCodexNode} healthMap={healthMap} />
+      <CanvasStage servers={servers} agents={agents} githubAccounts={githubAccounts} claudeAccounts={claudeAccounts} codexAccounts={codexAccounts} microsoftAccounts={microsoftAccounts} googleAccounts={googleAccounts} onMoveServer={moveServer} onMoveAgent={moveAgent} onMoveGitHub={moveGitHubNode} onMoveClaude={moveClaudeNode} onMoveCodex={moveCodexNode} onMoveMicrosoft={moveMicrosoftNode} onMoveGoogle={moveGoogleNode} healthMap={healthMap} />
       <FleetSummaryBar />
       <AlertBell />
 

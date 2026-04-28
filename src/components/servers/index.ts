@@ -20,3 +20,7 @@ export { CodexNode } from "./codex-node";
 export { CodexDashboardPanel } from "./codex-dashboard-panel";
 export { AlertBell } from "./alert-bell";
 export { ConnectionsSection } from "./connections-section";
+export { MicrosoftNode } from "./microsoft-node";
+export { MicrosoftDashboardPanel } from "./microsoft-dashboard-panel";
+export { GoogleNode } from "./google-node";
+export { GoogleDashboardPanel } from "./google-dashboard-panel";

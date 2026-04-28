@@ -8,10 +8,9 @@ import type { ServerWithUI } from "@/lib/use-servers";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-export interface GitHubAccountWithUI {
+export interface GoogleAccountWithUI {
   serverId: string;
-  username: string | null;
-  email: string | null;
+  accountEmail: string | null;
   authStatus: "authenticated" | "unauthenticated" | "unknown";
   offsetX: number;
   offsetY: number;
@@ -21,19 +20,19 @@ export interface GitHubAccountWithUI {
 /*  Module-level singleton store                                       */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEY = "openclaw-github-ui:v1";
-const DEFAULT_OFFSET = { offsetX: -110, offsetY: -70 };
+const STORAGE_KEY = "openclaw-google-ui:v1";
+const DEFAULT_OFFSET = { offsetX: 110, offsetY: 70 };
 
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 const BATCH_SIZE = 3;
 
-let accounts: GitHubAccountWithUI[] = [];
+let accounts: GoogleAccountWithUI[] = [];
 const listeners = new Set<() => void>();
 let fetchGeneration = 0;
 let initialized = false;
 let lastFetchedAt = 0;
-const failedServers = new Map<string, number>(); // serverId → timestamp of failure
-const FAIL_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+const failedServers = new Map<string, number>();
+const FAIL_COOLDOWN = 5 * 60 * 1000;
 
 function notify() { listeners.forEach((l) => l()); }
 function subscribe(listener: () => void) {
@@ -48,21 +47,18 @@ function getSnapshot() { return accounts; }
 
 interface SavedEntry {
   serverId: string;
-  username: string | null;
-  email: string | null;
+  accountEmail: string | null;
   authStatus: "authenticated" | "unauthenticated" | "unknown";
   offsetX: number;
   offsetY: number;
 }
 
-function loadCached(): GitHubAccountWithUI[] {
+function loadCached(): GoogleAccountWithUI[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    // Support new format { data, fetchedAt } and legacy array format
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray(parsed.data)) {
-      // Don't restore lastFetchedAt — always re-fetch on page load to pick up changes
       return parsed.data.filter((e: SavedEntry) => e.serverId && typeof e.offsetX === "number");
     }
     const arr = parsed as SavedEntry[];
@@ -71,12 +67,11 @@ function loadCached(): GitHubAccountWithUI[] {
   } catch { return []; }
 }
 
-function saveToStorage(list: GitHubAccountWithUI[]) {
+function saveToStorage(list: GoogleAccountWithUI[]) {
   try {
     const data: SavedEntry[] = list.map((a) => ({
       serverId: a.serverId,
-      username: a.username,
-      email: a.email,
+      accountEmail: a.accountEmail,
       authStatus: a.authStatus,
       offsetX: a.offsetX,
       offsetY: a.offsetY,
@@ -95,45 +90,30 @@ function initFromCache() {
 /*  Detection                                                          */
 /* ------------------------------------------------------------------ */
 
-const DETECT_CMD = [
-  'GH_OUT=$(gh auth status 2>&1)',
-  'if echo "$GH_OUT" | grep -qi "logged in"; then echo "$GH_OUT"',
-  'elif [ -f "$HOME/.claude/custom-github/credentials.json" ]',
-  `then LOGIN=$(python3 -c 'import json,os; f=os.path.join(os.environ.get("HOME","/root"),".claude","custom-github","credentials.json"); d=json.load(open(f)); print(d.get("login","unknown"))' 2>/dev/null)`,
-  'echo "Logged in to github.com account ${LOGIN:-unknown}"',
-  'else echo "$GH_OUT"; fi',
-  'echo "---GH_SEP---"',
-  'git config --global user.name 2>/dev/null',
-  'echo "---GH_SEP---"',
-  'git config --global user.email 2>/dev/null',
-].join('; ');
+const DETECT_CMD = `python3 -c 'import json,os,glob; tokens=sorted(glob.glob(os.path.join(os.environ.get("HOME","/root"),".claude","custom-google-workspace","tokens","*.json"))); d=json.load(open(tokens[0])) if tokens else {}; print("CONNECTED:" + d.get("email","unknown")) if d.get("access_token") else print("NO_TOKEN")' 2>/dev/null || echo "NOT_FOUND"`;
 
-function parseDetection(stdout: string): { username: string | null; email: string | null; authStatus: "authenticated" | "unauthenticated" } {
-  const parts = stdout.split("---GH_SEP---");
-  const ghStatus = (parts[0] ?? "").trim();
-  const gitName = (parts[1] ?? "").trim() || null;
-  const gitEmail = (parts[2] ?? "").trim() || null;
+function parseDetection(stdout: string): {
+  accountEmail: string | null;
+  authStatus: "authenticated" | "unauthenticated";
+} | null {
+  const raw = stdout.trim();
+  if (raw === "NOT_FOUND" || raw === "NO_TOKEN" || !raw) return null;
 
-  // Parse "Logged in to github.com as USERNAME" from gh auth status
-  const match = ghStatus.match(/Logged in to github\.com (?:as |account )(\S+)/i);
-  if (match) {
-    return { username: match[1], email: gitEmail, authStatus: "authenticated" };
+  if (raw.startsWith("CONNECTED:")) {
+    const email = raw.slice("CONNECTED:".length).trim();
+    return {
+      accountEmail: email === "unknown" ? null : email,
+      authStatus: "authenticated",
+    };
   }
-
-  // Fallback to git config — if name/email are configured, git credentials likely work
-  if (gitName || gitEmail) {
-    return { username: gitName, email: gitEmail, authStatus: "authenticated" };
-  }
-
-  return { username: null, email: null, authStatus: "unauthenticated" };
+  return null;
 }
 
-async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
+async function fetchGoogleForServers(servers: ServerWithUI[], force = false) {
   if (!force && lastFetchedAt > 0 && Date.now() - lastFetchedAt < CACHE_TTL) return;
 
   const gen = ++fetchGeneration;
   const now = Date.now();
-  // Filter to online servers, skip recently failed ones (unless force refresh)
   const onlineServers = servers.filter((s) => {
     if (s.status !== "ONLINE") return false;
     if (force) return true;
@@ -144,21 +124,20 @@ async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
 
   const savedMap = new Map(accounts.map((a) => [a.serverId, a]));
 
-  // Batch SSH calls to avoid hammering the backend
-  const results: PromiseSettledResult<{ serverId: string; username: string | null; email: string | null; authStatus: "authenticated" | "unauthenticated" } | null>[] = [];
+  const results: PromiseSettledResult<{ serverId: string; accountEmail: string | null; authStatus: "authenticated" | "unauthenticated" } | null>[] = [];
   for (let i = 0; i < onlineServers.length; i += BATCH_SIZE) {
-    if (gen !== fetchGeneration) return; // Abort if superseded
+    if (gen !== fetchGeneration) return;
     const batch = onlineServers.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.allSettled(
       batch.map(async (s) => {
         try {
           const result = await executeCommandApi(s.id, DETECT_CMD, 10);
-          failedServers.delete(s.id); // Clear failure on success
+          failedServers.delete(s.id);
           const parsed = parseDetection(result.stdout);
-          if (!parsed.username && !parsed.email) return null;
+          if (!parsed) return null;
           return { serverId: s.id, ...parsed };
         } catch {
-          failedServers.set(s.id, Date.now()); // Track failure
+          failedServers.set(s.id, Date.now());
           return null;
         }
       }),
@@ -166,25 +145,23 @@ async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
     results.push(...batchResults);
   }
 
-  if (gen !== fetchGeneration) return; // Stale
+  if (gen !== fetchGeneration) return;
 
-  const newAccounts: GitHubAccountWithUI[] = [];
+  const newAccounts: GoogleAccountWithUI[] = [];
 
   for (const r of results) {
     if (r.status !== "fulfilled" || !r.value) continue;
-    const { serverId, username, email, authStatus } = r.value;
+    const { serverId, accountEmail, authStatus } = r.value;
     const saved = savedMap.get(serverId);
     newAccounts.push({
       serverId,
-      username,
-      email,
+      accountEmail,
       authStatus,
       offsetX: saved?.offsetX ?? DEFAULT_OFFSET.offsetX,
       offsetY: saved?.offsetY ?? DEFAULT_OFFSET.offsetY,
     });
   }
 
-  // Preserve cached entries for offline servers
   for (const cached of accounts) {
     if (!onlineServers.some((s) => s.id === cached.serverId) && !newAccounts.some((a) => a.serverId === cached.serverId)) {
       newAccounts.push(cached);
@@ -201,7 +178,7 @@ async function fetchGitHubForServers(servers: ServerWithUI[], force = false) {
 /*  Actions                                                            */
 /* ------------------------------------------------------------------ */
 
-function moveGitHubNodeStore(serverId: string, offsetX: number, offsetY: number) {
+function moveGoogleNodeStore(serverId: string, offsetX: number, offsetY: number) {
   accounts = accounts.map((a) =>
     a.serverId === serverId ? { ...a, offsetX, offsetY } : a,
   );
@@ -213,13 +190,11 @@ function moveGitHubNodeStore(serverId: string, offsetX: number, offsetY: number)
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
 
-export function useGitHubAccounts(servers: ServerWithUI[]) {
-  // Load cache synchronously on first use
+export function useGoogleAccounts(servers: ServerWithUI[]) {
   useMemo(() => { initFromCache(); }, []);
 
   const list = useSyncExternalStore(subscribe, getSnapshot, () => []);
 
-  // Stable dependency: only refetch when the set of online server IDs changes
   const serversRef = useRef(servers);
   serversRef.current = servers;
   const onlineIds = useMemo(
@@ -228,17 +203,17 @@ export function useGitHubAccounts(servers: ServerWithUI[]) {
   );
 
   useEffect(() => {
-    fetchGitHubForServers(serversRef.current);
+    fetchGoogleForServers(serversRef.current);
   }, [onlineIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refresh = useCallback(() => {
-    lastFetchedAt = 0; // Bypass TTL
-    fetchGitHubForServers(serversRef.current, true);
+    lastFetchedAt = 0;
+    fetchGoogleForServers(serversRef.current, true);
   }, []);
 
-  const moveGitHubNode = useCallback((serverId: string, offsetX: number, offsetY: number) => {
-    moveGitHubNodeStore(serverId, offsetX, offsetY);
+  const moveGoogleNode = useCallback((serverId: string, offsetX: number, offsetY: number) => {
+    moveGoogleNodeStore(serverId, offsetX, offsetY);
   }, []);
 
-  return { accounts: list, refresh, moveGitHubNode };
+  return { accounts: list, refresh, moveGoogleNode };
 }

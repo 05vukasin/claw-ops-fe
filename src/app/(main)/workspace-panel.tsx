@@ -15,6 +15,8 @@ const FileEditorPanel = dynamic(
 import { GitHubDashboardPanel } from "@/components/servers/github-dashboard-panel";
 import { ClaudeDashboardPanel } from "@/components/servers/claude-dashboard-panel";
 import { CodexDashboardPanel } from "@/components/servers/codex-dashboard-panel";
+import { MicrosoftDashboardPanel } from "@/components/servers/microsoft-dashboard-panel";
+import { GoogleDashboardPanel } from "@/components/servers/google-dashboard-panel";
 import { useServers } from "@/lib/use-servers";
 import { Z_INDEX } from "@/lib/z-index";
 import type { Server, SftpFile } from "@/lib/api";
@@ -137,6 +139,34 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     [openCodexKeys],
   );
 
+  // Microsoft panels from URL
+  const openMicrosoftKeys = useMemo(() => {
+    const param = searchParams.get("microsoft") ?? "";
+    return param.split(",").filter(Boolean);
+  }, [searchParams]);
+
+  const openMicrosoftEntries = useMemo(
+    () => openMicrosoftKeys.map((k) => ({
+      serverId: k.replace("microsoft::", ""),
+      key: k,
+    })),
+    [openMicrosoftKeys],
+  );
+
+  // Google panels from URL
+  const openGoogleKeys = useMemo(() => {
+    const param = searchParams.get("google") ?? "";
+    return param.split(",").filter(Boolean);
+  }, [searchParams]);
+
+  const openGoogleEntries = useMemo(
+    () => openGoogleKeys.map((k) => ({
+      serverId: k.replace("google::", ""),
+      key: k,
+    })),
+    [openGoogleKeys],
+  );
+
   // Focus order — shared between server, agent, and file panels
   const [focusOrder, setFocusOrder] = useState<string[]>([]);
 
@@ -168,7 +198,7 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
   // Edit modal
   const [editServer, setEditServer] = useState<Server | null>(null);
 
-  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[], githubKeys?: string[], claudeKeys?: string[], codexKeys?: string[]) => {
+  const updateUrl = useCallback((serverIds: string[], agentKeys?: string[], githubKeys?: string[], claudeKeys?: string[], codexKeys?: string[], microsoftKeys?: string[], googleKeys?: string[]) => {
     const sp = new URLSearchParams();
     if (serverIds.length > 0) sp.set("servers", serverIds.join(","));
     const agents = agentKeys ?? openAgentKeys;
@@ -179,9 +209,13 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     if (cc.length > 0) sp.set("claude", cc.join(","));
     const codex = codexKeys ?? openCodexKeys;
     if (codex.length > 0) sp.set("codex", codex.join(","));
+    const ms = microsoftKeys ?? openMicrosoftKeys;
+    if (ms.length > 0) sp.set("microsoft", ms.join(","));
+    const g = googleKeys ?? openGoogleKeys;
+    if (g.length > 0) sp.set("google", g.join(","));
     const qs = sp.toString();
     router.push(qs ? `/?${qs}` : "/");
-  }, [router, openAgentKeys, openGitHubKeys, openClaudeKeys, openCodexKeys]);
+  }, [router, openAgentKeys, openGitHubKeys, openClaudeKeys, openCodexKeys, openMicrosoftKeys, openGoogleKeys]);
 
   const handleClose = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -211,6 +245,18 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     const remaining = openCodexKeys.filter((k) => k !== key);
     updateUrl(openIds, undefined, undefined, undefined, remaining);
   }, [openIds, openCodexKeys, updateUrl]);
+
+  const handleMicrosoftClose = useCallback((key: string) => {
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+    const remaining = openMicrosoftKeys.filter((k) => k !== key);
+    updateUrl(openIds, undefined, undefined, undefined, undefined, remaining);
+  }, [openIds, openMicrosoftKeys, updateUrl]);
+
+  const handleGoogleClose = useCallback((key: string) => {
+    setFocusOrder((prev) => prev.filter((k) => k !== key));
+    const remaining = openGoogleKeys.filter((k) => k !== key);
+    updateUrl(openIds, undefined, undefined, undefined, undefined, undefined, remaining);
+  }, [openIds, openGoogleKeys, updateUrl]);
 
   const handleDelete = useCallback((id: string) => {
     setFocusOrder((prev) => prev.filter((sid) => sid !== id));
@@ -284,6 +330,8 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
     openGitHubEntries.length === 0 &&
     openClaudeEntries.length === 0 &&
     openCodexEntries.length === 0 &&
+    openMicrosoftEntries.length === 0 &&
+    openGoogleEntries.length === 0 &&
     openFiles.length === 0 &&
     openConfigs.length === 0
   )
@@ -345,6 +393,28 @@ export function WorkspacePanel({ onRefresh }: WorkspacePanelProps) {
           serverId={entry.serverId}
           serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
           onClose={() => handleCodexClose(entry.key)}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
+        />
+      ))}
+
+      {openMicrosoftEntries.map((entry) => (
+        <MicrosoftDashboardPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
+          onClose={() => handleMicrosoftClose(entry.key)}
+          zIndex={getZIndex(entry.key)}
+          onFocus={() => handleFocus(entry.key)}
+        />
+      ))}
+
+      {openGoogleEntries.map((entry) => (
+        <GoogleDashboardPanel
+          key={entry.key}
+          serverId={entry.serverId}
+          serverName={serverMap.get(entry.serverId)?.name ?? "Server"}
+          onClose={() => handleGoogleClose(entry.key)}
           zIndex={getZIndex(entry.key)}
           onFocus={() => handleFocus(entry.key)}
         />

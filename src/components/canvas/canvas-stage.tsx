@@ -8,11 +8,15 @@ import { AgentNode } from "@/components/servers/agent-node";
 import { GitHubNode } from "@/components/servers/github-node";
 import { ClaudeNode } from "@/components/servers/claude-node";
 import { CodexNode } from "@/components/servers/codex-node";
+import { MicrosoftNode } from "@/components/servers/microsoft-node";
+import { GoogleNode } from "@/components/servers/google-node";
 import type { ServerWithUI } from "@/lib/use-servers";
 import type { AgentWithUI } from "@/lib/use-agents";
 import type { GitHubAccountWithUI } from "@/lib/use-github-accounts";
 import type { ClaudeAccountWithUI } from "@/lib/use-claude-accounts";
 import type { CodexAccountWithUI } from "@/lib/use-codex-accounts";
+import type { MicrosoftAccountWithUI } from "@/lib/use-microsoft-accounts";
+import type { GoogleAccountWithUI } from "@/lib/use-google-accounts";
 import type { MonitoringState } from "@/lib/api";
 
 const MIN_ZOOM = 0.15;
@@ -50,15 +54,19 @@ interface CanvasStageProps {
   githubAccounts?: GitHubAccountWithUI[];
   claudeAccounts?: ClaudeAccountWithUI[];
   codexAccounts?: CodexAccountWithUI[];
+  microsoftAccounts?: MicrosoftAccountWithUI[];
+  googleAccounts?: GoogleAccountWithUI[];
   onMoveServer: (id: string, x: number, y: number) => void;
   onMoveAgent?: (serverId: string, name: string, offsetX: number, offsetY: number) => void;
   onMoveGitHub?: (serverId: string, offsetX: number, offsetY: number) => void;
   onMoveClaude?: (serverId: string, offsetX: number, offsetY: number) => void;
   onMoveCodex?: (serverId: string, offsetX: number, offsetY: number) => void;
+  onMoveMicrosoft?: (serverId: string, offsetX: number, offsetY: number) => void;
+  onMoveGoogle?: (serverId: string, offsetX: number, offsetY: number) => void;
   healthMap?: Record<string, MonitoringState>;
 }
 
-export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeAccounts = [], codexAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub, onMoveClaude, onMoveCodex, healthMap = {} }: CanvasStageProps) {
+export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeAccounts = [], codexAccounts = [], microsoftAccounts = [], googleAccounts = [], onMoveServer, onMoveAgent, onMoveGitHub, onMoveClaude, onMoveCodex, onMoveMicrosoft, onMoveGoogle, healthMap = {} }: CanvasStageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Multi-panel: read comma-separated servers param
@@ -202,6 +210,10 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     if (ccLine) { ccLine.setAttribute("x1", String(x)); ccLine.setAttribute("y1", String(y)); }
     const codexLine = codexLineRefs.current.get(`codex::${id}`);
     if (codexLine) { codexLine.setAttribute("x1", String(x)); codexLine.setAttribute("y1", String(y)); }
+    const msLine = microsoftLineRefs.current.get(`microsoft::${id}`);
+    if (msLine) { msLine.setAttribute("x1", String(x)); msLine.setAttribute("y1", String(y)); }
+    const gLine = googleLineRefs.current.get(`google::${id}`);
+    if (gLine) { gLine.setAttribute("x1", String(x)); gLine.setAttribute("y1", String(y)); }
     setLivePos((prev) => ({ ...prev, [id]: { x, y } }));
   }, []);
 
@@ -273,6 +285,80 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     }
   }, []);
 
+  // Microsoft connector lines
+  const microsoftLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
+
+  const handleMicrosoftSpringPos = useCallback((serverId: string, x: number, y: number) => {
+    const key = `microsoft::${serverId}`;
+    const line = microsoftLineRefs.current.get(key);
+    if (line) {
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y2", String(y));
+    }
+  }, []);
+
+  const handleMicrosoftSelect = useCallback(
+    (serverId: string) => {
+      const key = `microsoft::${serverId}`;
+      const msParam = searchParams.get("microsoft") ?? "";
+      const openMS = msParam.split(",").filter(Boolean);
+      const updated = openMS.includes(key)
+        ? [...openMS.filter((x) => x !== key), key]
+        : [...openMS, key];
+      const sp = new URLSearchParams(searchParams);
+      sp.set("microsoft", updated.join(","));
+      const serversVal = sp.get("servers");
+      if (!serversVal) sp.delete("servers");
+      const agentsVal = sp.get("agents");
+      if (!agentsVal) sp.delete("agents");
+      const ghVal = sp.get("github");
+      if (!ghVal) sp.delete("github");
+      const claudeVal = sp.get("claude");
+      if (!claudeVal) sp.delete("claude");
+      const codexVal = sp.get("codex");
+      if (!codexVal) sp.delete("codex");
+      router.push(`/?${sp.toString()}`);
+    },
+    [router, searchParams],
+  );
+
+  // Google connector lines
+  const googleLineRefs = useRef<Map<string, SVGLineElement>>(new Map());
+
+  const handleGoogleSpringPos = useCallback((serverId: string, x: number, y: number) => {
+    const key = `google::${serverId}`;
+    const line = googleLineRefs.current.get(key);
+    if (line) {
+      line.setAttribute("x2", String(x));
+      line.setAttribute("y2", String(y));
+    }
+  }, []);
+
+  const handleGoogleSelect = useCallback(
+    (serverId: string) => {
+      const key = `google::${serverId}`;
+      const gParam = searchParams.get("google") ?? "";
+      const openG = gParam.split(",").filter(Boolean);
+      const updated = openG.includes(key)
+        ? [...openG.filter((x) => x !== key), key]
+        : [...openG, key];
+      const sp = new URLSearchParams(searchParams);
+      sp.set("google", updated.join(","));
+      const serversVal = sp.get("servers");
+      if (!serversVal) sp.delete("servers");
+      const agentsVal = sp.get("agents");
+      if (!agentsVal) sp.delete("agents");
+      const ghVal = sp.get("github");
+      if (!ghVal) sp.delete("github");
+      const claudeVal = sp.get("claude");
+      if (!claudeVal) sp.delete("claude");
+      const codexVal = sp.get("codex");
+      if (!codexVal) sp.delete("codex");
+      router.push(`/?${sp.toString()}`);
+    },
+    [router, searchParams],
+  );
+
   // Update connector x1/y1 when server positions change (live drag or stored)
   useEffect(() => {
     for (const a of agents) {
@@ -311,7 +397,25 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
         line.setAttribute("y1", String(sp.y));
       }
     }
-  }, [agents, githubAccounts, claudeAccounts, codexAccounts, livePos, serverMap]);
+    for (const ms of microsoftAccounts) {
+      const sp = livePos[ms.serverId] ?? (() => { const s = serverMap.get(ms.serverId); return s ? { x: s.x, y: s.y } : null; })();
+      if (!sp) continue;
+      const line = microsoftLineRefs.current.get(`microsoft::${ms.serverId}`);
+      if (line) {
+        line.setAttribute("x1", String(sp.x));
+        line.setAttribute("y1", String(sp.y));
+      }
+    }
+    for (const g of googleAccounts) {
+      const sp = livePos[g.serverId] ?? (() => { const s = serverMap.get(g.serverId); return s ? { x: s.x, y: s.y } : null; })();
+      if (!sp) continue;
+      const line = googleLineRefs.current.get(`google::${g.serverId}`);
+      if (line) {
+        line.setAttribute("x1", String(sp.x));
+        line.setAttribute("y1", String(sp.y));
+      }
+    }
+  }, [agents, githubAccounts, claudeAccounts, codexAccounts, microsoftAccounts, googleAccounts, livePos, serverMap]);
 
   /* ── Zoom (wheel) ── */
   useEffect(() => {
@@ -348,7 +452,7 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
     if (e.button !== PAN_BUTTON) return;
     const target = e.target as HTMLElement;
     // If the click hit a server node, don't pan
-    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]") || target.closest("[data-github-node]") || target.closest("[data-claude-node]") || target.closest("[data-codex-node]")) return;
+    if (target.closest("[data-server-node]") || target.closest("[data-agent-node]") || target.closest("[data-github-node]") || target.closest("[data-claude-node]") || target.closest("[data-codex-node]") || target.closest("[data-microsoft-node]") || target.closest("[data-google-node]")) return;
 
     panning.current = true;
     panStart.current = {
@@ -499,6 +603,46 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
               />
             );
           })}
+          {microsoftAccounts.map((ms) => {
+            const sp = getServerPos(ms.serverId);
+            if (!sp) return null;
+            const key = `microsoft::${ms.serverId}`;
+            return (
+              <line
+                key={`line-${key}`}
+                ref={(el) => { if (el) microsoftLineRefs.current.set(key, el); else microsoftLineRefs.current.delete(key); }}
+                x1={sp.x}
+                y1={sp.y}
+                x2={sp.x + ms.offsetX}
+                y2={sp.y + ms.offsetY}
+                stroke="#00A4EF"
+                strokeOpacity={0.3}
+                strokeWidth={2.5}
+                strokeDasharray="0 8"
+                strokeLinecap="round"
+              />
+            );
+          })}
+          {googleAccounts.map((g) => {
+            const sp = getServerPos(g.serverId);
+            if (!sp) return null;
+            const key = `google::${g.serverId}`;
+            return (
+              <line
+                key={`line-${key}`}
+                ref={(el) => { if (el) googleLineRefs.current.set(key, el); else googleLineRefs.current.delete(key); }}
+                x1={sp.x}
+                y1={sp.y}
+                x2={sp.x + g.offsetX}
+                y2={sp.y + g.offsetY}
+                stroke="#4285F4"
+                strokeOpacity={0.3}
+                strokeWidth={2.5}
+                strokeDasharray="0 8"
+                strokeLinecap="round"
+              />
+            );
+          })}
         </svg>
 
         {/* Server nodes (render first so agents stack on top) */}
@@ -583,6 +727,42 @@ export function CanvasStage({ servers, agents = [], githubAccounts = [], claudeA
               onMoveEnd={onMoveCodex ?? (() => {})}
               onSpringPos={handleCodexSpringPos}
               onSelect={handleCodexSelect}
+              zoom={camera.zoom}
+            />
+          );
+        })}
+
+        {/* Microsoft 365 nodes */}
+        {microsoftAccounts.map((ms) => {
+          const sp = getServerPos(ms.serverId);
+          if (!sp) return null;
+          return (
+            <MicrosoftNode
+              key={`microsoft-${ms.serverId}`}
+              account={ms}
+              serverX={sp.x}
+              serverY={sp.y}
+              onMoveEnd={onMoveMicrosoft ?? (() => {})}
+              onSpringPos={handleMicrosoftSpringPos}
+              onSelect={handleMicrosoftSelect}
+              zoom={camera.zoom}
+            />
+          );
+        })}
+
+        {/* Google Workspace nodes */}
+        {googleAccounts.map((g) => {
+          const sp = getServerPos(g.serverId);
+          if (!sp) return null;
+          return (
+            <GoogleNode
+              key={`google-${g.serverId}`}
+              account={g}
+              serverX={sp.x}
+              serverY={sp.y}
+              onMoveEnd={onMoveGoogle ?? (() => {})}
+              onSpringPos={handleGoogleSpringPos}
+              onSelect={handleGoogleSelect}
               zoom={camera.zoom}
             />
           );
