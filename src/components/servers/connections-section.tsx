@@ -228,6 +228,7 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
   const [claude, setClaude] = useState<ConnectionStatus>(EMPTY);
   const [codex, setCodex] = useState<ConnectionStatus>(EMPTY);
   const [google, setGoogle] = useState<ConnectionStatus>(EMPTY);
+  const [microsoft, setMicrosoft] = useState<ConnectionStatus>(EMPTY);
 
   /* ---- overlay for interactive auth ---- */
   const [overlay, setOverlay] = useState<{ command: string; title: string } | null>(null);
@@ -239,12 +240,15 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
     setCodex((s) => ({ ...s, loading: true }));
     setGoogle((s) => ({ ...s, loading: true }));
 
-    // Run all four in parallel
-    const [ghResult, ccResult, cxResult, googResult] = await Promise.allSettled([
+    const MS365_CMD = `python3 -c 'import json,os; f=os.path.join(os.environ.get("HOME","/root"),".claude","custom-microsoft","credentials.json"); d=json.load(open(f)); print("CONNECTED:" + d.get("accountEmail","unknown")) if d.get("accessToken") else print("NO_TOKEN")' 2>/dev/null || echo "NOT_FOUND"`;
+
+    // Run all five in parallel
+    const [ghResult, ccResult, cxResult, googResult, msResult] = await Promise.allSettled([
       executeCommandApi(serverId, GH_CMD, 10),
       executeCommandApi(serverId, CLAUDE_CMD, 15),
       executeCommandApi(serverId, CODEX_CMD, 15),
       executeCommandApi(serverId, GOOGLE_CMD, 15),
+      executeCommandApi(serverId, MS365_CMD, 10),
     ]);
 
     // Parse GitHub
@@ -324,12 +328,25 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
     } else {
       setGoogle({ installed: false, authenticated: false, info: null, loading: false });
     }
+
+    // Parse Microsoft 365
+    if (msResult.status === "fulfilled") {
+      const out = msResult.value.stdout.trim();
+      if (out.startsWith("CONNECTED:")) {
+        const email = out.slice("CONNECTED:".length).trim();
+        setMicrosoft({ installed: true, authenticated: true, info: email, loading: false });
+      } else {
+        setMicrosoft({ installed: false, authenticated: false, info: null, loading: false });
+      }
+    } else {
+      setMicrosoft({ installed: false, authenticated: false, info: null, loading: false });
+    }
   }, [serverId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   /* ---- disconnect handlers ---- */
-  const handleDisconnect = useCallback(async (service: "github" | "claude" | "codex" | "google") => {
+  const handleDisconnect = useCallback(async (service: "github" | "claude" | "codex" | "google" | "microsoft") => {
     if (service === "github") {
       // gh auth logout is interactive (prompts for account selection)
       setOverlay({ command: "gh auth logout", title: "GitHub Logout" });
@@ -339,11 +356,13 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
       claude: 'export PATH="$HOME/.local/bin:$PATH" && claude auth logout 2>&1',
       codex: 'export PATH="$HOME/.local/bin:$PATH" && codex auth logout 2>&1',
       google: 'rm -rf ~/.workspace-mcp/cli-tokens/ ~/.google_workspace_mcp/credentials/*.json 2>/dev/null && echo "Google tokens removed"',
+      microsoft: 'rm -f ~/.claude/custom-microsoft/credentials.json 2>/dev/null && echo "Microsoft 365 tokens removed"',
     };
     const confirmMsgs: Record<string, string> = {
       claude: "Disconnect Claude Code on this server?",
       codex: "Disconnect Codex on this server?",
       google: "Disconnect Google Workspace on this server? This removes stored OAuth tokens.",
+      microsoft: "Disconnect Microsoft 365 on this server? This removes stored OAuth tokens.",
     };
     if (!window.confirm(confirmMsgs[service])) return;
     try {
@@ -359,8 +378,8 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
   }, [fetchAll]);
 
   /* ---- status helpers ---- */
-  const allLoading = github.loading && claude.loading && codex.loading && google.loading;
-  const allConnections = [github, claude, codex, google];
+  const allLoading = github.loading && claude.loading && codex.loading && google.loading && microsoft.loading;
+  const allConnections = [github, claude, codex, google, microsoft];
 
   return (
     <>
@@ -441,6 +460,16 @@ export function ConnectionsSection({ serverId, serverName }: ConnectionsSectionP
                   setOverlay({ command: `echo '${b64}' | base64 -d > /tmp/clawops-goog-auth.sh && chmod +x /tmp/clawops-goog-auth.sh && bash /tmp/clawops-goog-auth.sh`, title: "Google Workspace Setup" });
                 }}
                 onDisconnect={() => handleDisconnect("google")}
+              />
+
+              {/* Microsoft 365 */}
+              <ConnectionRow
+                icon={<MicrosoftIcon />}
+                iconBg="bg-white dark:bg-white"
+                name="Microsoft 365"
+                status={microsoft}
+                onConnect={() => setOverlay({ command: 'echo "Connect Microsoft 365 via claw-ops-chat → Settings → Connections → Microsoft 365"', title: "Microsoft 365" })}
+                onDisconnect={() => handleDisconnect("microsoft")}
               />
 
               <div className="h-2" />
@@ -573,6 +602,17 @@ function CodexIcon() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
       <polyline points="16 18 22 12 16 6" />
       <polyline points="8 6 2 12 8 18" />
+    </svg>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 21 21" fill="none">
+      <rect x="0" y="0" width="10" height="10" fill="#F25022" />
+      <rect x="11" y="0" width="10" height="10" fill="#7FBA00" />
+      <rect x="0" y="11" width="10" height="10" fill="#00A4EF" />
+      <rect x="11" y="11" width="10" height="10" fill="#FFB900" />
     </svg>
   );
 }
