@@ -157,7 +157,7 @@ export const MicrosoftNode = memo(function MicrosoftNode({ account, serverX, ser
           dragging
             ? "border-white/20 shadow-lg"
             : "border-white/10 shadow-sm group-hover:border-white/20 group-hover:shadow-md"
-        } bg-white dark:bg-[#1a1a2e]`}
+        } bg-white`}
         style={{ width: NODE_SIZE, height: NODE_SIZE }}
       >
         {/* Microsoft Windows logo — 4 colored squares */}
