@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { FiChevronDown, FiChevronRight, FiPlay, FiTerminal } from "react-icons/fi";
-import { checkClaudeCodeInstalledApi, checkDeployScriptApi } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { FiChevronDown, FiChevronRight, FiDownload, FiPlay, FiTerminal } from "react-icons/fi";
+import {
+  checkClaudeCodeInstalledApi,
+  checkDeployScriptApi,
+  fetchChatAppStatusApi,
+} from "@/lib/api";
 import type { Server, ServerHealth, MonitoringState } from "@/lib/api";
 import { ClaudeCodeOverlay } from "./claude-code-overlay";
 import { DeployPopup } from "./deploy-popup";
+import { ChatActionsPopover } from "./chat-actions-popover";
+import { InstallChatPopup } from "./install-chat-popup";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -93,6 +99,10 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
   const [showClaudeCode, setShowClaudeCode] = useState(false);
   const [deployAvailable, setDeployAvailable] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
+  const [chatStatus, setChatStatus] = useState<"unknown" | "installed" | "not-installed">("unknown");
+  const [showInstallChat, setShowInstallChat] = useState(false);
+  const [chatActionsOpen, setChatActionsOpen] = useState(false);
+  const chatButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (server.status !== "ONLINE") return;
@@ -103,8 +113,13 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
     checkDeployScriptApi(server.id)
       .then((ok) => { if (!stale) setDeployAvailable(ok); })
       .catch(() => { if (!stale) setDeployAvailable(false); });
+    if (server.assignedDomain) {
+      fetchChatAppStatusApi(server.id)
+        .then((r) => { if (!stale) setChatStatus(r.installed && r.running ? "installed" : "not-installed"); })
+        .catch(() => { if (!stale) setChatStatus("unknown"); });
+    }
     return () => { stale = true; };
-  }, [server.id, server.status]);
+  }, [server.id, server.status, server.assignedDomain]);
 
   return (
     <div className="rounded-xl border border-canvas-border bg-canvas-bg shadow-sm transition-shadow hover:shadow-md">
@@ -203,16 +218,28 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
             </span>
           )}
 
-          {server.assignedDomain && (
-            <a
-              href={`https://${server.assignedDomain}/chat`}
-              target="_blank"
-              rel="noopener noreferrer"
+          {server.assignedDomain && chatStatus === "installed" && (
+            <button
+              ref={chatButtonRef}
+              type="button"
+              onClick={() => setChatActionsOpen((v) => !v)}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-canvas-border bg-canvas-surface-hover px-4 py-2.5 text-xs font-medium text-canvas-fg transition-colors hover:bg-canvas-border active:bg-canvas-border"
             >
               <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
               Chat
-            </a>
+              <FiChevronRight size={12} className={`chevron-rotate ${chatActionsOpen ? "open" : ""}`} />
+            </button>
+          )}
+
+          {server.assignedDomain && chatStatus === "not-installed" && (
+            <button
+              type="button"
+              onClick={() => setShowInstallChat(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-canvas-border bg-canvas-surface-hover px-4 py-2.5 text-xs font-medium text-canvas-fg transition-colors hover:bg-canvas-border active:bg-canvas-border"
+            >
+              <FiDownload size={14} />
+              Install Chat App
+            </button>
           )}
 
           {claudeInstalled === "installed" && (
@@ -256,6 +283,29 @@ export function MobileServerCard({ server, health }: MobileServerCardProps) {
 
       {showDeploy && (
         <DeployPopup serverId={server.id} onClose={() => setShowDeploy(false)} />
+      )}
+
+      {showInstallChat && server.assignedDomain && (
+        <InstallChatPopup
+          serverId={server.id}
+          serverName={server.name}
+          hostname={server.assignedDomain}
+          onClose={() => setShowInstallChat(false)}
+          onInstalled={() => setChatStatus("installed")}
+        />
+      )}
+
+      {chatActionsOpen && server.assignedDomain && chatStatus === "installed" && (
+        <ChatActionsPopover
+          serverId={server.id}
+          hostname={server.assignedDomain}
+          anchorRef={chatButtonRef}
+          onClose={() => setChatActionsOpen(false)}
+          onUninstalled={() => {
+            setChatStatus("not-installed");
+            setChatActionsOpen(false);
+          }}
+        />
       )}
     </div>
   );
