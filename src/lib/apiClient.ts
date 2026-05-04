@@ -87,6 +87,17 @@ export function buildWsUrl(ticket: string): string {
   return `${wsBase}/ws?ticket=${encodeURIComponent(ticket)}`;
 }
 
+/**
+ * Build the WebSocket URL for live container-log tail.
+ *
+ * @param ticket  Single-use ticket from GET /api/v1/container-logs/ws-ticket
+ * @param service One of BACKEND | FRONTEND | NGINX | POSTGRES
+ */
+export function buildContainerLogsWsUrl(ticket: string, service: string): string {
+  const wsBase = getApiOrigin().replace(/^https/, "wss").replace(/^http/, "ws");
+  return `${wsBase}/ws/container-logs?token=${encodeURIComponent(ticket)}&service=${encodeURIComponent(service)}`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  In-memory access token                                             */
 /* ------------------------------------------------------------------ */

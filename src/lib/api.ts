@@ -803,6 +803,133 @@ export async function deleteOldAuditLogsApi(before: string): Promise<DeleteAudit
 }
 
 /* ------------------------------------------------------------------ */
+/*  Container Logs                                                     */
+/* ------------------------------------------------------------------ */
+
+export type ContainerService = "BACKEND" | "FRONTEND" | "NGINX" | "POSTGRES";
+export type ContainerLogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR" | "UNKNOWN";
+export type ContainerLogStream = "STDOUT" | "STDERR";
+
+export interface ContainerLogEntry {
+  id: number;
+  service: ContainerService;
+  containerId: string;
+  containerName: string;
+  stream: ContainerLogStream;
+  level: ContainerLogLevel;
+  message: string;
+  logTs: string;
+  ingestedAt: string;
+}
+
+export interface ContainerLogFilters {
+  level?: ContainerLogLevel;
+  stream?: ContainerLogStream;
+  from?: string;
+  to?: string;
+  search?: string;
+}
+
+export interface RetentionSetting {
+  service: ContainerService;
+  retentionDays: number;
+  updatedAt: string;
+  updatedByUserId: string | null;
+}
+
+export interface ContainerLogsTicket {
+  ticket: string;
+  expiresAt: string;
+}
+
+export interface DeleteContainerLogsResponse {
+  deletedCount: number;
+  before: string;
+  service: ContainerService | null;
+}
+
+export async function fetchContainerLogsApi(
+  service: ContainerService,
+  page = 0,
+  size = 50,
+  filters: ContainerLogFilters = {},
+): Promise<PageResponse<ContainerLogEntry>> {
+  const params = new URLSearchParams();
+  params.set("service", service);
+  params.set("page", String(page));
+  params.set("size", String(size));
+  params.set("sort", "logTs,desc");
+  if (filters.level) params.set("level", filters.level);
+  if (filters.stream) params.set("stream", filters.stream);
+  if (filters.from) params.set("from", filters.from);
+  if (filters.to) params.set("to", filters.to);
+  if (filters.search) params.set("search", filters.search);
+
+  const res = await apiFetch(`/api/v1/container-logs/history?${params.toString()}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load container logs.");
+  return res.json() as Promise<PageResponse<ContainerLogEntry>>;
+}
+
+export async function deleteOldContainerLogsApi(
+  before: string,
+  service?: ContainerService,
+): Promise<DeleteContainerLogsResponse> {
+  const params = new URLSearchParams({ before });
+  if (service) params.set("service", service);
+  const res = await apiFetch(`/api/v1/container-logs/history?${params.toString()}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    let message = "Failed to delete old container logs.";
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body?.message) message = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json() as Promise<DeleteContainerLogsResponse>;
+}
+
+export async function getRetentionSettingsApi(): Promise<RetentionSetting[]> {
+  const res = await apiFetch(`/api/v1/container-logs/retention`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to load retention settings.");
+  return res.json() as Promise<RetentionSetting[]>;
+}
+
+export async function updateRetentionSettingsApi(
+  service: ContainerService,
+  retentionDays: number,
+): Promise<RetentionSetting> {
+  const res = await apiFetch(`/api/v1/container-logs/retention/${service}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ retentionDays }),
+  });
+  if (!res.ok) {
+    let message = "Failed to update retention setting.";
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body?.message) message = body.message;
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json() as Promise<RetentionSetting>;
+}
+
+export async function getContainerLogsTicketApi(
+  service: ContainerService,
+): Promise<ContainerLogsTicket> {
+  const params = new URLSearchParams({ service });
+  const res = await apiFetch(`/api/v1/container-logs/ws-ticket?${params.toString()}`);
+  if (!res.ok) throw new ApiError(res.status, "Failed to issue WebSocket ticket.");
+  return res.json() as Promise<ContainerLogsTicket>;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Deployment Scripts                                                 */
 /* ------------------------------------------------------------------ */
 
